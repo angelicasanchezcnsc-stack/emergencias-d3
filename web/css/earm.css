@@ -309,6 +309,31 @@ textarea { width: 100%; padding: .7rem .8rem; background: #fff; border: 1px soli
 .conteo summary { cursor: pointer; font-weight: 700; color: var(--corp-dark); }
 @keyframes latido { 50% { filter: brightness(1.15); } }
 
+/* Punto de encuentro */
+.resumen-grande .t-verde { background: var(--exito-bg); border-color: #a7f3d0; }
+.buscar-grande { font-size: 1.15rem; padding: .9rem 1rem; }
+.fila-llegada { display: flex; gap: .75rem; align-items: center; justify-content: space-between; padding: .75rem 0; border-top: 1px solid var(--corp-light); }
+.tarjeta .fila-llegada:first-of-type { border-top: none; }
+.fila-llegada.urgente { background: var(--error-bg); margin: 0 -1.25rem; padding: .75rem 1.25rem; }
+.fila-llegada .fila-dia-txt strong { font-size: 1.05rem; }
+.btn-llego { min-width: 7.5rem; min-height: 3.25rem; font-size: 1rem; flex: none; }
+.resumen-plegable { cursor: pointer; font-weight: 800; color: var(--corp-dark); list-style: none; display: flex; gap: .5rem; align-items: center; }
+.resumen-plegable::-webkit-details-marker { display: none; }
+details.tarjeta[open] .resumen-plegable { margin-bottom: .5rem; }
+.fila-alerta td { background: var(--adv-bg); }
+.lista-ausentes { padding-left: 1.4rem; line-height: 1.5; }
+.lista-ausentes li { margin-bottom: .6rem; }
+
+/* Pantalla para pleno sol: máximo contraste, sin transparencias */
+.modo-sol, .modo-sol .tarjeta, .modo-sol .tabla-caja, .modo-sol .resumen-grande div { background: #fff !important; backdrop-filter: none; color: #000; }
+.modo-sol .tarjeta, .modo-sol .resumen-grande div, .modo-sol .fila-llegada { border-color: #000 !important; }
+.modo-sol .tarjeta { border-width: 2px; }
+.modo-sol .sutil, .modo-sol .etiqueta, .modo-sol th { color: #000 !important; }
+.modo-sol strong, .modo-sol h2, .modo-sol h3 { color: #000; }
+.modo-sol .fila-llegada .fila-dia-txt strong { font-size: 1.25rem; }
+.modo-sol .btn-llego { background: #000; color: var(--corp-accent); border: 2px solid #000; }
+.modo-sol .fila-llegada.urgente { background: #ffe4e4 !important; }
+
 .credencial { border: 1px dashed var(--corp-text); border-radius: var(--radio); padding: .8rem; margin-bottom: .6rem; break-inside: avoid; }
 .clave-mono { font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; font-weight: 700; letter-spacing: .08em; }
 

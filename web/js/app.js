@@ -12,6 +12,7 @@ import { vistaContactos } from './vistas/contactos.js';
 import { vistaRutas } from './vistas/rutas.js';
 import { vistaRecomendaciones } from './vistas/recomendaciones.js';
 import { vistaEmergencia } from './vistas/emergencia.js';
+import { vistaPunto } from './vistas/punto.js';
 import * as contenido from './contenido.js';
 import * as registro from './registro.js';
 import * as emergencia from './emergencia.js';
@@ -24,6 +25,7 @@ import { vistaInstalacion } from './vistas/instalacion.js';
 const RUTAS = {
   inicio: { titulo: 'Inicio', icono: 'inicio', vista: vistaInicio },
   emergencia: { titulo: 'Emergencia', icono: 'alerta', vista: vistaEmergencia },
+  punto: { titulo: 'Punto de encuentro', icono: 'ubicacion', vista: vistaPunto, roles: emergencia.ROLES_REPORTAR },
   dia: { titulo: 'Mi día', icono: 'reloj', vista: vistaDia },
   hoy: { titulo: 'Hoy en la sede', icono: 'personas', vista: vistaHoy },
   planta: { titulo: 'Planta física', icono: 'edificio', vista: vistaPlanta },
@@ -81,6 +83,8 @@ function pintarRed() {
     : !servidor ? `${icono('sinWifi', 'ic-s')}Sin servidor` : '<span class="punto"></span>En línea';
 }
 
+const permitida = r => (!r.rol || sesion.tieneRol(r.rol)) && (!r.roles || r.roles.some(x => sesion.tieneRol(x)));
+
 // Franja fija bajo el encabezado mientras haya una emergencia o simulacro en curso.
 function pintarBanner() {
   const el = document.getElementById('banner-emergencia');
@@ -89,7 +93,7 @@ function pintarBanner() {
   const e = a.emergencia;
   el.classList.remove('oculto');
   el.classList.toggle('simulacro', e.simulacro);
-  el.innerHTML = `${icono('alerta', 'ic-s')}<span><strong>${e.simulacro ? 'Simulacro' : 'Emergencia'} en curso</strong> · ${esc(emergencia.TIPOS[e.tipo])} · desde las ${esc(horaLegible(horaBogota(new Date(e.inicio))))}</span><span class="banner-ir">Ver</span>`;
+  el.innerHTML = `${icono('alerta', 'ic-s')}<span><strong>${e.simulacro ? 'Simulacro' : 'Emergencia'} en curso</strong> · ${esc(emergencia.TIPOS[e.tipo])} · desde las ${esc(horaLegible(horaBogota(new Date(e.inicio))))}${e.local ? ' · <strong>sin conexión</strong>' : ''}</span><span class="banner-ir">Ver</span>`;
 }
 
 function pintarNav(actual) {
@@ -99,7 +103,7 @@ function pintarNav(actual) {
   nav.classList.remove('oculto');
   salir.classList.remove('oculto');
   nav.innerHTML = Object.entries(RUTAS)
-    .filter(([, r]) => !r.rol || sesion.tieneRol(r.rol))
+    .filter(([, r]) => permitida(r))
     .map(([id, r]) => `<a href="#/${id}" class="pestana ${id === actual ? 'activa' : ''}">${icono(r.icono, 'ic-s')}${esc(r.titulo)}</a>`)
     .join('');
 }
@@ -123,7 +127,7 @@ async function enrutar() {
   const p = sesion.perfil();
   const cfg = sesion.base() && sesion.base().config;
   if (p && p.debeCambiar && cfg && cfg.exigirCambioInicial && ruta !== 'cuenta') { ctx.navegar('cuenta'); return; }
-  if (ruta === 'ingreso' || !RUTAS[ruta] || (RUTAS[ruta].rol && !sesion.tieneRol(RUTAS[ruta].rol))) { ctx.navegar('inicio'); return; }
+  if (ruta === 'ingreso' || !RUTAS[ruta] || !permitida(RUTAS[ruta])) { ctx.navegar('inicio'); return; }
 
   pintarNav(ruta);
   pintarBanner();
@@ -154,6 +158,7 @@ async function iniciar() {
     if (!a) return;
     aviso(`${a.emergencia.simulacro ? 'SIMULACRO' : 'EMERGENCIA'}: ${emergencia.TIPOS[a.emergencia.tipo]}. Siga las instrucciones de los brigadistas.`, a.emergencia.simulacro ? 'advertencia' : 'error');
   });
+  addEventListener('emergencia-sincronizada', () => aviso('Con conexión de nuevo: la emergencia de este celular se unió a la del servidor.', 'exito'));
   addEventListener('emergencia-marcas-tarde', e => aviso(`${e.detail} reporte(s) llegaron después del cierre y no se tuvieron en cuenta.`, 'advertencia'));
   // Descarga en segundo plano mapas y planos para que estén sin conexión.
   contenido.precargar();

@@ -244,7 +244,7 @@ function crearNucleo(dep) {
     return {
       emergencia: emergenciaPublica(e),
       marcas: dep.leer('MarcasEmergencia').filter(function (m) { return m.emergencia === e.id; }).map(function (m) {
-        return { codigo: m.codigo, estado: texto(m.estado), asistencia: texto(m.asistencia) === 'true', llegada: texto(m.llegada), reportadoPor: texto(m.reportadoPor) };
+        return { codigo: m.codigo, estado: texto(m.estado), asistencia: texto(m.asistencia) === 'true', llegada: texto(m.llegada), reportadoPor: texto(m.reportadoPor), actualizado: texto(m.actualizado) };
       }),
       conteos: dep.leer('ConteosEmergencia').filter(function (c) { return c.emergencia === e.id; }).map(function (c) {
         return { piso: num(c.piso), evacuados: num(c.evacuados), noUbicados: num(c.noUbicados), apoyo: num(c.apoyo), reportadoPor: texto(c.reportadoPor) };
@@ -373,10 +373,15 @@ function crearNucleo(dep) {
       }
       if (TIPOS_EMERGENCIA.indexOf(d.tipo) < 0) return falla('DATOS', 'Tipo de emergencia no válido.');
       var actual = emergenciaActiva();
+      // "unirse": un celular que activó la emergencia sin conexión la sincroniza.
+      // Si ya hay una en curso, se une a ella; si no, se crea con la hora de inicio real.
+      if (actual && d.unirse) return ok(estadoEmergencia(actual.id));
       if (actual) return falla('YA_ACTIVA', 'Ya hay ' + (texto(actual.simulacro) === 'true' ? 'un simulacro' : 'una emergencia') + ' en curso.');
+      var ahora = dep.ahora();
+      var inicio = d.unirse && num(d.inicio) ? Math.min(ahora, Math.max(ahora - 12 * 3600000, num(d.inicio))) : ahora;
       var e = {
         id: 'E-' + dep.hoy() + '-' + dep.uuid().slice(0, 6), tipo: d.tipo, descripcion: texto(d.descripcion).slice(0, 200),
-        simulacro: simulacro ? 'true' : 'false', estado: 'activa', inicio: dep.ahora(), activadaPor: p.codigo,
+        simulacro: simulacro ? 'true' : 'false', estado: 'activa', inicio: inicio, activadaPor: p.codigo,
         cierre: '', cerradaPor: '', version: 1, esperados: JSON.stringify(fotoEsperados())
       };
       dep.agregar('Emergencias', e);

@@ -3,7 +3,8 @@
 import { CONFIG } from '../config.js';
 import * as almacen from './almacen.js';
 import * as sesion from './sesion.js';
-import { llamar } from './api.js';
+import { llamar, ErrorApi } from './api.js';
+import * as registro from './registro.js';
 import { horaBogota } from './tiempo.js';
 
 export const TIPOS = {
@@ -41,22 +42,37 @@ function alertar() {
   dispatchEvent(new CustomEvent('emergencia-activada'));
 }
 
+// Emergencia activada en este celular sin conexión y aún no enviada al servidor.
+export const esLocal = () => !!(estado && estado.emergencia && estado.emergencia.local);
+
 // Adopta el estado que llega del servidor y avisa si una emergencia empezó o terminó.
-function adoptar(nuevo) {
+// Mientras haya una emergencia local sin sincronizar, manda la local.
+function adoptar(nuevo, { sincronizacion = false } = {}) {
+  if (esLocal() && !sincronizacion) { avisar(); return; }
   const antes = actual();
   estado = nuevo && nuevo.emergencia ? nuevo : null;
   cola.forEach(aplicarLocal);
   almacen.guardar('emergencia', estado);
   const ahora = actual();
-  if (ahora && (!antes || antes.emergencia.id !== ahora.emergencia.id)) alertar();
+  if (!sincronizacion && ahora && (!antes || antes.emergencia.id !== ahora.emergencia.id)) alertar();
   if (antes && !ahora) dispatchEvent(new CustomEvent('emergencia-terminada', { detail: antes.emergencia }));
   avisar();
 }
 
 export async function iniciar() {
   cola = (await almacen.leer('colaEmergencia')) || [];
-  const guardada = (sesion.base() && sesion.base().emergencia) || (await almacen.leer('emergencia')) || null;
+  const local = await almacen.leer('emergencia');
+  const guardada = local && local.emergencia && local.emergencia.local ? local
+    : (sesion.base() && sesion.base().emergencia) || local || null;
   estado = guardada && guardada.emergencia ? guardada : null;
+  // Una emergencia local de hace más de un día ya no sirve: se descarta (Ley 1581, minimización).
+  if (esLocal() && Date.now() - estado.emergencia.inicio > 86400000) {
+    const id = estado.emergencia.id;
+    estado = null;
+    cola = cola.filter(o => o.emergencia !== id);
+    await almacen.guardar('emergencia', null);
+    await almacen.guardar('colaEmergencia', cola);
+  }
   sesion.alRefrescar(() => { const b = sesion.base(); if (b && 'emergencia' in b) adoptar(b.emergencia); });
   addEventListener('sesion-cerrada', () => { cola = []; estado = null; });
   addEventListener('online', () => { enviar(); consultar(); });
@@ -73,6 +89,7 @@ function programar() {
 // Pregunta al servidor si hay cambios (consulta liviana) y, si los hay, trae el estado completo.
 export async function consultar() {
   if (!sesion.activa() || document.visibilityState === 'hidden') return;
+  if (esLocal()) { await enviar(); if (esLocal()) return; }
   enviar();
   try {
     const r = await llamar('pulso');
@@ -92,7 +109,49 @@ export async function activar(tipo, descripcion, simulacro) {
   programar();
 }
 
+// Sin conexión: la emergencia arranca en este celular con la lista del día que
+// ya está guardada en él. Al volver la señal se une a la del servidor.
+export async function activarLocal(tipo, descripcion, simulacro) {
+  estado = {
+    emergencia: {
+      id: 'L-' + crypto.randomUUID().slice(0, 8), local: true, tipo, descripcion, simulacro: !!simulacro, estado: 'activa',
+      inicio: Date.now(), activadaPor: sesion.perfil().codigo, cierre: null, cerradaPor: '', version: 0, esperados: fotoLocal()
+    },
+    marcas: [], conteos: []
+  };
+  await almacen.guardar('emergencia', estado);
+  alertar();
+  avisar();
+  programar();
+}
+
+// Misma regla que el servidor: por piso, quienes están en la sede y quienes no reportaron su día.
+function fotoLocal() {
+  const foto = {};
+  const registros = registro.hoy().registros;
+  for (const p of ((sesion.base() && sesion.base().personas) || []).filter(x => x.estado === 'activo')) {
+    const r = registros.find(x => x.codigo === p.codigo);
+    const piso = r && r.excepcion ? r.piso : p.piso;
+    const grupo = !r || !r.estado ? 'sin' : r.estado === 'presencial' && !r.salida ? 'en' : null;
+    if (!grupo) continue;
+    (foto[piso] = foto[piso] || { en: [], sin: [] })[grupo].push(p.codigo);
+  }
+  return foto;
+}
+
+async function sincronizarLocal() {
+  const e = estado.emergencia;
+  const r = await llamar('activarEmergencia', { tipo: e.tipo, descripcion: e.descripcion, simulacro: e.simulacro, inicio: e.inicio, unirse: true });
+  const id = r.emergencia.id;
+  cola.forEach(op => { if (op.emergencia === e.id) op.emergencia = id; });
+  await almacen.guardar('colaEmergencia', cola);
+  adoptar(r, { sincronizacion: true });
+  dispatchEvent(new CustomEvent('emergencia-sincronizada'));
+}
+
 export async function cerrar() {
+  if (esLocal()) await enviar();
+  if (esLocal()) throw new ErrorApi('Sin conexión: esta emergencia se activó sin internet y aún no llega al servidor. Podrá cerrarse cuando haya conexión.', 'RED');
   const a = actual();
   if (!a) return;
   await llamar('cerrarEmergencia', { id: a.emergencia.id });
@@ -143,10 +202,12 @@ export function marcarConteo(piso, campos) {
 export const marcarLlegada = codigo => marcarPersona(codigo, { llegada: horaBogota(), estado: 'evacuado' });
 
 export async function enviar() {
-  if (enviando || !cola.length || !sesion.activa()) return;
+  if (enviando || !sesion.activa() || (!cola.length && !esLocal())) return;
   enviando = true;
-  const lote = cola.slice();
   try {
+    if (esLocal()) await sincronizarLocal();
+    if (!cola.length) return;
+    const lote = cola.slice();
     const r = await llamar('marcarEmergencia', { ops: lote });
     const ids = new Set(lote.map(o => o.id));
     cola = cola.filter(o => !ids.has(o.id));
@@ -212,6 +273,8 @@ export function resumen(est = actual()) {
       porPersona,
       asistencia: miembros.filter(x => x.marca && x.marca.asistencia).length,
       llegaron: miembros.filter(x => x.marca && x.marca.llegada).length,
+      // Conciliación: evacuados según el piso que aún no se registran en el punto de encuentro.
+      sinLlegar: miembros.filter(x => x.marca && x.marca.estado === 'evacuado' && !x.marca.llegada).length,
       pendientes,
       conteo,
       reportado
@@ -222,10 +285,33 @@ export function resumen(est = actual()) {
     filas,
     total: {
       esperados: suma('esperados'), evacuados: suma('evacuados'), noUbicados: suma('noUbicados'), apoyo: suma('apoyo'),
-      pendientes: suma('pendientes'), porVerificar: suma('porVerificar'), llegaron: suma('llegaron')
+      pendientes: suma('pendientes'), porVerificar: suma('porVerificar'), llegaron: suma('llegaron'), sinLlegar: suma('sinLlegar')
     },
     sinReporte: filas.filter(f => (f.esperados || f.porVerificar) && !f.reportado).map(f => f.piso)
   };
+}
+
+// Puesto donde estaba la persona hoy (habitual u otro reportado).
+export function puestoDe(codigo) {
+  const p = ((sesion.base() && sesion.base().personas) || []).find(x => x.codigo === codigo);
+  return p ? registro.ubicacionHoy(p) : { piso: null, puesto: null, excepcion: false };
+}
+
+// Quienes aún no llegan al punto de encuentro, con su última ubicación reportada.
+// Primero los no ubicados y quienes piden apoyo; al final, los que no reportaron su día.
+export function ausentes(est = actual()) {
+  const r = resumen(est);
+  if (!r) return [];
+  const lista = [];
+  for (const f of r.filas) {
+    for (const x of f.miembros) {
+      if (x.marca && x.marca.llegada) continue;
+      if (x.grupo === 'extra' && !(x.marca && x.marca.estado)) continue;
+      lista.push({ codigo: x.codigo, piso: f.piso, puesto: puestoDe(x.codigo).puesto, grupo: x.grupo, marca: x.marca });
+    }
+  }
+  const prioridad = m => !m || !m.estado ? 2 : m.estado === 'no_ubicado' ? 0 : m.estado === 'apoyo' ? 1 : 3;
+  return lista.sort((a, b) => (a.grupo === 'sin') - (b.grupo === 'sin') || prioridad(a.marca) - prioridad(b.marca) || a.piso - b.piso);
 }
 
 export function transcurrido(inicio, fin = Date.now()) {

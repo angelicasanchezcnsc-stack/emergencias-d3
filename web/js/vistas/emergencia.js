@@ -91,8 +91,16 @@ export function vistaEmergencia(vista) {
         await emergencia.activar(tipo, f.desc.value.trim(), esSim);
         aviso(esSim ? 'Simulacro iniciado.' : 'Emergencia activada.', 'exito');
       } catch (e) {
-        if (e.codigo === 'YA_ACTIVA') { await emergencia.traer(); aviso(e.message, 'advertencia'); }
-        else aviso(e.codigo === 'RED' ? 'Sin conexión: no se pudo activar. Dé la alarma por los medios del edificio e intente desde otro celular.' : e.message, 'error');
+        if (e.codigo === 'YA_ACTIVA') { await emergencia.traer(); aviso(e.message, 'advertencia'); return; }
+        if (e.codigo !== 'RED') { aviso(e.message, 'error'); return; }
+        // Sin conexión: se ofrece activarla solo en este celular, con la lista del día guardada.
+        const local = await confirmar('Sin conexión',
+          'No hay conexión con el servidor. ¿Activar en <strong>este celular</strong> para registrar el piso y el punto de encuentro sin internet? ' +
+          'Cuando vuelva la señal se unirá sola a la emergencia del servidor. Dé la alarma también por los medios del edificio.',
+          'Activar sin conexión', !esSim);
+        if (!local) return;
+        await emergencia.activarLocal(tipo, f.desc.value.trim(), esSim);
+        aviso('Activada en este celular, sin conexión.', 'advertencia');
       }
     });
   };
@@ -117,13 +125,13 @@ export function vistaEmergencia(vista) {
         <div class="${r.total.apoyo ? 't-ambar' : ''}"><strong>${r.total.apoyo}</strong><span>requieren apoyo</span></div>
       </div>
       <div class="tabla-caja"><table class="tablero">
-        <thead><tr><th>Piso</th><th>En la sede</th><th>Evacuados</th><th>Pendientes</th><th>No ubicados</th><th>Apoyo</th><th>Reporte</th></tr></thead>
+        <thead><tr><th>Piso</th><th>En la sede</th><th>Evacuados</th><th>En el punto</th><th>Pendientes</th><th>No ubicados</th><th>Apoyo</th><th>Reporte</th></tr></thead>
         <tbody>${r.filas.map(f => `<tr>
           <td><strong>Piso ${f.piso}</strong></td><td>${f.esperados}${f.porVerificar ? ` <span class="sutil">+${f.porVerificar} por verificar</span>` : ''}</td>
-          <td>${f.evacuados}</td><td>${f.pendientes}</td><td>${f.noUbicados}</td><td>${f.apoyo}</td>
+          <td>${f.evacuados}</td><td>${f.llegaron}</td><td>${f.pendientes}</td><td>${f.noUbicados}</td><td>${f.apoyo}</td>
           <td>${f.conteo ? insignia('Por conteo', 'azul') : r.sinReporte.includes(f.piso) ? insignia('Sin reporte', 'rojo') : f.esperados || f.porVerificar ? insignia('Con reporte', 'verde') : insignia('Vacío', 'gris')}</td>
         </tr>`).join('')}</tbody>
-        <tfoot><tr><td><strong>Total</strong></td><td>${r.total.esperados}</td><td>${r.total.evacuados}</td><td>${r.total.pendientes}</td><td>${r.total.noUbicados}</td><td>${r.total.apoyo}</td><td></td></tr></tfoot>
+        <tfoot><tr><td><strong>Total</strong></td><td>${r.total.esperados}</td><td>${r.total.evacuados}</td><td>${r.total.llegaron}</td><td>${r.total.pendientes}</td><td>${r.total.noUbicados}</td><td>${r.total.apoyo}</td><td></td></tr></tfoot>
       </table></div>
       ${r.sinReporte.length ? `<div class="nota nota-error" style="margin-top:.75rem">${icono('alerta')}<span>Pisos sin reporte de brigadista: ${r.sinReporte.join(', ')}.</span></div>` : ''}`;
 
@@ -164,13 +172,16 @@ export function vistaEmergencia(vista) {
           ${e.descripcion ? `<span>${esc(e.descripcion)}</span>` : ''}
         </div></div>
       </section>
+      ${emergencia.esLocal() ? `<div class="nota nota-adv">${icono('sinWifi')}<span>Modo sin conexión: esta emergencia se activó en este celular y solo usted la ve. Todo queda guardado aquí y se unirá solo a la del servidor cuando vuelva la señal.</span></div>` : ''}
       ${pendientesEnvio ? `<div class="nota nota-adv">${icono('sinWifi')}<span>${pendientesEnvio} reporte(s) guardado(s) en este celular. Se enviarán solos cuando haya conexión.</span></div>` : ''}
+      ${reporta ? `<a class="btn btn-oscuro btn-ancho btn-grande" href="#/punto" style="margin-bottom:1rem">${icono('ubicacion')}Registrar llegadas al punto de encuentro</a>` : ''}
 
       <section class="tarjeta">
         <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-verde">${icono('persona')}</div>
           <div><h3>Mi estado</h3><p class="sutil">${miMarca && miMarca.estado ? 'Reportado: ' + insigniaMarca(miMarca) : 'Avise cuando esté a salvo'}</p></div></div>
         <div class="botonera">
           <button class="btn btn-primario btn-grande" data-yo="evacuado">${icono('ok')}Ya salí del edificio</button>
+          <button class="btn btn-primario btn-grande" data-yo="llegada">${icono('ubicacion')}Llegué al punto de encuentro</button>
           <button class="btn btn-secundario btn-grande" data-yo="apoyo">${icono('alerta')}Necesito ayuda</button>
         </div>
         <div class="fila" style="margin-top:.75rem">
@@ -206,8 +217,14 @@ export function vistaEmergencia(vista) {
 
     // Mi estado
     vista.querySelectorAll('[data-yo]').forEach(b => b.addEventListener('click', async () => {
-      await emergencia.marcarPersona(yo.codigo, { estado: b.dataset.yo });
-      aviso(b.dataset.yo === 'evacuado' ? 'Reportado: fuera del edificio.' : 'Su solicitud de ayuda quedó registrada. Si puede, avise también en voz alta o llame.', b.dataset.yo === 'evacuado' ? 'exito' : 'advertencia');
+      const que = b.dataset.yo;
+      if (que === 'llegada') {
+        await emergencia.marcarLlegada(yo.codigo);
+        aviso('Registrado: llegó al punto de encuentro. Repórtese también con su brigadista.', 'exito');
+        return;
+      }
+      await emergencia.marcarPersona(yo.codigo, { estado: que });
+      aviso(que === 'evacuado' ? 'Reportado: fuera del edificio.' : 'Su solicitud de ayuda quedó registrada. Si puede, avise también en voz alta o llame.', que === 'evacuado' ? 'exito' : 'advertencia');
     }));
     vista.querySelector('[data-protocolo]')?.addEventListener('click', ev => { sessionStorage.setItem('protocolo-abrir', ev.currentTarget.dataset.protocolo); });
     vista.querySelector('#actualizar')?.addEventListener('click', async () => {

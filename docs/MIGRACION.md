@@ -51,7 +51,7 @@ Respuesta: `{ "ok": true, "datos": {...} }` o `{ "ok": false, "codigo": "...", "
 | `bajarArchivo` | sesión | Trozos cifrados de un archivo |
 | `pulso` | sesión | Consulta liviana (sin candado): emergencia activa y su versión |
 | `emergencia` | sesión | Estado completo: emergencia, foto de esperados por piso, marcas y conteos |
-| `activarEmergencia` | real: administrador, coordinador, suplente o brigadista; simulacro: administrador o coordinador | Abre la emergencia y toma la foto de quién está en la sede |
+| `activarEmergencia` | real: administrador, coordinador, suplente o brigadista; simulacro: administrador o coordinador | Abre la emergencia y toma la foto de quién está en la sede. Con `unirse: true` (emergencia activada sin conexión), se une a la que esté en curso o la crea con su hora de inicio real |
 | `marcarEmergencia` | cada persona sobre sí misma; brigadistas, coordinación y administración sobre cualquiera | Marcas por persona o por conteo (gana la más reciente) |
 | `cerrarEmergencia` | real: administrador, coordinador o suplente; simulacro: administrador o coordinador | Cierra la emergencia |
 

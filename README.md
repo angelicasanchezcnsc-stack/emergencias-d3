@@ -25,7 +25,7 @@ Sirve para saber quién está en la sede, en qué piso y en qué puesto; para qu
 
 ## Estado
 
-Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **6, emergencia en línea**.
+Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **7, punto de encuentro sin conexión**.
 
 - [x] Acceso con correo y contraseña, bloqueo tras 5 intentos fallidos
 - [x] Llave maestra cifrada y carga seudonimizada del Excel de puestos (con recarga y comparación de cambios)
@@ -41,7 +41,10 @@ Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **6, emer
 - [x] Activar emergencia o simulacro (según rol), franja de aviso en todas las pantallas y tablero por piso
 - [x] Reporte propio («Ya salí», «Necesito ayuda») y reporte del brigadista por persona o por conteo, con cola sin conexión
 - [x] Atención prioritaria: no ubicados, quienes piden apoyo y personas con discapacidad que necesitan asistencia
-- [ ] Punto de encuentro sin conexión, conciliación y ausentes, reporte PDF e histórico, caracterización (etapas 7 a 9)
+- [x] Punto de encuentro: registro de llegadas (también «Llegué» desde el celular propio), búsqueda, filtro por piso y pantalla para pleno sol
+- [x] Conciliación piso–punto de encuentro y lista de ausentes con piso, puesto y última ubicación (imprimible y copiable)
+- [x] Emergencia activada sin conexión en el celular, con unión automática a la del servidor al volver la señal
+- [ ] Reporte PDF e histórico, caracterización (etapas 8 y 9)
 
 ## Probar y publicar
 
