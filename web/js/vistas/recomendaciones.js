@@ -1,6 +1,7 @@
 // Recomendaciones: protocolos de autoprotección por tipo de emergencia.
 import * as sesion from '../sesion.js';
 import * as contenido from '../contenido.js';
+import { PROTOCOLOS_INDIVIDUALES } from '../contenido-inicial.js';
 import { esc, icono, aviso, modal, confirmar } from '../ui.js';
 
 const esAdmin = () => sesion.tieneRol('admin');
@@ -68,6 +69,13 @@ export async function vistaRecomendaciones(vista) {
       return;
     }
 
+    // Instalaciones anteriores a la caracterización no tienen los protocolos individuales.
+    const faltanIndividuales = admin && !protocolos.some(p => p.id.startsWith('ind-'));
+    vista.querySelector('#aviso-individuales').innerHTML = faltanIndividuales
+      ? `<div class="nota nota-info">${icono('info')}<span>Faltan los protocolos individuales (movilidad reducida, salud con manejo por horario, embarazo y alergia grave) que se muestran a quien diligencia su caracterización.</span>
+         <button class="btn btn-primario btn-chico" id="agregar-individuales">Agregar protocolos individuales</button></div>` : '';
+    vista.querySelector('#agregar-individuales')?.addEventListener('click', () => guardar([...protocolos, ...PROTOCOLOS_INDIVIDUALES()]));
+
     // Si se llegó desde la emergencia, se abre el protocolo de ese tipo de evento.
     let abrir = null;
     try { abrir = sessionStorage.getItem('protocolo-abrir'); sessionStorage.removeItem('protocolo-abrir'); } catch { /* sin almacenamiento */ }
@@ -110,6 +118,7 @@ export async function vistaRecomendaciones(vista) {
       <div><h2>Recomendaciones</h2><p class="sutil">Qué hacer antes, durante y después de cada tipo de emergencia. Disponibles sin conexión.</p></div>
       ${admin ? `<button class="btn btn-secundario btn-chico no-imprimir" id="agregar">${icono('guardar', 'ic-s')}Agregar protocolo</button>` : ''}
     </div>
+    <div id="aviso-individuales"></div>
     <div id="lista" class="pila"></div>
     <p class="ayuda" style="margin-top:1rem">Fuente: plan de preparación y respuesta ante emergencias de la sede Calle 96 (CNSC, junio de 2024).</p>`;
   vista.querySelector('#agregar')?.addEventListener('click', async () => {

@@ -27,6 +27,11 @@ export function vistaCuenta(vista, ctx) {
           <p>Piso ${p.piso} · Puesto ${p.puesto}</p><div class="fila">${insigniasRol(p) || '<span class="sutil">Sin roles especiales</span>'}</div>`
       })}
       ${tarjeta({
+        icono: 'escudo', tono: 'rojo', titulo: 'Caracterización para emergencias', subtitulo: 'Voluntaria · usted decide qué registrar',
+        cuerpo: `<p>Cuénteles a los brigadistas, de forma privada y cifrada, si necesita algún apoyo para evacuar.</p>
+          <a class="btn btn-secundario" href="#/caracterizacion">Abrir mi caracterización</a>`
+      })}
+      ${tarjeta({
         icono: 'candado', tono: 'ambar', titulo: 'Cambiar contraseña', subtitulo: textoReglas(cfg.reglasClave),
         cuerpo: `<form id="f-clave">
           <div class="campo"><label class="etiqueta" for="actual">Contraseña actual</label><input id="actual" type="password" required autocomplete="current-password"></div>

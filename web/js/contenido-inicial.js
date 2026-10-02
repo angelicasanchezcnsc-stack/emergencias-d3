@@ -249,6 +249,91 @@ export const recomendacionesIniciales = () => ({
   ]
 });
 
+// ---------- Autorización de tratamiento de datos (caracterización individual) ----------
+// Texto estándar basado en la Ley 1581 de 2012 y el Decreto 1377 de 2013 (compilado en el
+// Decreto 1074 de 2015). Es un borrador: debe revisarlo el área jurídica o el oficial de
+// protección de datos de la CNSC. El administrador puede editarlo; cada cambio sube la versión
+// y cada persona debe volver a aceptar.
+export const consentimientoInicial = () => ({
+  version: 'v1',
+  texto: [
+    'AUTORIZACIÓN PARA EL TRATAMIENTO DE DATOS PERSONALES Y SENSIBLES — CARACTERIZACIÓN PARA EMERGENCIAS',
+    'Responsable del tratamiento: Comisión Nacional del Servicio Civil (CNSC), a través del Despacho del Comisionado Edwin Arturo Ruiz Moreno (Despacho 3). Dirección: Carrera 16 No. 96-64, Bogotá D. C. Política de tratamiento de datos personales de la CNSC: https://www.cnsc.gov.co/politica-de-privacidad-y-proteccion-de-datos-personales',
+    'Finalidad: identificar qué apoyo puede necesitar usted para evacuar de forma segura, contactar a la persona que usted indique y orientar a la brigada y a la coordinación de emergencias del Despacho 3 durante una emergencia o un simulacro. Sus datos no se usan para ninguna otra finalidad, ni para evaluar su desempeño ni para decisiones laborales.',
+    'Datos que se recolectan: cargo o vinculación; nombre, parentesco y teléfono de su contacto de emergencia; categoría de condición relevante para la evacuación (movilidad reducida, salud con manejo por horario, embarazo, alergia grave u otra); una nota operativa breve; el apoyo que necesita para evacuar; y observaciones. Algunos de estos datos son sensibles porque se refieren a su salud.',
+    'Carácter facultativo: usted no está obligado a autorizar el tratamiento de datos sensibles ni a responder preguntas sobre ellos. No diligenciar este formulario no tiene ninguna consecuencia laboral ni contractual. Procure no escribir diagnósticos: describa solo qué ayuda necesita.',
+    'Quién puede ver sus datos: usted; el administrador del aplicativo y la coordinación de emergencias del Despacho (coordinador y suplente) pueden ver el detalle completo; los brigadistas de su piso solo ven, durante una emergencia o un simulacro, que usted requiere apoyo, de qué tipo y la persona que haya designado como acompañante; esa persona acompañante ve la misma información mínima.',
+    'Medidas de seguridad: la información se cifra en su dispositivo antes de guardarse y solo puede abrirse con las llaves de las personas autorizadas. No se almacena en claro en servidores de terceros.',
+    'Sus derechos como titular: conocer, actualizar y rectificar sus datos; solicitar prueba de esta autorización; ser informado sobre el uso que se les ha dado; presentar quejas ante la Superintendencia de Industria y Comercio; revocar la autorización y solicitar la supresión de sus datos. Puede ver, modificar o borrar toda su información en cualquier momento desde este mismo aplicativo (opción «Revocar mi autorización y borrar mis datos»). Canal adicional para ejercer sus derechos: el indicado en la política de tratamiento de datos de la CNSC.',
+    'Conservación: sus datos se conservan mientras usted haga parte del Despacho 3 o hasta que revoque su autorización; al retirarse del Despacho se borran.',
+    'Datos de terceros: declaro que la persona cuyo nombre y teléfono registro como contacto de emergencia fue informada de que sus datos serán usados únicamente para avisarle en caso de emergencia.'
+  ].join('\n\n')
+});
+
+// ---------- Protocolos individuales (derivados de la caracterización) ----------
+// Texto general y prudente. Debe revisarlo el Área de Seguridad y Salud en el Trabajo.
+const PI = (id, titulo, secciones) => P(id, 'Protocolo individual — ' + titulo, secciones);
+const REVISAR = 'Este protocolo es una guía general: revíselo con el Área de Seguridad y Salud en el Trabajo y con su médico si es necesario.';
+
+export const PROTOCOLOS_INDIVIDUALES = () => [
+  PI('ind-movilidad', 'movilidad reducida', [
+    ['Antes', [
+      REVISAR,
+      'Acuerde con la coordinación y con su brigadista la ruta alternativa y quién la acompañará. Puede registrar un acompañante en su caracterización.',
+      'Mantenga a la mano su celular cargado y el pito de su puesto.',
+      'Conozca de antemano un lugar seguro donde esperar ayuda si no puede bajar las escaleras.'
+    ]],
+    ['Durante', [
+      'Avise de inmediato a su brigadista o a su acompañante, o use «Necesito ayuda» en el aplicativo.',
+      'No use los ascensores.',
+      'No intente bajar sola o solo por las escaleras si no es seguro para usted: espere ayuda en el lugar seguro acordado, lejos de ventanas.',
+      'Si queda atrapada o atrapado, use el pito y diga su ubicación exacta.'
+    ]],
+    ['Después', [
+      'Repórtese con su brigadista en el punto de encuentro y espere las indicaciones de los equipos de socorro.'
+    ]]
+  ]),
+  PI('ind-salud', 'salud con manejo por horario', [
+    ['Antes', [
+      REVISAR,
+      'Si su médico lo indica, tenga en su puesto lo necesario para varias horas de manejo y un lugar donde pueda llevarlo con usted al evacuar.',
+      'Registre en su caracterización a quién avisar si la emergencia se prolonga.'
+    ]],
+    ['Durante', [
+      'Evacúe con calma llevando lo esencial, si es posible.',
+      'Avise a su brigadista si siente algún malestar.'
+    ]],
+    ['Después', [
+      'Si la emergencia se prolonga, avise a su brigadista o a la coordinación que debe retomar su manejo en un horario fijo; no necesita dar detalles médicos.'
+    ]]
+  ]),
+  PI('ind-embarazo', 'embarazo', [
+    ['Antes', [REVISAR, 'Avise a su brigadista y a la coordinación para que la tengan presente en la evacuación.']],
+    ['Durante', [
+      'Evacúe con calma, sin correr y sin empujar; use el pasamanos de la escalera.',
+      'Si lo necesita, pida apoyo a su brigadista o a su acompañante.',
+      'No use los ascensores.'
+    ]],
+    ['Después', ['Repórtese en el punto de encuentro y avise de inmediato si siente cualquier molestia.']]
+  ]),
+  PI('ind-alergia', 'alergia grave', [
+    ['Antes', [
+      REVISAR,
+      'Tenga a la mano, en su puesto, el medicamento de emergencia que le haya indicado su médico.'
+    ]],
+    ['Durante', [
+      'Lleve consigo su medicamento al evacuar, si es posible.',
+      'Avise a su brigadista si hay humo, polvo o sustancias que puedan afectarla o afectarlo.'
+    ]],
+    ['Después', ['Si presenta síntomas, avise de inmediato a los brigadistas y llame al 123.']]
+  ]),
+  PI('ind-otra', 'otra condición o apoyo', [
+    ['Antes', [REVISAR, 'Hable con la coordinación del Despacho para acordar cómo la o lo ayudarán a evacuar.']],
+    ['Durante', ['Avise a su brigadista o a su acompañante lo que necesita, o use «Necesito ayuda» en el aplicativo.']],
+    ['Después', ['Repórtese con su brigadista en el punto de encuentro.']]
+  ])
+];
+
 // Espacios para archivos que el administrador carga desde la app.
 export const ARCHIVOS = [
   { id: 'punto', nombre: 'Mapa del punto de encuentro', tipo: 'imagen' },

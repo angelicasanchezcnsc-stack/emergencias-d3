@@ -11,8 +11,9 @@
  */
 
 var ESQUEMA = {
+  // "pub": llave pública de la persona (para que otros le envuelvan datos sensibles).
   Personas: ['codigo', 'piso', 'puesto', 'estado', 'roles', 'pisoBrigada', 'hashCorreo', 'verificador',
-    'sobres', 'debeCambiar', 'intentos', 'bloqueadoHasta', 'actualizado'],
+    'sobres', 'debeCambiar', 'intentos', 'bloqueadoHasta', 'actualizado', 'pub'],
   Puestos: ['piso', 'puesto', 'estado'],
   Sesiones: ['tokenHash', 'codigo', 'creada', 'expira'],
   Sobres: ['nombre', 'version', 'datos', 'actualizado'],
@@ -29,7 +30,12 @@ var ESQUEMA = {
   // Al cerrar, "resumen" guarda solo totales y tiempos; se borra el detalle por persona.
   Emergencias: ['id', 'tipo', 'descripcion', 'simulacro', 'estado', 'inicio', 'activadaPor', 'cierre', 'cerradaPor', 'version', 'esperados', 'resumen'],
   MarcasEmergencia: ['emergencia', 'codigo', 'estado', 'asistencia', 'llegada', 'reportadoPor', 'actualizado', 'momentos'],
-  ConteosEmergencia: ['emergencia', 'piso', 'evacuados', 'noUbicados', 'apoyo', 'reportadoPor', 'actualizado', 'momentos']
+  ConteosEmergencia: ['emergencia', 'piso', 'evacuados', 'noUbicados', 'apoyo', 'reportadoPor', 'actualizado', 'momentos'],
+  // Caracterización individual para emergencias. Todo viene cifrado desde el navegador:
+  // "datos" es el detalle completo (lo leen la persona y la coordinación) y "apoyo" es
+  // solo lo que necesitan brigadistas y acompañante. "claves" y "clavesApoyo" guardan, por
+  // destinatario, la llave de los datos envuelta con su llave pública. El servidor no puede leer nada.
+  Caracterizaciones: ['codigo', 'version', 'datos', 'claves', 'apoyo', 'clavesApoyo', 'consentimiento', 'actualizado']
 };
 
 var ROLES_VALIDOS = ['admin', 'coordinador', 'suplente', 'brigadista'];
@@ -41,8 +47,13 @@ var CAMPOS_REGISTRO = ['estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'sali
 var SOBRES_CONTENIDO = {
   contactos: ['admin', 'coordinador', 'suplente'],
   recomendaciones: ['admin'],
-  rutas: ['admin']
+  rutas: ['admin'],
+  consentimiento: ['admin']   // texto de la autorización de tratamiento de datos
 };
+
+// Quién puede leer el detalle completo de la caracterización de cualquier persona.
+var ROLES_LECTORES = ['admin', 'coordinador', 'suplente'];
+var MAX_DESTINATARIOS = 80;
 var LIMITE_CELDA = 45000;   // Google Sheets admite 50.000 caracteres por celda
 var MAX_PARTES = 60;
 var ARCHIVO_VALIDO = /^(punto|ruta-\d{1,2}|plano-\d{1,2})$/;
@@ -111,8 +122,54 @@ function crearNucleo(dep) {
   function publica(p) {
     return {
       codigo: p.codigo, piso: num(p.piso), puesto: num(p.puesto), estado: texto(p.estado),
-      roles: roles(p), pisoBrigada: p.pisoBrigada ? num(p.pisoBrigada) : null
+      roles: roles(p), pisoBrigada: p.pisoBrigada ? num(p.pisoBrigada) : null, pub: texto(p.pub)
     };
+  }
+
+  // ---------- Caracterización: validaciones ----------
+
+  function llavePublicaValida(s) {
+    if (typeof s !== 'string' || s.length > 400) return false;
+    var j = json(s, null);
+    return !!j && j.kty === 'EC' && j.crv === 'P-256' && typeof j.x === 'string' && typeof j.y === 'string';
+  }
+
+  function huellaDe(pub) { return sha256(pub).slice(0, 16); }
+
+  // Llaves públicas vigentes de las personas activas: { codigo: pub }.
+  function llavesPublicas() {
+    var o = {};
+    dep.leer('Personas').filter(activa).forEach(function (x) { o[x.codigo] = texto(x.pub); });
+    return o;
+  }
+
+  // Mapa codigo -> envoltorio {h, e, c}. Cada envoltorio debe ser para una persona activa y
+  // estar hecho con su llave pública vigente (la huella tiene que coincidir).
+  function mapaEnvoltorios(m, pubs) {
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return null;
+    var codigos = Object.keys(m);
+    if (!codigos.length || codigos.length > MAX_DESTINATARIOS) return null;
+    for (var i = 0; i < codigos.length; i++) {
+      var w = m[codigos[i]];
+      var pub = pubs[codigos[i]];
+      if (!pub || !w || typeof w.h !== 'string' || typeof w.e !== 'string' || typeof w.c !== 'string') return null;
+      if (w.h !== huellaDe(pub) || w.e.length > 400 || w.c.length > 600) return null;
+    }
+    return m;
+  }
+
+  // Solo las huellas de un mapa de envoltorios (para que la coordinación sepa quién tiene acceso).
+  function soloHuellas(m) {
+    var o = {};
+    Object.keys(m).forEach(function (c) { o[c] = m[c].h; });
+    return o;
+  }
+
+  function borrarCaracterizacionesInactivas(personas) {
+    var activos = personas.filter(activa).map(function (x) { return x.codigo; });
+    var filas = dep.leer('Caracterizaciones');
+    var quedan = filas.filter(function (f) { return activos.indexOf(f.codigo) >= 0; });
+    if (quedan.length !== filas.length) dep.escribir('Caracterizaciones', quedan);
   }
 
   function sesionActual(token) {
@@ -554,6 +611,140 @@ function crearNucleo(dep) {
       return ok(estadoEmergencia(e.id));
     },
 
+    // ---------- Caracterización individual (todo llega cifrado desde el navegador) ----------
+
+    // Cada persona genera su par de llaves la primera vez que ingresa. La privada llega
+    // ya cifrada con su contraseña: el servidor nunca puede abrirla.
+    registrarPar: function (d, p) {
+      var personas = dep.leer('Personas');
+      var x = personas.filter(function (y) { return y.codigo === p.codigo; })[0];
+      var sobres = json(x.sobres, {});
+      if (sobres.priv) return falla('YA_EXISTE', 'Ya tiene un par de llaves.');
+      if (!llavePublicaValida(d.pub) || typeof d.priv !== 'string' || !d.priv || d.priv.length > 2000) return falla('DATOS', 'Llaves no válidas.');
+      x.pub = d.pub;
+      sobres.priv = d.priv;
+      x.sobres = JSON.stringify(sobres);
+      x.actualizado = new Date(dep.ahora()).toISOString();
+      dep.escribir('Personas', personas);
+      bitacora(p.codigo, 'par-llaves', '');
+      return ok({ perfil: perfil(x) });
+    },
+
+    // Solo la persona misma puede crear o cambiar su caracterización: el servidor no recibe
+    // el código de otra persona.
+    guardarCaracterizacion: function (d, p) {
+      var pubs = llavesPublicas();
+      var claves = mapaEnvoltorios(d.claves, pubs);
+      var clavesApoyo = mapaEnvoltorios(d.clavesApoyo, pubs);
+      if (!claves || !clavesApoyo || !claves[p.codigo] || !clavesApoyo[p.codigo]) return falla('DATOS', 'Datos incompletos o llaves desactualizadas. Cierre sesión y vuelva a ingresar.');
+      if (typeof d.datos !== 'string' || typeof d.apoyo !== 'string' || !d.datos || !d.apoyo || d.datos.length > LIMITE_CELDA || d.apoyo.length > LIMITE_CELDA) {
+        return falla('DATOS', 'El contenido es demasiado largo.');
+      }
+      var v = d.consentimiento ? texto(d.consentimiento.v).slice(0, 20) : '';
+      if (!v) return falla('CONSENTIMIENTO', 'Falta la aceptación de la autorización de tratamiento de datos.');
+      var filas = dep.leer('Caracterizaciones');
+      var actual = filas.filter(function (c) { return c.codigo === p.codigo; })[0];
+      var versionActual = actual ? num(actual.version) : 0;
+      if (d.versionBase !== undefined && d.versionBase !== null && num(d.versionBase) !== versionActual) {
+        return falla('CONFLICTO', 'Su caracterización cambió desde otro dispositivo. Recargue e intente de nuevo.');
+      }
+      var ahora = new Date(dep.ahora()).toISOString();
+      var previo = actual ? json(actual.consentimiento, {}) : {};
+      var fila = {
+        codigo: p.codigo, version: versionActual + 1, datos: d.datos, claves: JSON.stringify(claves),
+        apoyo: d.apoyo, clavesApoyo: JSON.stringify(clavesApoyo),
+        consentimiento: JSON.stringify({ v: v, f: previo.v === v && previo.f ? previo.f : ahora }), actualizado: ahora
+      };
+      dep.escribir('Caracterizaciones', filas.filter(function (c) { return c.codigo !== p.codigo; }).concat([fila]));
+      if (previo.v !== v) bitacora(p.codigo, 'consentimiento', v);
+      bitacora(p.codigo, 'caracterizacion', 'v' + fila.version);
+      return ok({ version: fila.version, consentimiento: JSON.parse(fila.consentimiento) });
+    },
+
+    miCaracterizacion: function (d, p) {
+      var f = dep.leer('Caracterizaciones').filter(function (c) { return c.codigo === p.codigo; })[0];
+      if (!f) return ok({ registro: null });
+      return ok({
+        registro: {
+          version: num(f.version), datos: f.datos, apoyo: f.apoyo,
+          clave: json(f.claves, {})[p.codigo] || null, claveApoyo: json(f.clavesApoyo, {})[p.codigo] || null,
+          consentimiento: json(f.consentimiento, null), actualizado: f.actualizado
+        }
+      });
+    },
+
+    // La persona revoca su autorización: se borra todo su registro.
+    revocarCaracterizacion: function (d, p) {
+      var filas = dep.leer('Caracterizaciones');
+      var quedan = filas.filter(function (c) { return c.codigo !== p.codigo; });
+      if (quedan.length !== filas.length) { dep.escribir('Caracterizaciones', quedan); bitacora(p.codigo, 'revocacion', ''); }
+      return ok();
+    },
+
+    // Detalle completo: solo para administrador, coordinador y suplente. Cada uno recibe
+    // únicamente su propio envoltorio de la llave (no puede abrir lo que no le corresponde).
+    caracterizaciones: function (d, p) {
+      if (!puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden ver las caracterizaciones.');
+      var activos = llavesPublicas();
+      return ok({
+        caracterizaciones: dep.leer('Caracterizaciones').filter(function (f) { return activos[f.codigo] !== undefined; }).map(function (f) {
+          var c = json(f.claves, {}), a = json(f.clavesApoyo, {});
+          return {
+            codigo: f.codigo, version: num(f.version), datos: f.datos, apoyo: f.apoyo,
+            clave: c[p.codigo] || null, claveApoyo: a[p.codigo] || null,
+            huellas: soloHuellas(c), huellasApoyo: soloHuellas(a),
+            consentimiento: json(f.consentimiento, null), actualizado: f.actualizado
+          };
+        })
+      });
+    },
+
+    // Lo mínimo para atender una evacuación: quién necesita apoyo y de qué tipo.
+    // Brigadistas: solo personas de su piso. Coordinación: todas. Acompañantes: las suyas.
+    apoyos: function (d, p) {
+      var lector = puedeEditar(p, ROLES_LECTORES);
+      var pisoBrigada = tieneRol(p, 'brigadista') ? num(p.pisoBrigada) : 0;
+      var personas = dep.leer('Personas').filter(activa);
+      var salida = [];
+      dep.leer('Caracterizaciones').forEach(function (f) {
+        if (f.codigo === p.codigo) return;
+        var dueno = personas.filter(function (x) { return x.codigo === f.codigo; })[0];
+        var w = json(f.clavesApoyo, {})[p.codigo];
+        if (!dueno || !w) return;
+        if (!lector && pisoBrigada && num(dueno.piso) !== pisoBrigada) return;
+        salida.push({ codigo: f.codigo, version: num(f.version), apoyo: f.apoyo, clave: w });
+      });
+      return ok({ apoyos: salida });
+    },
+
+    // La coordinación actualiza quién puede abrir cada registro (nuevo coordinador, nuevo
+    // brigadista, persona que renovó su llave). Solo toca los envoltorios, nunca los datos.
+    reenvolver: function (d, p) {
+      if (!puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden hacer esto.');
+      var pubs = llavesPublicas();
+      var filas = dep.leer('Caracterizaciones');
+      var n = 0;
+      (d.cambios || []).forEach(function (c) {
+        var f = filas.filter(function (x) { return x.codigo === c.codigo; })[0];
+        if (!f) return;
+        [['claves', 'agregar', 'quitar'], ['clavesApoyo', 'agregarApoyo', 'quitarApoyo']].forEach(function (par) {
+          var mapa = json(f[par[0]], {});
+          var nuevos = c[par[1]];
+          if (nuevos && Object.keys(nuevos).length) {
+            var validos = mapaEnvoltorios(nuevos, pubs);
+            if (!validos) throw new Error('Envoltorios no válidos.');
+            Object.keys(validos).forEach(function (k) { mapa[k] = validos[k]; });
+          }
+          (c[par[2]] || []).forEach(function (k) { if (k !== f.codigo) delete mapa[k]; });   // la persona nunca pierde su acceso
+          f[par[0]] = JSON.stringify(mapa);
+        });
+        n++;
+      });
+      dep.escribir('Caracterizaciones', filas);
+      if (n) bitacora(p.codigo, 'accesos', n + ' registro(s)');
+      return ok({ n: n });
+    },
+
     // Histórico de emergencias y simulacros cerrados: solo totales y tiempos.
     historial: function (d, p) {
       if (!puedeEditar(p, ROLES_REPORTAR)) return falla('PERMISO', 'No tiene permiso para ver el histórico.');
@@ -681,6 +872,9 @@ function crearNucleo(dep) {
       if (hashVerificador(d.verificadorActual) !== yo.verificador) return falla('CREDENCIALES', 'La contraseña actual no es correcta.');
       if (!d.verificadorNuevo || !d.sobresNuevos) return falla('DATOS', 'Faltan datos para cambiar la contraseña.');
       yo.verificador = hashVerificador(d.verificadorNuevo);
+      // Si tenía llave privada y el cambio no la trae re-cifrada con la contraseña nueva,
+      // quedaría inservible: se descarta la pública para generar un par nuevo al ingresar.
+      if (json(yo.sobres, {}).priv && !d.sobresNuevos.priv) yo.pub = '';
       yo.sobres = JSON.stringify(d.sobresNuevos);
       yo.debeCambiar = 'false';
       yo.actualizado = new Date(dep.ahora()).toISOString();
@@ -694,6 +888,8 @@ function crearNucleo(dep) {
       var personas = dep.leer('Personas');
       aplicarPadron(d.personas || [], personas);
       dep.escribir('Personas', personas);
+      // Quien se retira deja de estar en el Despacho: se borra su caracterización.
+      borrarCaracterizacionesInactivas(personas);
       if (d.puestos) dep.escribir('Puestos', d.puestos);
       var version = d.sobreDirectorio ? guardarSobre('directorio', d.sobreDirectorio) : null;
       bitacora(p.codigo, 'padron', (d.personas || []).length + ' cambios');
@@ -734,6 +930,9 @@ function crearNucleo(dep) {
       if (!x) return falla('DATOS', 'No existe la persona ' + d.codigo + '.');
       x.verificador = hashVerificador(d.verificador);
       x.sobres = JSON.stringify(d.sobres || {});
+      // Al restablecer la contraseña se pierde la llave privada (estaba cifrada con la anterior):
+      // se borra la pública y la persona genera un par nuevo en su próximo ingreso.
+      x.pub = '';
       x.debeCambiar = d.debeCambiar ? 'true' : 'false';
       x.intentos = 0; x.bloqueadoHasta = 0;
       if (d.hashCorreo) x.hashCorreo = d.hashCorreo;

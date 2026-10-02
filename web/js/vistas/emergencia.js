@@ -3,6 +3,7 @@
 import { CONFIG } from '../../config.js';
 import * as sesion from '../sesion.js';
 import * as emergencia from '../emergencia.js';
+import * as carac from '../caracterizacion.js';
 import { esc, icono, aviso, insignia, confirmar, modal } from '../ui.js';
 import { horaLegible, horaBogota } from '../tiempo.js';
 
@@ -22,10 +23,23 @@ function insigniaMarca(m) {
   return insignia(t, tono) + (m.llegada ? ' ' + insignia('Llegó ' + horaLegible(m.llegada), 'verde') : '');
 }
 
+// Apoyo que la persona registró en su caracterización (solo lo ven brigadistas de su piso,
+// la coordinación y su acompañante, y solo mientras hay una emergencia o simulacro).
+function textoApoyo(codigo) {
+  const ap = carac.apoyoDe(codigo);
+  if (!ap || ap.apoyo === 'ninguno') return '';
+  return `${carac.etiqueta(carac.APOYOS, ap.apoyo)}${ap.detalle ? ': ' + ap.detalle : ''}${ap.acompanante ? ' · lo acompaña ' + sesion.nombreDe(ap.acompanante) : ''}`;
+}
+
+function chipApoyo(codigo) {
+  const t = textoApoyo(codigo);
+  return t ? `<span class="chip-apoyo">${icono('alerta', 'ic-s')}<span>Necesita apoyo — ${esc(t)}</span></span>` : '';
+}
+
 function filaPersona(codigo, m, extra = '') {
   const activo = s => (m && m.estado === s ? 'activo' : '');
   return `<div class="fila-marca" data-codigo="${esc(codigo)}">
-    <div class="fila-dia-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong><span class="sutil">${extra}${insigniaMarca(m)}</span></div>
+    <div class="fila-dia-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong><span class="sutil">${extra}${insigniaMarca(m)}</span>${chipApoyo(codigo)}</div>
     <div class="marca-btns">
       <button class="btn-estado ${activo('evacuado')} e-evacuado" data-estado="evacuado" title="Evacuado">${icono('ok', 'ic-s')}<span>Evacuado</span></button>
       <button class="btn-estado ${activo('no_ubicado')} e-no" data-estado="no_ubicado" title="No ubicado">${icono('alerta', 'ic-s')}<span>No ubicado</span></button>
@@ -117,6 +131,15 @@ export function vistaEmergencia(vista) {
     const fila = r.filas.find(f => f.piso === pisoSel) || r.filas[0];
     const pendientesEnvio = emergencia.pendientes();
     const apoyo = a.marcas.filter(m => m.estado === 'apoyo' || m.asistencia || m.estado === 'no_ubicado');
+    // Quienes registraron antes que necesitan apoyo y aún no han salido, más los marcados en la emergencia.
+    const aSalvo = c => { const m = marcas.get(c); return !!(m && (m.estado === 'evacuado' || m.llegada)); };
+    const prioridad = [
+      ...apoyo.map(m => ({ codigo: m.codigo, m })),
+      ...carac.todosLosApoyos().filter(x => x.apoyo !== 'ninguno' && !aSalvo(x.codigo) && !apoyo.some(m => m.codigo === x.codigo))
+        .map(x => ({ codigo: x.codigo, m: marcas.get(x.codigo) || null }))
+    ];
+    // Personas a las que este usuario debe acompañar.
+    const aMiCargo = carac.todosLosApoyos().filter(x => x.acompanante === yo.codigo && x.apoyo !== 'ninguno');
 
     const tablero = `
       <div class="resumen-grande">
@@ -192,12 +215,20 @@ export function vistaEmergencia(vista) {
         </div>
       </section>
 
-      ${reporta && apoyo.length ? `<section class="tarjeta tarjeta-alerta">
-        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-ambar">${icono('alerta')}</div><div><h3>Atención prioritaria</h3><p class="sutil">Personas no ubicadas, que piden apoyo o que necesitan asistencia</p></div></div>
-        ${apoyo.map(m => {
-          const f = r.filas.find(x => x.miembros.some(y => y.codigo === m.codigo));
-          return `<div class="contacto"><div class="contacto-txt"><strong>${esc(sesion.nombreDe(m.codigo))}</strong>
-            <span class="sutil">${f ? 'Piso ' + f.piso + ' · ' : ''}${insigniaMarca(m)}${m.asistencia ? ' ' + insignia('Asistencia por discapacidad', 'azul') : ''}</span></div></div>`;
+      ${aMiCargo.length ? `<section class="tarjeta tarjeta-alerta">
+        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-ambar">${icono('persona')}</div><div><h3>Usted acompaña a alguien</h3><p class="sutil">Esta persona designó que usted la ayude a evacuar</p></div></div>
+        ${aMiCargo.map(x => `<div class="contacto"><div class="contacto-txt"><strong>${esc(sesion.nombreDe(x.codigo))}</strong>
+          <span class="sutil">${esc(carac.etiqueta(carac.APOYOS, x.apoyo))}${x.detalle ? ': ' + esc(x.detalle) : ''}</span></div></div>`).join('')}
+      </section>` : ''}
+
+      ${reporta && prioridad.length ? `<section class="tarjeta tarjeta-alerta">
+        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-ambar">${icono('alerta')}</div><div><h3>Atención prioritaria</h3><p class="sutil">Personas no ubicadas, que piden apoyo, que necesitan asistencia o que registraron que requieren apoyo</p></div></div>
+        ${prioridad.map(({ codigo, m }) => {
+          const f = r.filas.find(x => x.miembros.some(y => y.codigo === codigo));
+          const pre = textoApoyo(codigo);
+          return `<div class="contacto"><div class="contacto-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong>
+            <span class="sutil">${f ? 'Piso ' + f.piso + ' · ' : ''}${insigniaMarca(m)}${m && m.asistencia ? ' ' + insignia('Asistencia por discapacidad', 'azul') : ''}</span>
+            ${pre ? `<span class="chip-apoyo">${icono('alerta', 'ic-s')}<span>${esc(pre)}</span></span>` : ''}</div></div>`;
         }).join('')}
       </section>` : ''}
 
@@ -292,6 +323,7 @@ export function vistaEmergencia(vista) {
   const alTerminar = ev => { terminada = ev.detail; };
   const alSalirCampo = () => { if (pendientePintar) setTimeout(pintar, 0); };
   addEventListener('emergencia-cambio', alCambiar);
+  addEventListener('apoyos-cambio', alCambiar);
   addEventListener('emergencia-terminada', alTerminar);
   vista.addEventListener('focusout', alSalirCampo);
   const reloj = setInterval(() => {
@@ -300,6 +332,7 @@ export function vistaEmergencia(vista) {
   }, 1000);
   vista.addEventListener('vista-salida', () => {
     removeEventListener('emergencia-cambio', alCambiar);
+    removeEventListener('apoyos-cambio', alCambiar);
     removeEventListener('emergencia-terminada', alTerminar);
     vista.removeEventListener('focusout', alSalirCampo);
     clearInterval(reloj);

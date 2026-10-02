@@ -60,6 +60,14 @@ export function vistaInicio(vista) {
         cuerpo: `<a class="btn btn-secundario" href="#/rutas">Ver rutas</a>`
       })}
       ${tarjeta({
+        icono: 'escudo', tono: 'rojo', titulo: 'Mi caracterización', subtitulo: 'Voluntaria y cifrada: apoyo que necesita para evacuar',
+        cuerpo: `<a class="btn btn-secundario" href="#/caracterizacion">Abrir</a>`
+      })}
+      ${['admin', 'coordinador', 'suplente'].some(r => sesion.tieneRol(r)) ? tarjeta({
+        icono: 'personas', tono: 'azul', titulo: 'Caracterizaciones del Despacho', subtitulo: 'Quién necesita apoyo para evacuar',
+        cuerpo: `<a class="btn btn-secundario" href="#/caracterizaciones">Ver caracterizaciones</a>`
+      }) : ''}
+      ${tarjeta({
         icono: 'libro', tono: 'morado', titulo: 'Recomendaciones', subtitulo: 'Qué hacer en sismo, incendio y otros eventos',
         cuerpo: `<a class="btn btn-secundario" href="#/recomendaciones">Ver recomendaciones</a>`
       })}

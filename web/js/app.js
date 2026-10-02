@@ -14,6 +14,9 @@ import { vistaRecomendaciones } from './vistas/recomendaciones.js';
 import { vistaEmergencia } from './vistas/emergencia.js';
 import { vistaPunto } from './vistas/punto.js';
 import { vistaHistorico } from './vistas/historico.js';
+import { vistaCaracterizacion } from './vistas/caracterizacion.js';
+import { vistaCaracterizaciones } from './vistas/caracterizaciones.js';
+import * as carac from './caracterizacion.js';
 import * as contenido from './contenido.js';
 import * as registro from './registro.js';
 import * as emergencia from './emergencia.js';
@@ -28,6 +31,8 @@ const RUTAS = {
   emergencia: { titulo: 'Emergencia', icono: 'alerta', vista: vistaEmergencia },
   punto: { titulo: 'Punto de encuentro', icono: 'ubicacion', vista: vistaPunto, roles: emergencia.ROLES_REPORTAR },
   historico: { titulo: 'Histórico', icono: 'reloj', vista: vistaHistorico, roles: emergencia.ROLES_REPORTAR },
+  caracterizaciones: { titulo: 'Caracterizaciones', icono: 'escudo', vista: vistaCaracterizaciones, roles: ['admin', 'coordinador', 'suplente'] },
+  caracterizacion: { titulo: 'Mi caracterización', icono: 'candado', vista: vistaCaracterizacion, nav: false },
   dia: { titulo: 'Mi día', icono: 'reloj', vista: vistaDia },
   hoy: { titulo: 'Hoy en la sede', icono: 'personas', vista: vistaHoy },
   planta: { titulo: 'Planta física', icono: 'edificio', vista: vistaPlanta },
@@ -105,7 +110,7 @@ function pintarNav(actual) {
   nav.classList.remove('oculto');
   salir.classList.remove('oculto');
   nav.innerHTML = Object.entries(RUTAS)
-    .filter(([, r]) => permitida(r))
+    .filter(([, r]) => permitida(r) && r.nav !== false)
     .map(([id, r]) => `<a href="#/${id}" class="pestana ${id === actual ? 'activa' : ''}">${icono(r.icono, 'ic-s')}${esc(r.titulo)}</a>`)
     .join('');
 }
@@ -154,6 +159,7 @@ async function iniciar() {
   }
   await registro.iniciar();
   await emergencia.iniciar();
+  await carac.iniciar();
   addEventListener('emergencia-cambio', pintarBanner);
   addEventListener('emergencia-activada', () => {
     const a = emergencia.actual();

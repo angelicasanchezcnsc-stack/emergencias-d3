@@ -1,0 +1,148 @@
+// Mi caracterización para emergencias. Solo la propia persona puede diligenciarla,
+// con su autorización informada. Nadie más (ni el administrador) la completa por ella.
+import * as sesion from '../sesion.js';
+import * as carac from '../caracterizacion.js';
+import { esc, icono, aviso, confirmar } from '../ui.js';
+import { fechaLegible, fechaBogota } from '../tiempo.js';
+
+const { CATEGORIAS, APOYOS, VINCULACIONES } = carac;
+const opciones = (lista, actual) => lista.map(([v, t]) => `<option value="${esc(v)}" ${v === actual ? 'selected' : ''}>${esc(t)}</option>`).join('');
+const parrafos = texto => String(texto || '').split(/\n\n+/)
+  .map(p => `<p>${esc(p).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')}</p>`).join('');
+
+function seccionProtocolo(p) {
+  if (!p) return '';
+  return `<section class="tarjeta">
+    <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-verde">${icono('libro')}</div><div><h3>${esc(p.titulo)}</h3><p class="sutil">Su protocolo de evacuación según lo que registró</p></div></div>
+    ${p.secciones.map(s => `<h4>${esc(s.titulo)}</h4><ol>${s.items.map(t => `<li>${esc(t)}</li>`).join('')}</ol>`).join('')}
+  </section>`;
+}
+
+const rolDe = p => (p.roles.includes('admin') ? 'administrador' : p.roles.includes('coordinador') ? 'coordinador' : 'suplente');
+
+export async function vistaCaracterizacion(vista) {
+  const yo = sesion.perfil();
+  vista.innerHTML = '<div class="titulo-vista"><h2>Mi caracterización para emergencias</h2></div><p class="sutil">Cargando…</p>';
+
+  const listo = carac.listoParaUsar();
+  const [consent, mio] = await Promise.all([
+    carac.consentimientoActual(),
+    listo ? carac.leerMio().catch(() => ({ ilegible: true, error: true })) : Promise.resolve(null)
+  ]);
+  const existe = !!mio;
+  const ilegible = !!(mio && mio.ilegible);
+  const d = (mio && mio.datos) || { vinculacion: '', contacto: { nombre: '', parentesco: '', telefono: '' }, categoria: 'ninguna', nota: '', observaciones: '' };
+  const a = (mio && mio.apoyo) || { apoyo: 'ninguno', detalle: '', acompanante: null };
+  const aceptada = mio && mio.consentimiento && mio.consentimiento.v;
+  const versionCambio = existe && aceptada !== consent.version;
+  const colegas = (sesion.base().personas || []).filter(p => p.estado === 'activo' && p.codigo !== yo.codigo)
+    .sort((x, y) => sesion.nombreDe(x.codigo).localeCompare(sesion.nombreDe(y.codigo), 'es'));
+  const lectores = carac.lectores();
+  const protocolo = existe && !ilegible ? await carac.protocoloIndividual(carac.idProtocoloIndividual(d, a)) : null;
+  const fechaAut = mio && mio.consentimiento ? mio.consentimiento.f : (mio && mio.actualizado);
+
+  vista.innerHTML = `
+    <div class="titulo-vista"><h2>Mi caracterización para emergencias</h2>
+      <p class="sutil">Piso ${yo.piso} · Puesto ${yo.puesto} · Es voluntaria y solo usted puede diligenciarla</p></div>
+
+    ${!listo ? `<div class="nota nota-adv">${icono('candado')}<span>Para proteger sus datos con su llave personal, <strong>cierre la sesión y vuelva a ingresar</strong>. Después podrá diligenciar este formulario.</span></div>` : ''}
+    ${ilegible ? `<div class="nota nota-adv">${icono('alerta')}<span>${mio.error ? 'No se pudo abrir su registro.' : 'Su registro guardado no se puede abrir con su llave actual (por ejemplo, si le restablecieron la contraseña).'} Se vuelve a habilitar cuando alguien de la coordinación ingrese, o puede diligenciarlo de nuevo y reemplazar el anterior.</span></div>` : ''}
+    ${existe && !ilegible ? `<div class="nota nota-exito">${icono('ok')}<span>Su caracterización está guardada. Autorizó el ${esc(fechaLegible(fechaBogota(new Date(fechaAut))))} (texto ${esc(aceptada || '—')}). Puede cambiarla o borrarla cuando quiera.</span></div>` : ''}
+    ${versionCambio ? `<div class="nota nota-info">${icono('info')}<span>El texto de la autorización cambió (${esc(aceptada)} → ${esc(consent.version)}). Léalo y acéptelo de nuevo al guardar.</span></div>` : ''}
+
+    <section class="tarjeta">
+      <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-azul">${icono('escudo')}</div><div><h3>Para qué sirve</h3><p class="sutil">En una evacuación, saber qué apoyo necesita cada persona ahorra tiempo</p></div></div>
+      <p>No tiene que llenarla. Si la diligencia, sus datos se <strong>cifran en su celular</strong>: Google y GitHub solo guardan texto ilegible.</p>
+      <ul class="lista-simple">
+        <li><strong>Ven el detalle completo:</strong> usted${lectores.length ? ' y ' + lectores.map(p => `${esc(sesion.nombreDe(p.codigo))} (${rolDe(p)})`).join(', ') : ' y la coordinación'}.</li>
+        <li><strong>Los brigadistas de su piso ven solo</strong>, durante una emergencia o un simulacro, si necesita apoyo, de qué tipo y quién lo acompaña.</li>
+        <li>Nadie más ve nada.</li>
+      </ul>
+    </section>
+
+    <form id="f-carac" class="pila" ${!listo ? 'inert style="opacity:.6"' : ''}>
+      <section class="tarjeta">
+        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-ambar">${icono('libro')}</div><div><h3>Autorización de tratamiento de datos</h3><p class="sutil">Léala completa antes de continuar · versión ${esc(consent.version)}</p></div></div>
+        <div class="texto-legal" tabindex="0">${parrafos(consent.texto)}</div>
+        <label class="casilla"><input type="checkbox" id="acepto" ${existe && !versionCambio ? 'checked' : ''}><span><strong>He leído y autorizo</strong> el tratamiento de mis datos personales y sensibles para esta finalidad.</span></label>
+        <label class="casilla"><input type="checkbox" id="tercero" ${existe ? 'checked' : ''}><span>Informé a mi contacto de emergencia que sus datos se usarán solo para avisarle en una emergencia.</span></label>
+      </section>
+
+      <section class="tarjeta">
+        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-verde">${icono('persona')}</div><div><h3>Mis datos</h3><p class="sutil">Registre solo lo necesario para una evacuación segura</p></div></div>
+        <div class="campo"><label class="etiqueta" for="vinculacion">Cargo o vinculación</label>
+          <select id="vinculacion"><option value="">Seleccione…</option>${VINCULACIONES.map(v => `<option ${v === d.vinculacion ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
+        <h4>Contacto de emergencia</h4>
+        <div class="campo"><label class="etiqueta" for="c-nombre">Nombre</label><input id="c-nombre" type="text" maxlength="80" value="${esc(d.contacto.nombre)}" autocomplete="off"></div>
+        <div class="fila">
+          <div class="campo" style="flex:1;min-width:10rem"><label class="etiqueta" for="c-parentesco">Parentesco</label><input id="c-parentesco" type="text" maxlength="40" value="${esc(d.contacto.parentesco)}" placeholder="Ej.: madre, esposo" autocomplete="off"></div>
+          <div class="campo" style="flex:1;min-width:10rem"><label class="etiqueta" for="c-telefono">Teléfono</label><input id="c-telefono" type="tel" maxlength="20" value="${esc(d.contacto.telefono)}" autocomplete="off"></div>
+        </div>
+        <h4>Condición relevante para evacuar</h4>
+        <div class="campo"><label class="etiqueta" for="categoria">Categoría</label><select id="categoria">${opciones(CATEGORIAS, d.categoria)}</select></div>
+        <div class="campo"><label class="etiqueta" for="nota">Nota operativa (opcional)</label><textarea id="nota" rows="2" maxlength="200" placeholder="Qué hacer o a quién avisar si la emergencia se prolonga">${esc(d.nota)}</textarea>
+          <p class="ayuda">No escriba diagnósticos ni nombres de enfermedades.</p></div>
+        <div class="campo"><label class="etiqueta" for="observaciones">Observaciones (opcional)</label><textarea id="observaciones" rows="2" maxlength="300">${esc(d.observaciones)}</textarea></div>
+      </section>
+
+      <section class="tarjeta">
+        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-rojo">${icono('alerta')}</div><div><h3>Apoyo para evacuar</h3><p class="sutil">Esto sí lo verán los brigadistas de su piso durante una emergencia</p></div></div>
+        <div class="campo"><label class="etiqueta" for="apoyo">Apoyo que necesito</label><select id="apoyo">${opciones(APOYOS, a.apoyo)}</select></div>
+        <div id="bloque-apoyo" class="${a.apoyo === 'ninguno' ? 'oculto' : ''}">
+          <div class="campo"><label class="etiqueta" for="detalle">¿Qué necesita exactamente? (breve)</label><input id="detalle" type="text" maxlength="120" value="${esc(a.detalle)}" placeholder="Ej.: ayuda para bajar por la escalera" autocomplete="off"></div>
+          <div class="campo"><label class="etiqueta" for="acompanante">Persona que me acompaña (opcional)</label>
+            <select id="acompanante"><option value="">Ninguna</option>${colegas.map(p => `<option value="${esc(p.codigo)}" ${p.codigo === a.acompanante ? 'selected' : ''}>${esc(sesion.nombreDe(p.codigo))} — P${p.piso}-${p.puesto}</option>`).join('')}</select>
+            <p class="ayuda">Esa persona verá, en una emergencia, que usted necesita su ayuda y de qué tipo. Hable con ella antes.</p></div>
+        </div>
+      </section>
+
+      <div id="error" class="nota nota-error oculto"></div>
+      <div class="fila">
+        <button class="btn btn-primario btn-grande" type="submit" id="guardar">${icono('guardar')}Guardar mi caracterización</button>
+        ${existe ? '<button class="btn btn-peligro" type="button" id="revocar">Revocar mi autorización y borrar mis datos</button>' : ''}
+      </div>
+    </form>
+
+    ${seccionProtocolo(protocolo)}`;
+
+  const f = vista.querySelector('#f-carac');
+  const apoyoSel = f.querySelector('#apoyo');
+  apoyoSel.addEventListener('change', () => f.querySelector('#bloque-apoyo').classList.toggle('oculto', apoyoSel.value === 'ninguno'));
+
+  f.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const error = f.querySelector('#error');
+    const falla = m => { error.innerHTML = `${icono('alerta')}<span>${esc(m)}</span>`; error.classList.remove('oculto'); error.scrollIntoView({ block: 'center' }); };
+    error.classList.add('oculto');
+    if (!f.acepto.checked) return falla('Para guardar debe leer y aceptar la autorización de tratamiento de datos.');
+    if (!f.tercero.checked) return falla('Confirme que informó a su contacto de emergencia.');
+    const contacto = { nombre: f['c-nombre'].value.trim(), parentesco: f['c-parentesco'].value.trim(), telefono: f['c-telefono'].value.trim() };
+    if (!contacto.nombre || !contacto.telefono) return falla('Escriba el nombre y el teléfono de su contacto de emergencia.');
+    const apoyo = apoyoSel.value;
+    const datos = { vinculacion: f.vinculacion.value, contacto, categoria: f.categoria.value, nota: f.nota.value.trim(), observaciones: f.observaciones.value.trim() };
+    const apoyoDatos = {
+      apoyo, detalle: apoyo === 'ninguno' ? '' : f.detalle.value.trim(),
+      acompanante: apoyo === 'ninguno' ? null : (f.acompanante.value || null)
+    };
+    if (apoyo !== 'ninguno' && !apoyoDatos.detalle) return falla('Describa brevemente qué apoyo necesita, para que puedan ayudarle.');
+    const boton = f.querySelector('#guardar');
+    boton.disabled = true;
+    try {
+      const r = await carac.guardarMio(datos, apoyoDatos, consent.version, existe && !ilegible ? mio.version : undefined);
+      aviso(r.sinAcceso && r.sinAcceso.length
+        ? 'Guardada. La coordinación podrá abrirla cuando ingrese por primera vez a su cuenta.'
+        : 'Caracterización guardada y cifrada.', 'exito');
+      sesion.refrescar().catch(() => {});
+      vistaCaracterizacion(vista);
+    } catch (e) {
+      falla(e.codigo === 'RED' ? 'Sin conexión: la caracterización solo se puede guardar con internet.' : e.message);
+      boton.disabled = false;
+    }
+  });
+
+  f.querySelector('#revocar')?.addEventListener('click', async () => {
+    if (!await confirmar('Revocar autorización', 'Se borrarán todos sus datos de caracterización. Podrá volver a diligenciarla cuando quiera.', 'Borrar mis datos', true)) return;
+    try { await carac.revocarMio(); aviso('Su autorización fue revocada y sus datos se borraron.', 'exito'); vistaCaracterizacion(vista); }
+    catch (e) { aviso(e.codigo === 'RED' ? 'Sin conexión: intente de nuevo con internet.' : e.message, 'error'); }
+  });
+}

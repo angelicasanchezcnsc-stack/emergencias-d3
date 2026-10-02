@@ -3,6 +3,7 @@
 import { CONFIG } from '../../config.js';
 import * as sesion from '../sesion.js';
 import * as emergencia from '../emergencia.js';
+import * as carac from '../caracterizacion.js';
 import { esc, icono, aviso, insignia, modal, confirmar } from '../ui.js';
 import { horaLegible, horaBogota } from '../tiempo.js';
 
@@ -13,13 +14,22 @@ function leerSol() { try { return localStorage.getItem('d3e-modo-sol') === '1'; 
 function guardarSol(v) { try { localStorage.setItem('d3e-modo-sol', v ? '1' : '0'); } catch { /* sin almacenamiento */ } }
 
 const ubicacionTexto = x => `Piso ${x.piso}${x.puesto ? ', puesto ' + x.puesto : ''}`;
-function ultimaUbicacion(x) {
+function estadoUltimo(x) {
   const m = x.marca;
   if (x.grupo === 'sin' && !(m && m.estado)) return 'No reportó su día: verificar si vino a la sede';
   if (!m || !m.estado) return 'Sin reporte del brigadista';
   const quien = m.reportadoPor && m.reportadoPor !== x.codigo ? ' (reportó ' + sesion.nombreDe(m.reportadoPor) + ')' : '';
   const cuando = m.actualizado ? ' a las ' + horaLegible(horaBogota(new Date(m.actualizado))) : '';
   return ESTADO_PISO[m.estado] + cuando + quien;
+}
+
+// Última ubicación reportada y, si la persona registró que necesita apoyo, qué apoyo (para
+// que los bomberos y la brigada sepan que puede seguir dentro del edificio).
+function ultimaUbicacion(x) {
+  const ap = carac.apoyoDe(x.codigo);
+  const apoyo = ap && ap.apoyo !== 'ninguno'
+    ? ` · NECESITA APOYO: ${carac.etiqueta(carac.APOYOS, ap.apoyo)}${ap.detalle ? ' (' + ap.detalle + ')' : ''}` : '';
+  return estadoUltimo(x) + apoyo;
 }
 
 // Texto plano de los ausentes, para leerlo por teléfono o copiarlo.
@@ -179,11 +189,12 @@ export function vistaPunto(vista) {
     pintar();
   };
   addEventListener('emergencia-cambio', alCambiar);
+  addEventListener('apoyos-cambio', alCambiar);
   const reloj = setInterval(() => {
     const a = emergencia.actual();
     vista.querySelectorAll('[data-transcurrido]').forEach(el => { if (a) el.textContent = emergencia.transcurrido(a.emergencia.inicio); });
   }, 1000);
-  vista.addEventListener('vista-salida', () => { removeEventListener('emergencia-cambio', alCambiar); clearInterval(reloj); vista.classList.remove('modo-sol'); }, { once: true });
+  vista.addEventListener('vista-salida', () => { removeEventListener('emergencia-cambio', alCambiar); removeEventListener('apoyos-cambio', alCambiar); clearInterval(reloj); vista.classList.remove('modo-sol'); }, { once: true });
   pintar();
   emergencia.consultar();
 }

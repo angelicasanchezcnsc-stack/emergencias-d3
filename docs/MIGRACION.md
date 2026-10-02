@@ -55,6 +55,13 @@ Respuesta: `{ "ok": true, "datos": {...} }` o `{ "ok": false, "codigo": "...", "
 | `marcarEmergencia` | cada persona sobre sí misma; brigadistas, coordinación y administración sobre cualquiera | Marcas por persona o por conteo (gana la más reciente) |
 | `cerrarEmergencia` | real: administrador, coordinador o suplente; simulacro: administrador o coordinador | Cierra la emergencia, calcula el informe (totales y tiempos por piso, con observaciones) y **borra el detalle por persona** de esa emergencia |
 | `historial` | administrador, coordinador, suplente o brigadista | Últimos 100 eventos cerrados con su informe; sin nombres, códigos ni quién activó o cerró |
+| `registrarPar` | sesión | La persona registra su llave pública y su llave privada ya cifrada con su contraseña (solo si aún no tiene) |
+| `guardarCaracterizacion` / `miCaracterizacion` / `revocarCaracterizacion` | la propia persona | Crea, lee o borra solo su registro cifrado. Exige la aceptación de la autorización y que cada envoltorio coincida con la llave pública vigente del destinatario |
+| `caracterizaciones` | administrador, coordinador o suplente | Registros cifrados y el envoltorio propio de cada uno |
+| `apoyos` | cualquiera con envoltorio (brigadistas: solo su piso) | Solo el apoyo cifrado para evacuar |
+| `reenvolver` | administrador, coordinador o suplente | Agrega o quita destinatarios de un registro (nuevo coordinador o brigadista, llave renovada); nunca toca los datos |
+
+**Si la CNSC exige otro esquema de cifrado:** los puntos de ajuste de la caracterización están en `web/js/cripto.js` (envolturas ECDH) y `web/js/caracterizacion.js` (quién recibe qué).
 
 ## 3. Llave maestra
 

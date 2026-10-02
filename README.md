@@ -22,10 +22,11 @@ Sirve para saber quién está en la sede, en qué piso y en qué puesto; para qu
 - Los nombres viajan en un **sobre cifrado** (AES-GCM) que solo se abre en el celular de quien inició sesión. La llave de cada sobre está protegida con la contraseña de cada persona.
 - La **llave maestra** (código → nombre, correo, celular) es un archivo cifrado que vive solo en el computador del administrador. Nunca va en esta carpeta ni en el repositorio.
 - Los insumos (Excel, planos con nombres, contactos) **no se suben** a ningún repositorio. Ver `.gitignore`.
+- **Caracterización individual:** cada persona tiene un par de llaves (ECDH P-256); la privada vive cifrada con su contraseña y la pública está en el servidor. Los datos se cifran con una llave aleatoria que se entrega, envuelta con la llave pública de cada destinatario, solo a quien corresponde: la persona y la coordinación (detalle completo), y además brigadistas y acompañante (solo el apoyo para evacuar). El servidor y Google no pueden leer nada; el servidor además controla quién recibe qué.
 
 ## Estado
 
-Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **8, cierre, informe e histórico**.
+Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **9, caracterización individual**.
 
 - [x] Acceso con correo y contraseña, bloqueo tras 5 intentos fallidos
 - [x] Llave maestra cifrada y carga seudonimizada del Excel de puestos (con recarga y comparación de cambios)
@@ -46,7 +47,11 @@ Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **8, cier
 - [x] Emergencia activada sin conexión en el celular, con unión automática a la del servidor al volver la señal
 - [x] Cierre con observaciones e informe de totales y tiempos por piso (línea de tiempo con la estructura del Anexo 7 del plan), imprimible o en PDF
 - [x] Histórico de simulacros y emergencias, sin nombres; al cerrar se borra el detalle por persona
-- [ ] Caracterización con consentimiento (etapa 9)
+- [x] Caracterización individual voluntaria, con autorización informada (texto editable y versionado), cifrada de extremo a extremo: solo la persona, el administrador y la coordinación abren el detalle
+- [x] Apoyo para evacuar visible, solo durante una emergencia, para los brigadistas de su piso, la coordinación y el acompañante que la persona designe
+- [x] Revocación y borrado por la propia persona; el registro se borra si la persona se retira del Despacho
+- [x] Protocolos individuales derivados de la caracterización (editables)
+- [ ] Pruebas con el equipo, piloto en un piso y ajustes finales (etapas 10 y 11)
 
 ## Probar y publicar
 

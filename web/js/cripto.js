@@ -65,6 +65,50 @@ export const nuevaLlaveDatos = () => crypto.getRandomValues(new Uint8Array(32));
 export const importarLlaveDatos = raw =>
   crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
 
+// ---------- Llaves por persona (para compartir datos sensibles solo con quien corresponde) ----------
+// Cada persona tiene un par de llaves ECDH (P-256). La pública está en el servidor;
+// la privada vive cifrada con su contraseña. Para dar acceso a alguien, se envuelve
+// la llave de los datos con la pública de esa persona (cifrado híbrido tipo ECIES).
+
+const CURVA = { name: 'ECDH', namedCurve: 'P-256' };
+
+export const generarPar = () => crypto.subtle.generateKey(CURVA, true, ['deriveBits']);
+
+const jwkCompacto = j => JSON.stringify({ kty: j.kty, crv: j.crv, x: j.x, y: j.y });
+export async function exportarPublica(llave) { return jwkCompacto(await crypto.subtle.exportKey('jwk', llave)); }
+export const exportarPrivada = async llave => new Uint8Array(await crypto.subtle.exportKey('pkcs8', llave));
+export const importarPrivada = (pkcs8, extraible = false) => crypto.subtle.importKey('pkcs8', pkcs8, CURVA, extraible, ['deriveBits']);
+export const importarPublica = jwk => crypto.subtle.importKey('jwk', JSON.parse(jwk), CURVA, true, []);
+export const huella = async jwk => aHex(await crypto.subtle.digest('SHA-256', cod.encode(jwk))).slice(0, 16);
+
+async function llaveDeEnvoltura(bits, contexto) {
+  const base = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: cod.encode('D3E|envoltura|' + contexto) },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+// Envuelve unos bytes (la llave de los datos) para una persona. "contexto" amarra el
+// envoltorio al registro al que pertenece, para que no pueda cambiarse de lugar.
+export async function envolverPara(publicaJwk, bytes, contexto) {
+  const efimera = await generarPar();
+  const bits = await crypto.subtle.deriveBits({ name: 'ECDH', public: await importarPublica(publicaJwk) }, efimera.privateKey, 256);
+  const k = await llaveDeEnvoltura(bits, contexto);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, k, bytes));
+  const salida = new Uint8Array(12 + ct.length);
+  salida.set(iv);
+  salida.set(ct, 12);
+  return { h: await huella(publicaJwk), e: await exportarPublica(efimera.publicKey), c: aB64(salida) };
+}
+
+export async function desenvolver(privada, envoltorio, contexto) {
+  const bits = await crypto.subtle.deriveBits({ name: 'ECDH', public: await importarPublica(envoltorio.e) }, privada, 256);
+  const k = await llaveDeEnvoltura(bits, contexto);
+  const d = deB64(envoltorio.c);
+  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: d.slice(0, 12) }, k, d.slice(12)));
+}
+
 // Contraseña temporal legible (sin 0/O, 1/l/I).
 export function claveTemporal(largo = 10) {
   const alfabeto = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
