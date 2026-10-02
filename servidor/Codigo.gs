@@ -79,6 +79,11 @@ function adaptadorSheets() {
       var candado = LockService.getScriptLock();
       candado.waitLock(20000);
       try { return fn(); } finally { candado.releaseLock(); }
+    },
+    // Memoria corta de respuestas, para que un reintento no repita una acción.
+    cache: {
+      get: function (clave) { return CacheService.getScriptCache().get(clave); },
+      put: function (clave, valor, segundos) { CacheService.getScriptCache().put(clave, valor, segundos); }
     }
   };
 }

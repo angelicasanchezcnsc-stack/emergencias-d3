@@ -82,7 +82,8 @@ var CONFIG_INICIAL = {
  * dep = {
  *   leer(tabla) -> [objetos], escribir(tabla, filas), agregar(tabla, fila),
  *   agregarVarias(tabla, filas), prop(nombre), uuid(), ahora() -> ms,
- *   hoy() -> 'AAAA-MM-DD' en hora de Bogotá, bloqueo(fn)
+ *   hoy() -> 'AAAA-MM-DD' en hora de Bogotá, bloqueo(fn),
+ *   cache (opcional) = { get(clave) -> texto|null, put(clave, texto, segundos) }
  * }
  */
 function crearNucleo(dep) {
@@ -1002,16 +1003,38 @@ function crearNucleo(dep) {
   var PUBLICAS = { ping: true, inicializar: true, ingresar: true };
   // Solo leen: no toman el candado, para que muchos celulares consulten a la vez.
   var SIN_BLOQUEO = { pulso: true, emergencia: true, bajarArchivo: true, historial: true };
+  // Lecturas: repetirlas no cambia nada, no hace falta recordar su respuesta.
+  var LECTURAS = { ping: true, base: true, pulso: true, emergencia: true, hoy: true, bajarArchivo: true, historial: true,
+    caracterizaciones: true, apoyos: true, miCaracterizacion: true };
+
+  // Google a veces pierde la respuesta después de ejecutar la acción. El celular reintenta
+  // con el mismo idPeticion y el servidor devuelve la respuesta guardada en vez de repetirla
+  // (cambiar dos veces una contraseña, cerrar dos veces una emergencia...).
+  function recordada(peticion) {
+    if (!dep.cache || !peticion.idPeticion || LECTURAS[peticion.accion]) return null;
+    try { var v = dep.cache.get('r:' + texto(peticion.idPeticion).slice(0, 64)); return v ? JSON.parse(v) : null; } catch (e) { return null; }
+  }
+  function recordar(peticion, respuesta) {
+    if (!dep.cache || !peticion.idPeticion || LECTURAS[peticion.accion]) return;
+    try { dep.cache.put('r:' + texto(peticion.idPeticion).slice(0, 64), JSON.stringify(respuesta), 600); } catch (e) { /* respuesta muy grande: no se recuerda */ }
+  }
 
   function procesar(peticion) {
     try {
       var accion = peticion && peticion.accion;
       if (!acciones[accion]) return falla('ACCION', 'Acción desconocida.');
       var ejecutar = function () {
-        if (PUBLICAS[accion]) return acciones[accion](peticion);
-        var p = sesionActual(peticion.token);
-        if (!p) return falla('SESION', 'La sesión expiró. Ingrese de nuevo.');
-        return acciones[accion](peticion, p);
+        var previa = recordada(peticion);
+        if (previa) return previa;
+        var r;
+        if (PUBLICAS[accion]) r = acciones[accion](peticion);
+        else {
+          var p = sesionActual(peticion.token);
+          if (!p) return falla('SESION', 'La sesión expiró. Ingrese de nuevo.');
+          r = acciones[accion](peticion, p);
+        }
+        recordar(peticion, r);
+        return r;
       };
       return SIN_BLOQUEO[accion] ? ejecutar() : dep.bloqueo(ejecutar);
     } catch (e) {

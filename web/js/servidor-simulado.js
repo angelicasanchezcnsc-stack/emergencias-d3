@@ -38,7 +38,14 @@ const adaptador = {
   uuid: () => crypto.randomUUID(),
   ahora: () => Date.now() + desfase,
   hoy: () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(Date.now() + desfase)),
-  bloqueo: fn => fn()
+  bloqueo: fn => fn(),
+  cache: (() => {
+    const m = new Map();
+    return {
+      get: k => { const v = m.get(k); return v && v.hasta > Date.now() ? v.valor : null; },
+      put: (k, valor, s) => { m.set(k, { valor, hasta: Date.now() + s * 1000 }); }
+    };
+  })()
 };
 
 let nucleo;

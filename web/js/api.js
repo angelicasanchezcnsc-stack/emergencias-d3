@@ -9,25 +9,33 @@ export class ErrorApi extends Error {
 let token = null;
 export const fijarToken = t => { token = t; };
 
+const esperar = ms => new Promise(r => setTimeout(r, ms));
+
+// Google a veces ejecuta la acción pero pierde la respuesta (error 404, una página en vez
+// de datos o la respuesta de la consulta simple). En esos casos se reintenta con el mismo
+// idPeticion: el servidor devuelve la respuesta que ya tenía, sin repetir la acción.
 async function remoto(accion, datos) {
   if (!CONFIG.URL_SERVIDOR) throw new ErrorApi('Falta configurar la dirección del servidor (config.js).', 'CONFIG');
-  let r;
-  try {
-    // text/plain evita la verificación previa de CORS, que Apps Script no admite.
-    r = await fetch(CONFIG.URL_SERVIDOR, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ accion, ...datos })
-    });
-  } catch {
-    throw new ErrorApi('Sin conexión con el servidor.', 'RED');
-  }
-  if (!r.ok) throw new ErrorApi('El servidor respondió con un error (' + r.status + ').', 'RED');
-  try {
-    return await r.json();
-  } catch {
-    // Google a veces responde con una página en vez de datos (por ejemplo, al "despertar").
-    throw new ErrorApi('El servidor no respondió como se esperaba. Intente de nuevo en unos segundos.', 'RED');
+  const cuerpo = JSON.stringify({ accion, ...datos, idPeticion: crypto.randomUUID() });
+  const pausas = [700, 1500, 3000];
+  for (let intento = 0; ; intento++) {
+    let r;
+    try {
+      // text/plain evita la verificación previa de CORS, que Apps Script no admite.
+      r = await fetch(CONFIG.URL_SERVIDOR, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: cuerpo });
+    } catch {
+      throw new ErrorApi('Sin conexión con el servidor.', 'RED');
+    }
+    let res = null;
+    if (r.ok) { try { res = await r.json(); } catch { res = null; } }
+    // La respuesta de la consulta simple (doGet) significa que Google perdió la de esta acción.
+    const perdida = !res || (res.ok && res.datos && res.datos.servicio && !('inicializado' in res.datos));
+    if (!perdida) return res;
+    if (intento >= pausas.length) {
+      throw new ErrorApi(r.ok ? 'El servidor no respondió como se esperaba. Intente de nuevo en unos segundos.'
+        : 'El servidor respondió con un error (' + r.status + '). Intente de nuevo en unos segundos.', 'RED');
+    }
+    await esperar(pausas[intento]);
   }
 }
 
