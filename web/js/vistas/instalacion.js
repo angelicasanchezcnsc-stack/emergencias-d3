@@ -123,6 +123,11 @@ export async function vistaInstalacion(vista, ctx) {
     } catch (e) {
       llave.restaurar(copia);
       capa.cerrar();
+      if (e.codigo === 'YA_INICIALIZADO') {
+        aviso('El aplicativo ya estaba inicializado. Ingrese con su correo y la contraseña temporal; si no la anotó, búsquela en la llave desde la pantalla de ingreso.', 'advertencia');
+        ctx.alTerminar();
+        return;
+      }
       aviso(e.message, 'error');
     }
   });

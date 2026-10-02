@@ -1,5 +1,8 @@
 import * as sesion from '../sesion.js';
 import { esc, icono, aviso } from '../ui.js';
+import * as llave from '../llave.js';
+import * as cripto from '../cripto.js';
+import { abrirLlave, mostrarCredencial } from './comun.js';
 
 export function vistaIngreso(vista, ctx) {
   vista.innerHTML = `
@@ -23,7 +26,26 @@ export function vistaIngreso(vista, ctx) {
         <p class="ayuda centrado" style="margin-top:.8rem">¿Olvidó la contraseña? Pídale al administrador una nueva contraseña temporal.</p>
       </form>
       <p class="ayuda centrado">Su correo se convierte en una huella antes de salir del celular; el servidor nunca lo recibe.</p>
+      <p class="centrado"><button class="btn btn-fantasma btn-chico" id="desde-llave" type="button">${icono('llave', 'ic-s')}Administrador: ver una contraseña temporal en la llave</button></p>
     </div>`;
+
+  // El administrador puede consultar, en su propio computador, una contraseña temporal
+  // que aún no ha entregado: está guardada (cifrada) en la llave maestra.
+  vista.querySelector('#desde-llave').addEventListener('click', async () => {
+    const correo = cripto.normalizarCorreo(f.correo.value);
+    if (!correo) { aviso('Escriba primero el correo en el campo de arriba.', 'advertencia'); f.correo.focus(); return; }
+    try {
+      if (!await abrirLlave()) return;
+      const p = llave.personas().find(x => x.correo === correo && x.estado === 'activo');
+      if (!p) aviso('Ese correo no está en la llave.', 'error');
+      else if (!p.claveTemporal) aviso('La llave no tiene una contraseña temporal pendiente para ese correo (ya se marcó como entregada).', 'advertencia');
+      else await mostrarCredencial(p);
+    } catch (e) {
+      aviso(e.message, 'error');
+    } finally {
+      llave.cerrar();
+    }
+  });
 
   const f = vista.querySelector('#f-ingreso');
   if (sesion.correoGuardado()) f.clave.focus(); else f.correo.focus();
