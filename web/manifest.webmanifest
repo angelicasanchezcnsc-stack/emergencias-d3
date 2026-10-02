@@ -1,0 +1,17 @@
+{
+  "name": "EMERGENCIAS D3 — Despacho 3 CNSC",
+  "short_name": "EMERGENCIAS D3",
+  "description": "Aplicativo de emergencias del Despacho 3 de la CNSC, sede Calle 96.",
+  "lang": "es-CO",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FAFAFA",
+  "theme_color": "#FFEE58",
+  "icons": [
+    { "src": "img/icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "img/icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "img/icono.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

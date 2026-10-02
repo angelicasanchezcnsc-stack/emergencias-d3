@@ -1,0 +1,19 @@
+# Datos personales: nunca van al repositorio (Ley 1581 de 2012).
+# La llave maestra y cualquier insumo viven fuera de esta carpeta.
+*.d3llave
+*.xlsx
+*.xls
+*.csv
+*.rtf
+*.docx
+*.pdf
+llave*/
+Insumos/
+insumos/
+datos-locales/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
