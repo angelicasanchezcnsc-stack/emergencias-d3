@@ -45,6 +45,10 @@ Respuesta: `{ "ok": true, "datos": {...} }` o `{ "ok": false, "codigo": "...", "
 | `guardarRoles` | administrador | Roles, piso de brigada y directorio cifrado |
 | `guardarConfig` | administrador | Reglas de contraseña y duración de la sesión |
 | `restablecerClave` | administrador | Contraseña temporal nueva para una persona |
+| `hoy` / `registrar` | sesión | Registro diario de ubicación (marcas con momento; gana la más reciente) |
+| `guardarContenido` | administrador (contactos: también coordinador y suplente) | Sobres de contactos, recomendaciones y rutas, con control de versión |
+| `subirArchivo` / `quitarArchivo` | administrador | Mapas, rutas y planos cifrados, en trozos de hasta 45.000 caracteres |
+| `bajarArchivo` | sesión | Trozos cifrados de un archivo |
 
 ## 3. Llave maestra
 

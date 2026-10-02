@@ -25,7 +25,7 @@ Sirve para saber quién está en la sede, en qué piso y en qué puesto; para qu
 
 ## Estado
 
-Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **4, uso diario**.
+Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **5, contenido disponible sin conexión**.
 
 - [x] Acceso con correo y contraseña, bloqueo tras 5 intentos fallidos
 - [x] Llave maestra cifrada y carga seudonimizada del Excel de puestos (con recarga y comparación de cambios)
@@ -35,7 +35,10 @@ Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **4, uso 
 - [x] Mi día: llegada, salida, regreso, otro puesto, ausencias y corrección de horas
 - [x] Reporte de compañeros, listado por piso "Hoy en la sede" y censo del día imprimible en PDF
 - [x] Cola de reportes sin conexión, que se envían solos al volver la señal
-- [ ] Contactos, emergencia, punto de encuentro, cierre y caracterización (etapas 5 a 9)
+- [x] Contactos de emergencia editables (con «Pendiente» y «Por verificar»), brigada y coordinación del Despacho
+- [x] Rutas de evacuación, punto de encuentro y planos por piso, guardados cifrados y descargados al celular
+- [x] Recomendaciones por tipo de emergencia, editables por el administrador
+- [ ] Emergencia, punto de encuentro sin conexión, cierre y caracterización (etapas 6 a 9)
 
 ## Probar y publicar
 

@@ -5,6 +5,7 @@ import { llamar } from '../api.js';
 import { leerXlsx, interpretarPlanta } from '../xlsx.js';
 import { esc, icono, aviso, espera, tarjeta } from '../ui.js';
 import { previaExcel, elegirArchivo, guardarLlave, abrirLlave, mostrarCredencial } from './comun.js';
+import { SEMILLAS } from '../contenido.js';
 
 export async function vistaInstalacion(vista, ctx) {
   let filas = null;
@@ -109,7 +110,11 @@ export async function vistaInstalacion(vista, ctx) {
       const admin = llave.personas().find(p => p.correo === correoAdmin);
       items.find(i => i.codigo === admin.codigo).roles = ['admin'];
       capa.texto('Enviando al servidor…');
-      await llamar('inicializar', { codigoInstalacion: codigo, personas: items, puestos, sobreDirectorio: await llave.sobreDirectorio() });
+      await llamar('inicializar', {
+        codigoInstalacion: codigo, personas: items, puestos,
+        sobreDirectorio: await llave.sobreDirectorio(),
+        sobresContenido: await llave.sobresIniciales(SEMILLAS)
+      });
       capa.cerrar();
       await guardarLlave();
       await mostrarCredencial(admin);

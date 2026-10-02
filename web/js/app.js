@@ -8,6 +8,10 @@ import { vistaInicio } from './vistas/inicio.js';
 import { vistaDia } from './vistas/dia.js';
 import { vistaHoy } from './vistas/hoy.js';
 import { vistaPlanta } from './vistas/planta.js';
+import { vistaContactos } from './vistas/contactos.js';
+import { vistaRutas } from './vistas/rutas.js';
+import { vistaRecomendaciones } from './vistas/recomendaciones.js';
+import * as contenido from './contenido.js';
 import * as registro from './registro.js';
 import { confirmar } from './ui.js';
 import { vistaCuenta } from './vistas/cuenta.js';
@@ -19,6 +23,9 @@ const RUTAS = {
   dia: { titulo: 'Mi día', icono: 'reloj', vista: vistaDia },
   hoy: { titulo: 'Hoy en la sede', icono: 'personas', vista: vistaHoy },
   planta: { titulo: 'Planta física', icono: 'edificio', vista: vistaPlanta },
+  contactos: { titulo: 'Contactos', icono: 'telefono', vista: vistaContactos },
+  rutas: { titulo: 'Rutas', icono: 'ubicacion', vista: vistaRutas },
+  recomendaciones: { titulo: 'Recomendaciones', icono: 'libro', vista: vistaRecomendaciones },
   cuenta: { titulo: 'Mi cuenta', icono: 'persona', vista: vistaCuenta },
   admin: { titulo: 'Administración', icono: 'ajustes', vista: vistaAdmin, rol: 'admin' }
 };
@@ -56,7 +63,7 @@ function armazon() {
   addEventListener('online', pintarRed);
   addEventListener('offline', pintarRed);
   addEventListener('estado-servidor', pintarRed);
-  addEventListener('online', () => sesion.activa() && sesion.refrescar().catch(() => {}));
+  addEventListener('online', () => sesion.activa() && sesion.refrescar().then(() => contenido.precargar()).catch(() => {}));
   pintarRed();
 }
 
@@ -123,6 +130,9 @@ async function iniciar() {
     try { await sesion.refrescar(); } catch { /* sesión vencida: refrescar ya la cerró */ }
   }
   await registro.iniciar();
+  // Descarga en segundo plano mapas y planos para que estén sin conexión.
+  contenido.precargar();
+  addEventListener('sesion-iniciada', () => contenido.precargar());
   addEventListener('registro-vencido', e => aviso(`${e.detail} reporte(s) de un día anterior no se enviaron porque ya cambió la fecha.`, 'advertencia'));
   addEventListener('hashchange', enrutar);
   enrutar();

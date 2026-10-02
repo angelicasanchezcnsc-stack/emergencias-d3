@@ -85,6 +85,14 @@ export async function sobreDirectorio() {
   return cripto.cifrarJSON(await llaveDir(), { generado: ahoraIso(), personas: lista });
 }
 
+// Contenido inicial (contactos, recomendaciones y rutas) cifrado con la llave del directorio.
+export async function sobresIniciales(semillas) {
+  const llaveDatos = await llaveDir();
+  const salida = {};
+  for (const [nombre, crear] of Object.entries(semillas)) salida[nombre] = await cripto.cifrarJSON(llaveDatos, crear());
+  return salida;
+}
+
 function nuevoCodigo() {
   const codigo = CONFIG.PREFIJO_CODIGO + String(llave.siguiente).padStart(3, '0');
   llave.siguiente += 1;

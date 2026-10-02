@@ -1,6 +1,6 @@
 import * as sesion from '../sesion.js';
 import * as registro from '../registro.js';
-import { esc, tarjeta, insignia } from '../ui.js';
+import { esc, icono, tarjeta, insignia } from '../ui.js';
 import { horaLegible } from '../tiempo.js';
 import { insigniasRol, insigniaSituacion } from './comun.js';
 
@@ -19,9 +19,7 @@ export function vistaInicio(vista) {
     : sit === 'salio' ? `Salió a las ${horaLegible(r.salida)}.` : 'Hoy no está en la sede.';
 
   const proximas = [
-    ['telefono', 'azul', 'Contactos y rutas', 'Contactos de emergencia, rutas y punto de encuentro', 'Etapa 5'],
-    ['alerta', 'rojo', 'Emergencia', 'Activación, reporte de brigadistas y tablero', 'Etapas 6 y 7'],
-    ['libro', 'morado', 'Recomendaciones', 'Protocolos por tipo de emergencia', 'Etapa 5']
+    ['alerta', 'rojo', 'Emergencia', 'Activación, reporte de brigadistas y tablero', 'Etapas 6 y 7']
   ];
 
   vista.innerHTML = `
@@ -40,6 +38,19 @@ export function vistaInicio(vista) {
         icono: 'personas', tono: 'azul', titulo: 'Hoy en la sede', subtitulo: 'Listado por piso y censo del día',
         cuerpo: `<p style="font-size:1.6rem;font-weight:800;color:var(--corp-dark);margin:0">${enSede} ${enSede === 1 ? 'persona' : 'personas'}</p>
           <p class="sutil">en la sede según los reportes</p><a class="btn btn-secundario" href="#/hoy">Ver listado</a>`
+      })}
+      ${tarjeta({
+        icono: 'telefono', tono: 'azul', titulo: 'Contactos de emergencia', subtitulo: 'Líneas, brigada y coordinación',
+        cuerpo: `<div class="fila"><a class="btn btn-primario" href="tel:123">${icono('telefono', 'ic-s')}Llamar al 123</a>
+          <a class="btn btn-secundario" href="#/contactos">Ver contactos</a></div>`
+      })}
+      ${tarjeta({
+        icono: 'ubicacion', tono: 'verde', titulo: 'Rutas y punto de encuentro', subtitulo: 'Mapas de evacuación de cada piso',
+        cuerpo: `<a class="btn btn-secundario" href="#/rutas">Ver rutas</a>`
+      })}
+      ${tarjeta({
+        icono: 'libro', tono: 'morado', titulo: 'Recomendaciones', subtitulo: 'Qué hacer en sismo, incendio y otros eventos',
+        cuerpo: `<a class="btn btn-secundario" href="#/recomendaciones">Ver recomendaciones</a>`
       })}
       ${tarjeta({
         icono: 'ubicacion', tono: 'ambar', titulo: 'Mi puesto habitual', subtitulo: 'Según la planta física del Despacho',

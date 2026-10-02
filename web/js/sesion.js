@@ -11,6 +11,7 @@ export const base = () => estado.base;
 export const activa = () => !!estado.token;
 export const correoGuardado = () => estado.correo;
 export const tieneRol = r => !!estado.perfil && estado.perfil.roles.includes(r);
+export const llaveDir = () => estado.llaveDir;
 
 export function nombreDe(codigo) {
   const d = estado.directorio && estado.directorio.personas[codigo];
@@ -80,6 +81,7 @@ export async function ingresar(correo, clave) {
   await almacen.guardar('correo', estado.correo);
   if (estado.llaveDir) await almacen.guardar('llaveDir', estado.llaveDir);
   await refrescar();
+  dispatchEvent(new CustomEvent('sesion-iniciada'));
   return estado.perfil;
 }
 

@@ -21,12 +21,26 @@ var ESQUEMA = {
   // Registro diario de ubicación: RegistroHoy tiene solo el día en curso; al
   // cambiar el día, sus filas pasan a RegistroHistorico (solo se agrega).
   RegistroHoy: ['fecha', 'codigo', 'estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida', 'reportadoPor', 'actualizado', 'momentos'],
-  RegistroHistorico: ['fecha', 'codigo', 'estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida', 'reportadoPor', 'actualizado', 'momentos']
+  RegistroHistorico: ['fecha', 'codigo', 'estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida', 'reportadoPor', 'actualizado', 'momentos'],
+  // Archivos cifrados (mapas, rutas, planos) partidos en trozos que caben en una celda.
+  Archivos: ['id', 'parte', 'datos']
 };
 
 var ROLES_VALIDOS = ['admin', 'coordinador', 'suplente', 'brigadista'];
 var ESTADOS_DIA = ['presencial', 'remoto', 'comision', 'vacaciones', 'incapacidad'];
 var CAMPOS_REGISTRO = ['estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida'];
+
+// Contenido institucional (siempre cifrado en el navegador). Cada sobre indica
+// quién puede modificarlo.
+var SOBRES_CONTENIDO = {
+  contactos: ['admin', 'coordinador', 'suplente'],
+  recomendaciones: ['admin'],
+  rutas: ['admin']
+};
+var LIMITE_CELDA = 45000;   // Google Sheets admite 50.000 caracteres por celda
+var MAX_PARTES = 60;
+var ARCHIVO_VALIDO = /^(punto|ruta-\d{1,2}|plano-\d{1,2})$/;
+var MIMES_VALIDOS = ['image/jpeg', 'image/png', 'application/pdf'];
 var MAX_INTENTOS = 5;
 var MINUTOS_BLOQUEO = 15;
 
@@ -181,6 +195,21 @@ function crearNucleo(dep) {
     return { fecha: dep.hoy(), registros: filas.map(registroPublico) };
   }
 
+  // Sobres de contenido y lista de archivos disponibles (sin su contenido).
+  function contenidoPublico(cfg) {
+    var sobres = dep.leer('Sobres');
+    var salida = {};
+    Object.keys(SOBRES_CONTENIDO).forEach(function (n) {
+      var s = sobres.filter(function (x) { return x.nombre === n; })[0];
+      salida[n] = s ? { version: num(s.version), datos: s.datos } : null;
+    });
+    return { sobres: salida, archivos: cfg.archivos || {} };
+  }
+
+  function puedeEditar(p, rolesPermitidos) {
+    return rolesPermitidos.some(function (r) { return tieneRol(p, r); });
+  }
+
   var acciones = {
 
     ping: function () {
@@ -196,6 +225,10 @@ function crearNucleo(dep) {
       dep.escribir('Personas', personas);
       dep.escribir('Puestos', d.puestos || []);
       if (d.sobreDirectorio) guardarSobre('directorio', d.sobreDirectorio);
+      Object.keys(SOBRES_CONTENIDO).forEach(function (n) {
+        var datos = d.sobresContenido && d.sobresContenido[n];
+        if (datos && texto(datos).length <= LIMITE_CELDA) guardarSobre(n, datos);
+      });
       escribirConfig(leerConfig());
       bitacora('', 'inicializar', personas.length + ' personas');
       return ok({ personas: personas.length });
@@ -243,8 +276,71 @@ function crearNucleo(dep) {
         puestos: dep.leer('Puestos').map(function (x) { return { piso: num(x.piso), puesto: num(x.puesto), estado: texto(x.estado) }; }),
         directorio: dir ? { version: num(dir.version), datos: dir.datos } : null,
         config: { reglasClave: cfg.reglasClave, exigirCambioInicial: !!cfg.exigirCambioInicial, diasSesion: num(cfg.diasSesion) },
-        hoy: hoyPublico(registrosDelDia())
+        hoy: hoyPublico(registrosDelDia()),
+        contenido: contenidoPublico(cfg)
       });
+    },
+
+    // Guarda un sobre de contenido (contactos, recomendaciones o rutas).
+    // versionBase evita pisar un cambio que otra persona hizo mientras tanto.
+    guardarContenido: function (d, p) {
+      var permitidos = SOBRES_CONTENIDO[d.nombre];
+      if (!permitidos) return falla('DATOS', 'Contenido desconocido.');
+      if (!puedeEditar(p, permitidos)) return falla('PERMISO', 'No tiene permiso para modificar este contenido.');
+      if (!d.datos || texto(d.datos).length > LIMITE_CELDA) return falla('DATOS', 'El contenido es demasiado largo. Acórtelo e intente de nuevo.');
+      var actual = dep.leer('Sobres').filter(function (x) { return x.nombre === d.nombre; })[0];
+      var versionActual = actual ? num(actual.version) : 0;
+      if (d.versionBase !== undefined && d.versionBase !== null && num(d.versionBase) !== versionActual) {
+        return falla('CONFLICTO', 'Otra persona modificó esto mientras usted lo editaba. Se recargó la versión nueva: revise e intente de nuevo.');
+      }
+      var version = guardarSobre(d.nombre, d.datos);
+      bitacora(p.codigo, 'contenido', d.nombre);
+      return ok({ version: version });
+    },
+
+    // Archivo cifrado (mapa, ruta o plano), enviado en trozos. Solo el administrador.
+    subirArchivo: function (d, p) {
+      if (!soloAdmin(p)) return falla('PERMISO', 'Solo el administrador puede hacer esto.');
+      if (!ARCHIVO_VALIDO.test(texto(d.id))) return falla('DATOS', 'Identificador de archivo no válido.');
+      if (MIMES_VALIDOS.indexOf(d.mime) < 0) return falla('DATOS', 'Formato no admitido. Use JPG, PNG o PDF.');
+      var partes = d.partes;
+      if (!Array.isArray(partes) || !partes.length || partes.length > MAX_PARTES) return falla('DATOS', 'El archivo es demasiado grande.');
+      for (var i = 0; i < partes.length; i++) {
+        if (texto(partes[i]).length > LIMITE_CELDA) return falla('DATOS', 'Parte del archivo demasiado grande.');
+      }
+      var cfg = leerConfig();
+      var archivos = cfg.archivos || {};
+      var version = (archivos[d.id] ? num(archivos[d.id].version) : 0) + 1;
+      dep.escribir('Archivos', dep.leer('Archivos').filter(function (f) { return f.id !== d.id; }));
+      dep.agregarVarias('Archivos', partes.map(function (x, k) { return { id: d.id, parte: k, datos: x }; }));
+      archivos[d.id] = { mime: d.mime, version: version, partes: partes.length, tam: num(d.tam) };
+      cfg.archivos = archivos;
+      escribirConfig(cfg);
+      bitacora(p.codigo, 'archivo', d.id);
+      return ok({ version: version });
+    },
+
+    bajarArchivo: function (d) {
+      var meta = (leerConfig().archivos || {})[d.id];
+      if (!meta) return falla('NO_EXISTE', 'Ese archivo aún no está cargado.');
+      var partes = dep.leer('Archivos').filter(function (f) { return f.id === d.id; })
+        .sort(function (a, b) { return num(a.parte) - num(b.parte); })
+        .map(function (f) { return f.datos; });
+      if (partes.length !== num(meta.partes)) return falla('ERROR', 'El archivo está incompleto. Pida al administrador que lo cargue de nuevo.');
+      return ok({ mime: meta.mime, version: num(meta.version), partes: partes });
+    },
+
+    quitarArchivo: function (d, p) {
+      if (!soloAdmin(p)) return falla('PERMISO', 'Solo el administrador puede hacer esto.');
+      var cfg = leerConfig();
+      var archivos = cfg.archivos || {};
+      if (!archivos[d.id]) return ok();
+      dep.escribir('Archivos', dep.leer('Archivos').filter(function (f) { return f.id !== d.id; }));
+      delete archivos[d.id];
+      cfg.archivos = archivos;
+      escribirConfig(cfg);
+      bitacora(p.codigo, 'archivo-quitado', d.id);
+      return ok();
     },
 
     hoy: function () {

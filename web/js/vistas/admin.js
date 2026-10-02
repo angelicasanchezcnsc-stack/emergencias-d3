@@ -7,12 +7,15 @@ import { llamar } from '../api.js';
 import { leerXlsx, interpretarPlanta } from '../xlsx.js';
 import { esc, icono, aviso, espera, tarjeta, insignia, confirmar } from '../ui.js';
 import { previaExcel, elegirArchivo, guardarLlave, abrirLlave, mostrarCredencial } from './comun.js';
+import * as contenido from '../contenido.js';
+import { ARCHIVOS } from '../contenido-inicial.js';
 
 const PESTANAS = [
   ['llave', 'llave', 'Llave'],
   ['excel', 'hoja', 'Planta y Excel'],
   ['personas', 'personas', 'Personas y roles'],
   ['credenciales', 'imprimir', 'Credenciales'],
+  ['contenido', 'subir', 'Contenido'],
   ['config', 'ajustes', 'Configuración']
 ];
 let actual = 'llave';
@@ -35,7 +38,7 @@ export function vistaAdmin(vista) {
       panel.querySelector('#ir-llave').addEventListener('click', () => abrir('llave'));
       return;
     }
-    ({ llave: panelLlave, excel: panelExcel, personas: panelPersonas, credenciales: panelCredenciales, config: panelConfig })[id](panel, abrir);
+    ({ llave: panelLlave, excel: panelExcel, personas: panelPersonas, credenciales: panelCredenciales, contenido: panelContenido, config: panelConfig })[id](panel, abrir);
   };
   vista.querySelectorAll('#sub .pestana').forEach(b => b.addEventListener('click', () => abrir(b.dataset.id)));
   abrir(actual);
@@ -141,7 +144,7 @@ function panelPersonas(panel, abrir) {
   panel.innerHTML = `
     <div class="nota nota-info">${icono('info')}<span>Cada piso tiene uno o dos brigadistas. Hay un coordinador de emergencias y, si se quiere, un suplente. Siempre debe quedar al menos un administrador. El celular solo se pide a los brigadistas y viaja cifrado.</span></div>
     <div class="tabla-caja"><table>
-      <thead><tr><th>Persona</th><th>Ubicación</th><th>Roles</th><th>Brigada</th><th></th></tr></thead>
+      <thead><tr><th>Persona</th><th>Ubicación</th><th>Roles</th><th>Brigada y celular</th><th></th></tr></thead>
       <tbody>${filas.map(({ s, l }) => `
         <tr data-codigo="${esc(s.codigo)}">
           <td><strong>${esc(l.nombre)}</strong><div class="sutil"><span class="mono">${esc(s.codigo)}</span> · ${esc(l.correo)}</div></td>
@@ -161,13 +164,15 @@ function panelPersonas(panel, abrir) {
     </table></div>
     <div class="fila" style="margin-top:1rem"><button class="btn btn-oscuro" id="guardar">${icono('guardar', 'ic-s')}Guardar roles y celulares</button></div>`;
 
+  // El piso solo aplica a brigadistas; el celular también a coordinador y suplente.
   const sincronizar = tr => {
-    const brig = tr.querySelector('[data-rol=brigadista]').checked;
-    tr.querySelectorAll('[data-campo]').forEach(el => { el.disabled = !brig; });
+    const marcado = r => tr.querySelector(`[data-rol=${r}]`).checked;
+    tr.querySelector('[data-campo=piso]').disabled = !marcado('brigadista');
+    tr.querySelector('[data-campo=celular]').disabled = !(marcado('brigadista') || marcado('coordinador') || marcado('suplente'));
   };
   panel.querySelectorAll('tbody tr').forEach(tr => {
     sincronizar(tr);
-    tr.querySelector('[data-rol=brigadista]').addEventListener('change', () => sincronizar(tr));
+    tr.querySelectorAll('[data-rol]').forEach(c => c.addEventListener('change', () => sincronizar(tr)));
   });
 
   panel.querySelectorAll('[data-accion=clave]').forEach(b => b.addEventListener('click', async () => {
@@ -190,8 +195,9 @@ function panelPersonas(panel, abrir) {
     const leidas = [...panel.querySelectorAll('tbody tr')].map(tr => {
       const roles = [...tr.querySelectorAll('[data-rol]:checked')].map(c => c.dataset.rol);
       const brig = roles.includes('brigadista');
+      const conCelular = brig || roles.includes('coordinador') || roles.includes('suplente');
       return { codigo: tr.dataset.codigo, roles, pisoBrigada: brig ? Number(tr.querySelector('[data-campo=piso]').value) : null,
-        celular: brig ? tr.querySelector('[data-campo=celular]').value.trim() : '' };
+        celular: conCelular ? tr.querySelector('[data-campo=celular]').value.trim() : '' };
     });
     const errores = [];
     if (!leidas.some(x => x.roles.includes('admin'))) errores.push('Debe quedar al menos un administrador.');
@@ -251,6 +257,65 @@ function panelCredenciales(panel, abrir) {
     llave.marcarEntregada(c.closest('[data-codigo]').dataset.codigo);
     await guardarLlave();
     abrir('credenciales');
+  }));
+}
+
+// ---------- Contenido ----------
+function panelContenido(panel, abrir) {
+  const meta = contenido.archivosMeta();
+  const falta = ARCHIVOS.filter(a => !meta[a.id]).length;
+  const sembrables = Object.keys(contenido.SEMILLAS).filter(n => !contenido.existeSobre(n));
+
+  panel.innerHTML = `
+    ${sembrables.length ? `<div class="nota nota-adv">${icono('info')}<span>Aún no están cargados los textos iniciales: ${sembrables.join(', ')}.</span>
+      <button class="btn btn-primario btn-chico" id="sembrar">Cargar textos iniciales</button></div>` : ''}
+    ${tarjeta({
+      icono: 'subir', tono: 'turquesa', titulo: 'Mapas, rutas y planos',
+      subtitulo: `Se guardan cifrados en Google y se descargan al celular. ${falta ? `Faltan ${falta} por cargar.` : 'Todos cargados.'}`,
+      cuerpo: `<div class="tabla-caja"><table>
+        <thead><tr><th>Archivo</th><th>Estado</th><th></th></tr></thead>
+        <tbody>${ARCHIVOS.map(a => {
+          const m = meta[a.id];
+          return `<tr data-id="${a.id}">
+            <td><strong>${esc(a.nombre)}</strong></td>
+            <td>${m ? insignia('Cargado', 'verde') + ` <span class="sutil">v${m.version} · ${contenido.formatoTam(m.tam || 0)} · ${m.mime === 'application/pdf' ? 'PDF' : 'imagen'}</span>` : insignia('Falta', 'ambar')}</td>
+            <td class="fila"><button class="btn btn-secundario btn-chico" data-cargar>${m ? 'Reemplazar' : 'Cargar'}</button>
+              ${m ? '<button class="btn btn-fantasma btn-chico" data-quitar>Quitar</button>' : ''}</td></tr>`;
+        }).join('')}</tbody></table></div>
+        <p class="ayuda">Admite JPG, PNG o PDF. Las imágenes se reducen solas; los PDF pueden pesar hasta 800 KB. Los archivos originales están en Insumos → Modulo_5 (Rutas_Evacuacion y Planta_Fisica).</p>`
+    })}
+    ${tarjeta({
+      icono: 'libro', tono: 'morado', titulo: 'Textos editables',
+      subtitulo: 'Se editan desde cada pantalla',
+      cuerpo: `<div class="fila"><a class="btn btn-secundario btn-chico" href="#/contactos">Contactos</a>
+        <a class="btn btn-secundario btn-chico" href="#/rutas">Punto de encuentro y rutas</a>
+        <a class="btn btn-secundario btn-chico" href="#/recomendaciones">Recomendaciones</a></div>`
+    })}`;
+
+  panel.querySelector('#sembrar')?.addEventListener('click', async () => {
+    try { await contenido.sembrar(); aviso('Textos iniciales cargados.', 'exito'); abrir('contenido'); }
+    catch (e) { aviso(e.message, 'error'); }
+  });
+  panel.querySelectorAll('[data-cargar]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.closest('[data-id]').dataset.id;
+    const archivo = await elegirArchivo('image/jpeg,image/png,application/pdf');
+    if (!archivo) return;
+    const capa = espera('Preparando y cifrando el archivo…');
+    try {
+      const tam = await contenido.subirArchivo(id, archivo);
+      capa.cerrar();
+      aviso(`Archivo cargado (${contenido.formatoTam(tam)}).`, 'exito');
+    } catch (e) {
+      capa.cerrar();
+      aviso(e.message, 'error');
+    }
+    abrir('contenido');
+  }));
+  panel.querySelectorAll('[data-quitar]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.closest('[data-id]').dataset.id;
+    if (!await confirmar('Quitar archivo', 'El archivo dejará de verse en la aplicación.', 'Quitar', true)) return;
+    try { await contenido.quitarArchivo(id); } catch (e) { aviso(e.message, 'error'); }
+    abrir('contenido');
   }));
 }
 

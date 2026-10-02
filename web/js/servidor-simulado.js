@@ -21,7 +21,13 @@ function estado() {
   return e;
 }
 
-function guardar(e) { localStorage.setItem(CLAVE, JSON.stringify(e)); }
+function guardar(e) {
+  try {
+    localStorage.setItem(CLAVE, JSON.stringify(e));
+  } catch {
+    throw new Error('El almacenamiento de prueba del navegador está lleno. Quite archivos pesados o reinicie el modo prueba.');
+  }
+}
 
 const adaptador = {
   leer: t => JSON.parse(JSON.stringify(estado().tablas[t] || [])),

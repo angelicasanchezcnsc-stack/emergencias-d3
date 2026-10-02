@@ -21,7 +21,8 @@ En modo prueba, el "servidor" funciona dentro del propio navegador. Nada sale de
    4. **Código de instalación.** En modo prueba aparece en pantalla.
    5. Oprima *Inicializar el aplicativo*. Se muestra su contraseña temporal.
 4. Ingrese con su correo institucional y esa contraseña.
-5. Pruebe lo siguiente:
+5. **Cargue los mapas y planos.** En *Administración → Contenido* hay ocho espacios (mapa del punto de encuentro, ruta de evacuación y plano de cada piso). Cargue cada archivo desde `Insumos\Modulo_5\Rutas_Evacuacion` y `Insumos\Modulo_5\Planta_Fisica`. Las imágenes se reducen solas; los PDF pueden pesar hasta 800 KB. Si el aplicativo se inicializó antes de la etapa 5, oprima allí *Cargar textos iniciales* para tener contactos, rutas y recomendaciones.
+6. Pruebe lo siguiente:
    - **Planta física:** los cuatro pisos con sus puestos y vacantes.
    - **Mi cuenta:** cambiar la contraseña.
    - **Administración:**
