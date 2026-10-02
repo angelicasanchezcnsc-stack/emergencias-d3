@@ -224,6 +224,24 @@ tr:hover td { background: rgba(255, 238, 88, .05); }
   text-transform: uppercase; font-weight: 700; letter-spacing: .12em;
 }
 
+/* Mi día y listado del día */
+.dia { max-width: 34rem; }
+.btn-grande { min-height: 3.75rem; font-size: 1rem; }
+.btn-grande .ic { width: 1.4rem; height: 1.4rem; }
+.botonera { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: .5rem; }
+.estado-grande { display: flex; gap: .8rem; align-items: center; padding: 1rem; border-radius: var(--radio); margin-bottom: 1rem; }
+.estado-grande .ic { width: 2rem; height: 2rem; }
+.estado-grande strong { display: block; font-size: 1.15rem; color: var(--corp-dark); }
+.estado-grande span { font-size: .85rem; }
+.tono-gris { background: var(--corp-light); color: var(--corp-text); }
+.lista-dia { display: flex; flex-direction: column; }
+.fila-dia { display: grid; grid-template-columns: 4rem 1fr auto auto; gap: .6rem; align-items: center; padding: .6rem 0; border-top: 1px solid var(--corp-light); }
+.fila-dia:first-child { border-top: none; }
+.fila-dia-txt { display: flex; flex-direction: column; min-width: 0; }
+.fila-dia-txt strong { font-size: .9rem; color: var(--corp-dark); }
+.puesto-num { font-size: .75rem; font-weight: 700; color: var(--texto-60); }
+#censo-impreso { display: none; }
+
 .credencial { border: 1px dashed var(--corp-text); border-radius: var(--radio); padding: .8rem; margin-bottom: .6rem; break-inside: avoid; }
 .clave-mono { font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; font-weight: 700; letter-spacing: .08em; }
 
@@ -233,6 +251,8 @@ tr:hover td { background: rgba(255, 238, 88, .05); }
 @keyframes giro { to { transform: rotate(360deg); } }
 
 @media (max-width: 640px) {
+  .fila-dia { grid-template-columns: 3.2rem 1fr auto; }
+  .fila-dia [data-reportar] { grid-column: 2 / -1; justify-self: start; min-height: 2rem; padding: .25rem .5rem; }
   .marca p { display: none; }
   .marca h1 { font-size: .9rem; white-space: nowrap; }
   .marca .version { display: none; }
@@ -246,6 +266,15 @@ tr:hover td { background: rgba(255, 238, 88, .05); }
 }
 
 @media print {
+  body.censo-activo > *:not(#censo-impreso) { display: none !important; }
+  body.censo-activo #censo-impreso { display: block; font-size: 10pt; color: #000; }
+  #censo-impreso h1 { font-size: 15pt; margin-bottom: 4pt; }
+  #censo-impreso h2 { font-size: 12pt; margin: 12pt 0 4pt; break-after: avoid; }
+  #censo-impreso table { border: 1px solid #999; }
+  #censo-impreso th, #censo-impreso td { border: 1px solid #bbb; padding: 3pt 6pt; font-size: 9.5pt; background: none; color: #000; }
+  #censo-impreso tr { break-inside: avoid; }
+  #censo-impreso .casilla-papel { text-align: center; font-size: 13pt; }
+  #censo-impreso .aviso-datos { margin-top: 14pt; font-size: 8.5pt; font-style: italic; }
   body::before, body::after, .cabecera, .pie, .no-imprimir, #avisos { display: none !important; }
   body { background: #fff; }
   .tarjeta { box-shadow: none; border: none; backdrop-filter: none; }

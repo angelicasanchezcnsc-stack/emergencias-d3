@@ -17,10 +17,16 @@ var ESQUEMA = {
   Sesiones: ['tokenHash', 'codigo', 'creada', 'expira'],
   Sobres: ['nombre', 'version', 'datos', 'actualizado'],
   Config: ['clave', 'valor'],
-  Bitacora: ['fecha', 'codigo', 'accion', 'detalle']
+  Bitacora: ['fecha', 'codigo', 'accion', 'detalle'],
+  // Registro diario de ubicación: RegistroHoy tiene solo el día en curso; al
+  // cambiar el día, sus filas pasan a RegistroHistorico (solo se agrega).
+  RegistroHoy: ['fecha', 'codigo', 'estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida', 'reportadoPor', 'actualizado', 'momentos'],
+  RegistroHistorico: ['fecha', 'codigo', 'estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida', 'reportadoPor', 'actualizado', 'momentos']
 };
 
 var ROLES_VALIDOS = ['admin', 'coordinador', 'suplente', 'brigadista'];
+var ESTADOS_DIA = ['presencial', 'remoto', 'comision', 'vacaciones', 'incapacidad'];
+var CAMPOS_REGISTRO = ['estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida'];
 var MAX_INTENTOS = 5;
 var MINUTOS_BLOQUEO = 15;
 
@@ -33,7 +39,8 @@ var CONFIG_INICIAL = {
 /**
  * dep = {
  *   leer(tabla) -> [objetos], escribir(tabla, filas), agregar(tabla, fila),
- *   prop(nombre), uuid(), ahora() -> ms, bloqueo(fn)
+ *   agregarVarias(tabla, filas), prop(nombre), uuid(), ahora() -> ms,
+ *   hoy() -> 'AAAA-MM-DD' en hora de Bogotá, bloqueo(fn)
  * }
  */
 function crearNucleo(dep) {
@@ -137,6 +144,43 @@ function crearNucleo(dep) {
 
   function soloAdmin(p) { return p && tieneRol(p, 'admin'); }
 
+  // ---------- Registro diario ----------
+
+  // Devuelve las filas del día y, si cambió la fecha, archiva las anteriores.
+  function registrosDelDia() {
+    var hoy = dep.hoy();
+    var filas = dep.leer('RegistroHoy');
+    var viejas = filas.filter(function (f) { return f.fecha !== hoy; });
+    if (viejas.length) {
+      dep.agregarVarias('RegistroHistorico', viejas);
+      filas = filas.filter(function (f) { return f.fecha === hoy; });
+      dep.escribir('RegistroHoy', filas);
+    }
+    return filas;
+  }
+
+  function registroPublico(f) {
+    return {
+      codigo: f.codigo, estado: texto(f.estado), piso: num(f.piso), puesto: num(f.puesto),
+      excepcion: texto(f.excepcion) === 'true', ingreso: texto(f.ingreso), salida: texto(f.salida),
+      reportadoPor: texto(f.reportadoPor)
+    };
+  }
+
+  function valorValido(campo, v) {
+    v = texto(v);
+    if (campo === 'estado') return v === '' || ESTADOS_DIA.indexOf(v) >= 0;
+    if (campo === 'ingreso' || campo === 'salida') return v === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+    if (campo === 'piso') return /^\d{1,2}$/.test(v);
+    if (campo === 'puesto') return /^\d{1,3}$/.test(v);
+    if (campo === 'excepcion') return v === 'true' || v === 'false';
+    return false;
+  }
+
+  function hoyPublico(filas) {
+    return { fecha: dep.hoy(), registros: filas.map(registroPublico) };
+  }
+
   var acciones = {
 
     ping: function () {
@@ -198,8 +242,52 @@ function crearNucleo(dep) {
         personas: dep.leer('Personas').map(publica),
         puestos: dep.leer('Puestos').map(function (x) { return { piso: num(x.piso), puesto: num(x.puesto), estado: texto(x.estado) }; }),
         directorio: dir ? { version: num(dir.version), datos: dir.datos } : null,
-        config: { reglasClave: cfg.reglasClave, exigirCambioInicial: !!cfg.exigirCambioInicial, diasSesion: num(cfg.diasSesion) }
+        config: { reglasClave: cfg.reglasClave, exigirCambioInicial: !!cfg.exigirCambioInicial, diasSesion: num(cfg.diasSesion) },
+        hoy: hoyPublico(registrosDelDia())
       });
+    },
+
+    hoy: function () {
+      return ok(hoyPublico(registrosDelDia()));
+    },
+
+    // Aplica marcas del registro diario. Cada marca trae su propio momento y,
+    // campo por campo, gana la más reciente: así se pueden reenviar marcas
+    // guardadas sin conexión sin duplicar ni pisar cambios posteriores.
+    // op = { id, fecha, codigo, momento, campos: { estado?, piso?, puesto?, excepcion?, ingreso?, salida? } }
+    registrar: function (d, p) {
+      var hoy = dep.hoy();
+      var filas = registrosDelDia();
+      var personas = dep.leer('Personas').filter(activa);
+      var resultados = (d.ops || []).map(function (op) {
+        if (!op || op.fecha !== hoy) return { id: op && op.id, estado: 'fecha' };
+        var persona = personas.filter(function (x) { return x.codigo === op.codigo; })[0];
+        if (!persona) return { id: op.id, estado: 'persona' };
+        var f = filas.filter(function (x) { return x.codigo === op.codigo; })[0];
+        if (!f) {
+          f = { fecha: hoy, codigo: op.codigo, estado: '', piso: persona.piso, puesto: persona.puesto, excepcion: 'false',
+            ingreso: '', salida: '', momentos: '{}' };
+          filas.push(f);
+        }
+        var momentos = json(f.momentos, {});
+        var cambio = false;
+        CAMPOS_REGISTRO.forEach(function (c) {
+          if (!op.campos || op.campos[c] === undefined) return;
+          if (!valorValido(c, op.campos[c])) return;
+          if (num(op.momento) < num(momentos[c])) return;
+          f[c] = texto(op.campos[c]);
+          momentos[c] = num(op.momento);
+          cambio = true;
+        });
+        if (cambio) {
+          f.momentos = JSON.stringify(momentos);
+          f.reportadoPor = p.codigo;
+          f.actualizado = new Date(dep.ahora()).toISOString();
+        }
+        return { id: op.id, estado: 'ok' };
+      });
+      dep.escribir('RegistroHoy', filas);
+      return ok({ resultados: resultados, hoy: hoyPublico(filas) });
     },
 
     cambiarClave: function (d, p) {

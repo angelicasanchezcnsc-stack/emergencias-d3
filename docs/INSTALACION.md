@@ -58,7 +58,10 @@ En modo prueba, el "servidor" funciona dentro del propio navegador. Nada sale de
    URL_SERVIDOR: 'https://script.google.com/macros/s/…/exec',
    ```
 
-**Al actualizar el código del servidor más adelante:** pegue los archivos nuevos y vaya a *Implementar → Gestionar implementaciones → editar (lápiz) → Versión: Nueva versión → Implementar*. Así la URL no cambia.
+**Al actualizar el código del servidor más adelante:**
+1. Pegue los archivos nuevos.
+2. Ejecute otra vez la función **`instalar`**. Crea las hojas nuevas que traiga la versión y no borra datos.
+3. Vaya a *Implementar → Gestionar implementaciones → editar (lápiz) → Versión: Nueva versión → Implementar*. Así la URL no cambia.
 
 > No borre las *Propiedades del script* (`PIMIENTA`, `CODIGO_INSTALACION`). Si se pierde la `PIMIENTA`, todas las contraseñas dejan de funcionar.
 

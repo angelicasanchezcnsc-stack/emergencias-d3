@@ -42,15 +42,20 @@ export async function restaurar() {
   return true;
 }
 
+const oyentesRefresco = [];
+export const alRefrescar = fn => oyentesRefresco.push(fn);
+export const guardarBase = () => estado.base && almacen.guardar('base', estado.base);
+
 // Trae la base del servidor. Sin conexión, se queda con la copia local.
 export async function refrescar() {
   try {
     const b = await llamar('base');
     estado.base = b;
     estado.perfil = b.perfil;
+    await abrirDirectorio();
+    oyentesRefresco.forEach(fn => fn());
     await almacen.guardar('base', b);
     await almacen.guardar('perfil', b.perfil);
-    await abrirDirectorio();
     return true;
   } catch (e) {
     if (e instanceof ErrorApi && e.codigo === 'SESION') { await salir(true); throw e; }
@@ -102,4 +107,5 @@ export async function salir(sinServidor = false) {
   if (correo) await almacen.guardar('correo', correo);
   Object.assign(estado, { token: null, perfil: null, base: null, llaveDir: null, directorio: null });
   fijarToken(null);
+  dispatchEvent(new CustomEvent('sesion-cerrada'));
 }

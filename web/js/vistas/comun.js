@@ -1,6 +1,107 @@
 // Piezas compartidas por varias vistas.
+import { CONFIG } from '../../config.js';
 import { esc, insignia, modal, aviso } from '../ui.js';
 import * as llave from '../llave.js';
+import * as sesion from '../sesion.js';
+import * as registro from '../registro.js';
+import { horaBogota, horaLegible } from '../tiempo.js';
+
+// ---------- Registro diario ----------
+
+export const SITUACION = {
+  'en-sede': ['En la sede', 'verde'],
+  salio: ['Salió', 'gris'],
+  remoto: ['Remoto', 'azul'],
+  comision: ['Comisión', 'azul'],
+  vacaciones: ['Vacaciones', 'gris'],
+  incapacidad: ['Incapacidad', 'gris'],
+  'sin-reporte': ['Sin reporte', 'ambar']
+};
+
+export const ESTADOS_AUSENCIA = [['remoto', 'Remoto'], ['comision', 'Comisión'], ['vacaciones', 'Vacaciones'], ['incapacidad', 'Incapacidad']];
+
+export function insigniaSituacion(r) {
+  const [t, tono] = SITUACION[registro.situacion(r)];
+  return insignia(t, tono);
+}
+
+export const textoUbicacion = u => `Piso ${u.piso} · ${u.puesto ? 'Puesto ' + u.puesto : 'otro lugar del piso'}`;
+
+export function horario(r) {
+  if (!r || r.estado !== 'presencial') return '';
+  return [r.ingreso && 'Ingreso ' + horaLegible(r.ingreso), r.salida && 'Salida ' + horaLegible(r.salida)].filter(Boolean).join(' · ');
+}
+
+// Formulario para cambiar el puesto de hoy. Devuelve {piso, puesto} o null.
+export async function elegirPuestoHoy(persona) {
+  const puestos = (sesion.base().puestos || []);
+  const opciones = piso => ['<option value="0">Otro lugar del piso (sala, oficina…)</option>']
+    .concat(puestos.filter(x => x.piso === piso).sort((a, b) => a.puesto - b.puesto)
+      .map(x => `<option value="${x.puesto}">Puesto ${x.puesto}${x.estado === 'vacante' ? ' (vacante)' : ''}</option>`)).join('');
+  const respuesta = modal({
+    titulo: 'Ubicación de hoy',
+    cuerpo: `<p class="sutil">Su puesto habitual es piso ${persona.piso}, puesto ${persona.puesto}.</p>
+      <div class="campo"><label class="etiqueta" for="u-piso">Piso</label>
+        <select id="u-piso">${CONFIG.PISOS.map(n => `<option value="${n}" ${n === persona.piso ? 'selected' : ''}>Piso ${n}</option>`).join('')}</select></div>
+      <div class="campo"><label class="etiqueta" for="u-puesto">Puesto</label><select id="u-puesto">${opciones(persona.piso)}</select></div>`,
+    acciones: [
+      { texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
+      { texto: 'Usar esta ubicación', clase: 'btn-oscuro', valor: f => ({ piso: Number(f.querySelector('#u-piso').value), puesto: Number(f.querySelector('#u-puesto').value) }) }
+    ]
+  });
+  // El modal ya está en pantalla: al cambiar de piso se actualizan los puestos.
+  const selPiso = document.querySelector('#u-piso');
+  selPiso.addEventListener('change', () => { document.querySelector('#u-puesto').innerHTML = opciones(Number(selPiso.value)); });
+  return respuesta;
+}
+
+// Pide una hora (HH:MM). Devuelve la hora o null.
+export function pedirHora(titulo, actual) {
+  return modal({
+    titulo,
+    cuerpo: `<label class="etiqueta" for="hora">Hora</label><input id="hora" type="time" value="${esc(actual || horaBogota())}">`,
+    acciones: [{ texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
+      { texto: 'Guardar', clase: 'btn-oscuro', valor: f => f.querySelector('#hora').value || null }]
+  });
+}
+
+// Reporte del estado de un compañero (o propio) en un solo formulario.
+export async function reportarPersona(persona) {
+  const r = registro.registroDe(persona.codigo) || {};
+  const nombre = sesion.nombreDe(persona.codigo);
+  const estadoActual = r.estado || '';
+  const valores = await modal({
+    titulo: 'Reportar a ' + nombre,
+    cuerpo: `
+      <p class="sutil">Puesto habitual: piso ${persona.piso}, puesto ${persona.puesto}. El reporte queda a su nombre como "reportado por".</p>
+      <div class="campo"><label class="etiqueta" for="r-estado">Estado de hoy</label>
+        <select id="r-estado">
+          <option value="presencial" ${estadoActual === 'presencial' || !estadoActual ? 'selected' : ''}>Presencial (en la sede)</option>
+          ${ESTADOS_AUSENCIA.map(([v, t]) => `<option value="${v}" ${estadoActual === v ? 'selected' : ''}>${t}</option>`).join('')}
+          <option value="borrar">Quitar el reporte de hoy (sin reporte)</option>
+        </select></div>
+      <div class="fila">
+        <div class="campo" style="flex:1"><label class="etiqueta" for="r-ingreso">Hora de ingreso</label><input id="r-ingreso" type="time" value="${esc(r.ingreso || horaBogota())}"></div>
+        <div class="campo" style="flex:1"><label class="etiqueta" for="r-salida">Hora de salida</label><input id="r-salida" type="time" value="${esc(r.salida || '')}"></div>
+      </div>
+      <p class="ayuda">Deje la hora de salida vacía si la persona sigue en la sede.</p>`,
+    acciones: [{ texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
+      { texto: 'Guardar reporte', clase: 'btn-oscuro', valor: f => ({
+        estado: f.querySelector('#r-estado').value, ingreso: f.querySelector('#r-ingreso').value, salida: f.querySelector('#r-salida').value }) }]
+  });
+  if (!valores) return false;
+  if (valores.estado === 'borrar') {
+    await registro.marcar(persona.codigo, { estado: '', ingreso: '', salida: '', excepcion: 'false', piso: persona.piso, puesto: persona.puesto });
+    aviso(`Se quitó el reporte de hoy de ${nombre}.`, 'info');
+    return true;
+  }
+  const campos = { estado: valores.estado };
+  if (valores.estado === 'presencial') { campos.ingreso = valores.ingreso || horaBogota(); campos.salida = valores.salida || ''; }
+  else { campos.ingreso = ''; campos.salida = ''; }
+  await registro.marcar(persona.codigo, campos);
+  aviso(`Reporte de ${nombre} guardado.`, 'exito');
+  return true;
+}
 
 // Guarda la llave. El navegador exige un clic para escribir archivos: si el
 // intento directo no tiene permiso, se pide confirmación con un botón.

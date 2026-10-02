@@ -60,9 +60,17 @@ function adaptadorSheets() {
       h.getRange(h.getLastRow() + 1, 1, 1, cols.length).setNumberFormat('@')
         .setValues([cols.map(function (c) { return fila[c] === undefined ? '' : String(fila[c]); })]);
     },
+    agregarVarias: function (nombre, filas) {
+      if (!filas.length) return;
+      var cols = ESQUEMA[nombre];
+      var h = hoja(nombre);
+      h.getRange(h.getLastRow() + 1, 1, filas.length, cols.length).setNumberFormat('@')
+        .setValues(filas.map(function (f) { return cols.map(function (c) { return f[c] === undefined ? '' : String(f[c]); }); }));
+    },
     prop: function (nombre) { return props.getProperty(nombre); },
     uuid: function () { return Utilities.getUuid(); },
     ahora: function () { return Date.now(); },
+    hoy: function () { return Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd'); },
     bloqueo: function (fn) {
       var candado = LockService.getScriptLock();
       candado.waitLock(20000);

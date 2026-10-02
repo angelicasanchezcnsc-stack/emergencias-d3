@@ -5,13 +5,19 @@ import { llamar, servidorDisponible } from './api.js';
 import { esc, icono, aviso } from './ui.js';
 import { vistaIngreso } from './vistas/ingreso.js';
 import { vistaInicio } from './vistas/inicio.js';
+import { vistaDia } from './vistas/dia.js';
+import { vistaHoy } from './vistas/hoy.js';
 import { vistaPlanta } from './vistas/planta.js';
+import * as registro from './registro.js';
+import { confirmar } from './ui.js';
 import { vistaCuenta } from './vistas/cuenta.js';
 import { vistaAdmin } from './vistas/admin.js';
 import { vistaInstalacion } from './vistas/instalacion.js';
 
 const RUTAS = {
   inicio: { titulo: 'Inicio', icono: 'inicio', vista: vistaInicio },
+  dia: { titulo: 'Mi día', icono: 'reloj', vista: vistaDia },
+  hoy: { titulo: 'Hoy en la sede', icono: 'personas', vista: vistaHoy },
   planta: { titulo: 'Planta física', icono: 'edificio', vista: vistaPlanta },
   cuenta: { titulo: 'Mi cuenta', icono: 'persona', vista: vistaCuenta },
   admin: { titulo: 'Administración', icono: 'ajustes', vista: vistaAdmin, rol: 'admin' }
@@ -41,6 +47,8 @@ function armazon() {
     <main id="vista"></main>
     <footer class="pie">${esc(CONFIG.APP_NOMBRE)} ${esc(CONFIG.VERSION)} — ${esc(CONFIG.CREDITOS)}</footer>`);
   document.getElementById('btn-salir').addEventListener('click', async () => {
+    const n = registro.pendientes();
+    if (n && !await confirmar('Reportes sin enviar', `Hay ${n} reporte(s) guardado(s) en este celular que aún no llegan al servidor. Si cierra la sesión se perderán.`, 'Cerrar de todos modos', true)) return;
     await sesion.salir();
     aviso('Sesión cerrada. Se borraron los datos de este celular.', 'info');
     ctx.navegar('ingreso');
@@ -95,6 +103,7 @@ async function enrutar() {
   if (ruta === 'ingreso' || !RUTAS[ruta] || (RUTAS[ruta].rol && !sesion.tieneRol(RUTAS[ruta].rol))) { ctx.navegar('inicio'); return; }
 
   pintarNav(ruta);
+  vista.dispatchEvent(new Event('vista-salida'));
   vista.innerHTML = '';
   try {
     await RUTAS[ruta].vista(vista, ctx);
@@ -113,6 +122,8 @@ async function iniciar() {
   if (await sesion.restaurar()) {
     try { await sesion.refrescar(); } catch { /* sesión vencida: refrescar ya la cerró */ }
   }
+  await registro.iniciar();
+  addEventListener('registro-vencido', e => aviso(`${e.detail} reporte(s) de un día anterior no se enviaron porque ya cambió la fecha.`, 'advertencia'));
   addEventListener('hashchange', enrutar);
   enrutar();
 }
