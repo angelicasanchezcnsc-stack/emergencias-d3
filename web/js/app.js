@@ -11,8 +11,11 @@ import { vistaPlanta } from './vistas/planta.js';
 import { vistaContactos } from './vistas/contactos.js';
 import { vistaRutas } from './vistas/rutas.js';
 import { vistaRecomendaciones } from './vistas/recomendaciones.js';
+import { vistaEmergencia } from './vistas/emergencia.js';
 import * as contenido from './contenido.js';
 import * as registro from './registro.js';
+import * as emergencia from './emergencia.js';
+import { horaLegible, horaBogota } from './tiempo.js';
 import { confirmar } from './ui.js';
 import { vistaCuenta } from './vistas/cuenta.js';
 import { vistaAdmin } from './vistas/admin.js';
@@ -20,6 +23,7 @@ import { vistaInstalacion } from './vistas/instalacion.js';
 
 const RUTAS = {
   inicio: { titulo: 'Inicio', icono: 'inicio', vista: vistaInicio },
+  emergencia: { titulo: 'Emergencia', icono: 'alerta', vista: vistaEmergencia },
   dia: { titulo: 'Mi día', icono: 'reloj', vista: vistaDia },
   hoy: { titulo: 'Hoy en la sede', icono: 'personas', vista: vistaHoy },
   planta: { titulo: 'Planta física', icono: 'edificio', vista: vistaPlanta },
@@ -50,11 +54,12 @@ function armazon() {
         </div>
       </div>
       <nav id="nav" class="navegacion oculto" aria-label="Secciones"></nav>
+      <a id="banner-emergencia" class="banner-emergencia oculto" href="#/emergencia"></a>
     </header>
     <main id="vista"></main>
     <footer class="pie">${esc(CONFIG.APP_NOMBRE)} ${esc(CONFIG.VERSION)} — ${esc(CONFIG.CREDITOS)}</footer>`);
   document.getElementById('btn-salir').addEventListener('click', async () => {
-    const n = registro.pendientes();
+    const n = registro.pendientes() + emergencia.pendientes();
     if (n && !await confirmar('Reportes sin enviar', `Hay ${n} reporte(s) guardado(s) en este celular que aún no llegan al servidor. Si cierra la sesión se perderán.`, 'Cerrar de todos modos', true)) return;
     await sesion.salir();
     aviso('Sesión cerrada. Se borraron los datos de este celular.', 'info');
@@ -74,6 +79,17 @@ function pintarRed() {
   el.className = 'estado-red ' + (enLinea && servidor ? 'en-linea' : 'sin-conexion');
   el.innerHTML = !enLinea ? `${icono('sinWifi', 'ic-s')}Sin conexión`
     : !servidor ? `${icono('sinWifi', 'ic-s')}Sin servidor` : '<span class="punto"></span>En línea';
+}
+
+// Franja fija bajo el encabezado mientras haya una emergencia o simulacro en curso.
+function pintarBanner() {
+  const el = document.getElementById('banner-emergencia');
+  const a = sesion.activa() && emergencia.actual();
+  if (!a) { el.classList.add('oculto'); return; }
+  const e = a.emergencia;
+  el.classList.remove('oculto');
+  el.classList.toggle('simulacro', e.simulacro);
+  el.innerHTML = `${icono('alerta', 'ic-s')}<span><strong>${e.simulacro ? 'Simulacro' : 'Emergencia'} en curso</strong> · ${esc(emergencia.TIPOS[e.tipo])} · desde las ${esc(horaLegible(horaBogota(new Date(e.inicio))))}</span><span class="banner-ir">Ver</span>`;
 }
 
 function pintarNav(actual) {
@@ -110,6 +126,7 @@ async function enrutar() {
   if (ruta === 'ingreso' || !RUTAS[ruta] || (RUTAS[ruta].rol && !sesion.tieneRol(RUTAS[ruta].rol))) { ctx.navegar('inicio'); return; }
 
   pintarNav(ruta);
+  pintarBanner();
   vista.dispatchEvent(new Event('vista-salida'));
   vista.innerHTML = '';
   try {
@@ -130,6 +147,14 @@ async function iniciar() {
     try { await sesion.refrescar(); } catch { /* sesión vencida: refrescar ya la cerró */ }
   }
   await registro.iniciar();
+  await emergencia.iniciar();
+  addEventListener('emergencia-cambio', pintarBanner);
+  addEventListener('emergencia-activada', () => {
+    const a = emergencia.actual();
+    if (!a) return;
+    aviso(`${a.emergencia.simulacro ? 'SIMULACRO' : 'EMERGENCIA'}: ${emergencia.TIPOS[a.emergencia.tipo]}. Siga las instrucciones de los brigadistas.`, a.emergencia.simulacro ? 'advertencia' : 'error');
+  });
+  addEventListener('emergencia-marcas-tarde', e => aviso(`${e.detail} reporte(s) llegaron después del cierre y no se tuvieron en cuenta.`, 'advertencia'));
   // Descarga en segundo plano mapas y planos para que estén sin conexión.
   contenido.precargar();
   addEventListener('sesion-iniciada', () => contenido.precargar());

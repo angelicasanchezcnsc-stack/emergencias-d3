@@ -4,7 +4,7 @@
 
 export const CONFIG = {
   APP_NOMBRE: 'EMERGENCIAS D3',
-  VERSION: 'v0.3',
+  VERSION: 'v0.4',
   SUBTITULO: 'Despacho 3 — Sede Calle 96',
   CREDITOS: 'Aplicativo de emergencias del Despacho 3 — Edwin Arturo Ruiz Moreno — 2026',
 

@@ -68,8 +68,12 @@ export async function vistaRecomendaciones(vista) {
       return;
     }
 
-    vista.querySelector('#lista').innerHTML = protocolos.map((p, i) => `
-      <details class="recom" data-id="${esc(p.id)}" ${i === 0 ? 'open' : ''}>
+    // Si se llegó desde la emergencia, se abre el protocolo de ese tipo de evento.
+    let abrir = null;
+    try { abrir = sessionStorage.getItem('protocolo-abrir'); sessionStorage.removeItem('protocolo-abrir'); } catch { /* sin almacenamiento */ }
+    if (!protocolos.some(p => p.id === abrir)) abrir = protocolos[0] && protocolos[0].id;
+    vista.querySelector('#lista').innerHTML = protocolos.map(p => `
+      <details class="recom" data-id="${esc(p.id)}" ${p.id === abrir ? 'open' : ''}>
         <summary>${icono('libro', 'ic-s')}<span>${esc(p.titulo)}</span></summary>
         <div class="recom-cuerpo">
           ${p.secciones.map(s => `<h4>${esc(s.titulo)}</h4><ol>${s.items.map(t => `<li>${esc(t)}</li>`).join('')}</ol>`).join('')}
@@ -79,6 +83,7 @@ export async function vistaRecomendaciones(vista) {
         </div>
       </details>`).join('');
 
+    if (abrir && abrir !== (protocolos[0] && protocolos[0].id)) vista.querySelector(`[data-id="${CSS.escape(abrir)}"]`)?.scrollIntoView({ block: 'start' });
     const buscar = el => protocolos.findIndex(x => x.id === el.closest('[data-id]').dataset.id);
     vista.querySelectorAll('[data-editar]').forEach(b => b.addEventListener('click', async () => {
       const i = buscar(b);

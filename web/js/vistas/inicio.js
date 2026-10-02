@@ -1,5 +1,6 @@
 import * as sesion from '../sesion.js';
 import * as registro from '../registro.js';
+import * as emergencia from '../emergencia.js';
 import { esc, icono, tarjeta, insignia } from '../ui.js';
 import { horaLegible } from '../tiempo.js';
 import { insigniasRol, insigniaSituacion } from './comun.js';
@@ -18,9 +19,18 @@ export function vistaInicio(vista) {
     : sit === 'en-sede' ? `En la sede desde las ${horaLegible(r.ingreso)}.`
     : sit === 'salio' ? `Salió a las ${horaLegible(r.salida)}.` : 'Hoy no está en la sede.';
 
-  const proximas = [
-    ['alerta', 'rojo', 'Emergencia', 'Activación, reporte de brigadistas y tablero', 'Etapas 6 y 7']
-  ];
+  const proximas = [];
+  const em = emergencia.actual();
+  const tarjetaEmergencia = em
+    ? tarjeta({
+      icono: 'alerta', tono: 'rojo', titulo: em.emergencia.simulacro ? 'Simulacro en curso' : 'Emergencia en curso',
+      subtitulo: emergencia.TIPOS[em.emergencia.tipo], clase: 'tarjeta-alerta',
+      cuerpo: `<a class="btn btn-peligro" href="#/emergencia">${icono('alerta', 'ic-s')}Ir a la emergencia</a>`
+    })
+    : tarjeta({
+      icono: 'alerta', tono: 'rojo', titulo: 'Emergencia', subtitulo: 'Sin emergencias en curso',
+      cuerpo: `<a class="btn btn-secundario" href="#/emergencia">${emergencia.tiene(emergencia.ROLES_ACTIVAR) ? 'Activar o simular' : 'Qué hacer si ocurre'}</a>`
+    });
 
   vista.innerHTML = `
     <div class="titulo-vista">
@@ -29,6 +39,7 @@ export function vistaInicio(vista) {
     </div>
     ${sinDirectorio ? '<div class="nota nota-adv">Todavía no hay directorio publicado: los nombres aparecerán cuando el administrador cargue la planta física.</div>' : ''}
     <div class="rejilla">
+      ${tarjetaEmergencia}
       ${tarjeta({
         icono: 'reloj', tono: 'verde', titulo: 'Mi día', subtitulo: 'Reporte su presencia, ingreso y salida',
         cuerpo: `<p>${insigniaSituacion(r)} ${esc(textoDia)}</p>

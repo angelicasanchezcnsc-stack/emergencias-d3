@@ -49,6 +49,11 @@ Respuesta: `{ "ok": true, "datos": {...} }` o `{ "ok": false, "codigo": "...", "
 | `guardarContenido` | administrador (contactos: también coordinador y suplente) | Sobres de contactos, recomendaciones y rutas, con control de versión |
 | `subirArchivo` / `quitarArchivo` | administrador | Mapas, rutas y planos cifrados, en trozos de hasta 45.000 caracteres |
 | `bajarArchivo` | sesión | Trozos cifrados de un archivo |
+| `pulso` | sesión | Consulta liviana (sin candado): emergencia activa y su versión |
+| `emergencia` | sesión | Estado completo: emergencia, foto de esperados por piso, marcas y conteos |
+| `activarEmergencia` | real: administrador, coordinador, suplente o brigadista; simulacro: administrador o coordinador | Abre la emergencia y toma la foto de quién está en la sede |
+| `marcarEmergencia` | cada persona sobre sí misma; brigadistas, coordinación y administración sobre cualquiera | Marcas por persona o por conteo (gana la más reciente) |
+| `cerrarEmergencia` | real: administrador, coordinador o suplente; simulacro: administrador o coordinador | Cierra la emergencia |
 
 ## 3. Llave maestra
 

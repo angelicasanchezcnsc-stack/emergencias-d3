@@ -269,6 +269,46 @@ h4 { margin: 1rem 0 .4rem; font-size: .8rem; text-transform: uppercase; letter-s
 .seccion-edit textarea { margin-top: .5rem; }
 textarea { width: 100%; padding: .7rem .8rem; background: #fff; border: 1px solid var(--corp-light); border-radius: var(--radio); font: inherit; font-size: .95rem; color: var(--corp-dark); resize: vertical; }
 
+/* Emergencia */
+.banner-emergencia {
+  display: flex; align-items: center; gap: .5rem; padding: .55rem 1rem; background: var(--error); color: #fff;
+  font-size: .85rem; text-decoration: none; animation: latido 2s ease-in-out infinite;
+}
+.banner-emergencia.simulacro { background: var(--adv); color: var(--corp-dark); animation: none; }
+.banner-emergencia span:first-of-type { flex: 1; }
+.banner-ir { font-weight: 800; text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; }
+.alerta-emergencia, .alerta-simulacro { border-radius: var(--radio-g); padding: 1rem 1.25rem; margin-bottom: 1rem; }
+.alerta-emergencia { background: var(--error); color: #fff; }
+.alerta-simulacro { background: var(--corp-accent); color: var(--corp-dark); border: 2px dashed var(--corp-dark); }
+.alerta-titulo { display: flex; gap: .8rem; align-items: flex-start; }
+.alerta-titulo .ic { width: 2rem; height: 2rem; flex: none; }
+.alerta-titulo strong { display: block; font-size: 1.2rem; text-transform: uppercase; letter-spacing: .03em; }
+.alerta-titulo > div > span { display: block; font-size: .9rem; margin-top: .15rem; }
+.tarjeta-alerta { border: 2px solid var(--adv); }
+.resumen-grande { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; margin-bottom: 1rem; }
+.resumen-grande div { background: #fff; border: 1px solid var(--corp-light); border-radius: var(--radio); padding: .6rem; text-align: center; }
+.resumen-grande strong { display: block; font-size: 1.8rem; font-weight: 800; color: var(--corp-dark); line-height: 1.1; }
+.resumen-grande span { font-size: .72rem; color: var(--texto-60); }
+.resumen-grande .t-ambar { background: var(--adv-bg); border-color: #fde68a; }
+.resumen-grande .t-rojo { background: var(--error-bg); border-color: #fecaca; }
+.tablero td, .tablero th { text-align: center; }
+.tablero td:first-child, .tablero th:first-child { text-align: left; }
+.tablero tfoot td { font-weight: 800; border-top: 2px solid var(--corp-light); }
+.fila-marca { display: grid; grid-template-columns: 1fr auto; gap: .4rem .75rem; align-items: center; padding: .7rem 0; border-top: 1px solid var(--corp-light); }
+.fila-marca .casilla-chica { grid-column: 1 / -1; font-size: .75rem; margin: 0; color: var(--texto-60); }
+.marca-btns { display: flex; gap: .3rem; }
+.btn-estado {
+  display: inline-flex; align-items: center; gap: .3rem; min-height: 2.75rem; padding: .4rem .6rem; border-radius: var(--radio);
+  border: 1px solid var(--corp-light); background: #fff; font: inherit; font-size: .72rem; font-weight: 700; text-transform: uppercase;
+  color: var(--corp-text); cursor: pointer; transition: all .2s;
+}
+.btn-estado.e-evacuado.activo { background: var(--exito); border-color: var(--exito); color: #fff; }
+.btn-estado.e-no.activo { background: var(--error); border-color: var(--error); color: #fff; }
+.btn-estado.e-apoyo.activo { background: var(--adv); border-color: var(--adv); color: var(--corp-dark); }
+.conteo { margin-top: 1rem; border: 1px solid var(--corp-light); border-radius: var(--radio); padding: .75rem 1rem; }
+.conteo summary { cursor: pointer; font-weight: 700; color: var(--corp-dark); }
+@keyframes latido { 50% { filter: brightness(1.15); } }
+
 .credencial { border: 1px dashed var(--corp-text); border-radius: var(--radio); padding: .8rem; margin-bottom: .6rem; break-inside: avoid; }
 .clave-mono { font-family: 'JetBrains Mono', monospace; font-size: 1.05rem; font-weight: 700; letter-spacing: .08em; }
 
@@ -278,6 +318,10 @@ textarea { width: 100%; padding: .7rem .8rem; background: #fff; border: 1px soli
 @keyframes giro { to { transform: rotate(360deg); } }
 
 @media (max-width: 640px) {
+  .resumen-grande { grid-template-columns: repeat(2, 1fr); }
+  .fila-marca { grid-template-columns: 1fr; }
+  .marca-btns { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .btn-estado { justify-content: center; }
   .fila-dia { grid-template-columns: 3.2rem 1fr auto; }
   .fila-dia [data-reportar] { grid-column: 2 / -1; justify-self: start; min-height: 2rem; padding: .25rem .5rem; }
   .marca p { display: none; }

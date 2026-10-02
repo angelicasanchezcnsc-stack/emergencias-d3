@@ -23,7 +23,12 @@ var ESQUEMA = {
   RegistroHoy: ['fecha', 'codigo', 'estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida', 'reportadoPor', 'actualizado', 'momentos'],
   RegistroHistorico: ['fecha', 'codigo', 'estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida', 'reportadoPor', 'actualizado', 'momentos'],
   // Archivos cifrados (mapas, rutas, planos) partidos en trozos que caben en una celda.
-  Archivos: ['id', 'parte', 'datos']
+  Archivos: ['id', 'parte', 'datos'],
+  // Emergencias y simulacros. "esperados" es la foto de quién estaba en la sede, por piso,
+  // al momento de activar (solo códigos).
+  Emergencias: ['id', 'tipo', 'descripcion', 'simulacro', 'estado', 'inicio', 'activadaPor', 'cierre', 'cerradaPor', 'version', 'esperados'],
+  MarcasEmergencia: ['emergencia', 'codigo', 'estado', 'asistencia', 'llegada', 'reportadoPor', 'actualizado', 'momentos'],
+  ConteosEmergencia: ['emergencia', 'piso', 'evacuados', 'noUbicados', 'apoyo', 'reportadoPor', 'actualizado', 'momentos']
 };
 
 var ROLES_VALIDOS = ['admin', 'coordinador', 'suplente', 'brigadista'];
@@ -41,6 +46,14 @@ var LIMITE_CELDA = 45000;   // Google Sheets admite 50.000 caracteres por celda
 var MAX_PARTES = 60;
 var ARCHIVO_VALIDO = /^(punto|ruta-\d{1,2}|plano-\d{1,2})$/;
 var MIMES_VALIDOS = ['image/jpeg', 'image/png', 'application/pdf'];
+
+// Emergencias
+var TIPOS_EMERGENCIA = ['sismo', 'incendio', 'estructural', 'riesgo-publico', 'atentado', 'otro'];
+var ESTADOS_EN_EMERGENCIA = ['evacuado', 'no_ubicado', 'apoyo'];
+var ROLES_ACTIVAR = ['admin', 'coordinador', 'suplente', 'brigadista'];
+var ROLES_SIMULACRO = ['admin', 'coordinador'];
+var ROLES_CERRAR = ['admin', 'coordinador', 'suplente'];
+var ROLES_REPORTAR = ['admin', 'coordinador', 'suplente', 'brigadista'];
 var MAX_INTENTOS = 5;
 var MINUTOS_BLOQUEO = 15;
 
@@ -210,6 +223,67 @@ function crearNucleo(dep) {
     return rolesPermitidos.some(function (r) { return tieneRol(p, r); });
   }
 
+  // ---------- Emergencias ----------
+
+  function emergenciaActiva(lista) {
+    return (lista || dep.leer('Emergencias')).filter(function (e) { return e.estado === 'activa'; })[0] || null;
+  }
+
+  function emergenciaPublica(e) {
+    return {
+      id: e.id, tipo: e.tipo, descripcion: texto(e.descripcion), simulacro: texto(e.simulacro) === 'true',
+      estado: e.estado, inicio: num(e.inicio), activadaPor: e.activadaPor, cierre: e.cierre ? num(e.cierre) : null,
+      cerradaPor: texto(e.cerradaPor), version: num(e.version), esperados: json(e.esperados, {})
+    };
+  }
+
+  function estadoEmergencia(id) {
+    var lista = dep.leer('Emergencias');
+    var e = id ? lista.filter(function (x) { return x.id === id; })[0] : emergenciaActiva(lista);
+    if (!e) return { emergencia: null, marcas: [], conteos: [] };
+    return {
+      emergencia: emergenciaPublica(e),
+      marcas: dep.leer('MarcasEmergencia').filter(function (m) { return m.emergencia === e.id; }).map(function (m) {
+        return { codigo: m.codigo, estado: texto(m.estado), asistencia: texto(m.asistencia) === 'true', llegada: texto(m.llegada), reportadoPor: texto(m.reportadoPor) };
+      }),
+      conteos: dep.leer('ConteosEmergencia').filter(function (c) { return c.emergencia === e.id; }).map(function (c) {
+        return { piso: num(c.piso), evacuados: num(c.evacuados), noUbicados: num(c.noUbicados), apoyo: num(c.apoyo), reportadoPor: texto(c.reportadoPor) };
+      })
+    };
+  }
+
+  // Foto de quién está en la sede al activar: por piso, quienes reportaron estar
+  // ("en") y quienes no han reportado su día ("sin", para verificar).
+  function fotoEsperados() {
+    var hoy = registrosDelDia();
+    var foto = {};
+    dep.leer('Personas').filter(activa).forEach(function (p) {
+      var r = hoy.filter(function (x) { return x.codigo === p.codigo; })[0];
+      var piso = r && texto(r.excepcion) === 'true' ? num(r.piso) : num(p.piso);
+      var grupo = !r || !texto(r.estado) ? 'sin' : (r.estado === 'presencial' && !texto(r.salida) ? 'en' : null);
+      if (!grupo) return;
+      foto[piso] = foto[piso] || { en: [], sin: [] };
+      foto[piso][grupo].push(p.codigo);
+    });
+    return foto;
+  }
+
+  // Aplica campos con "gana el más reciente" (igual que el registro diario).
+  function aplicarCampos(fila, campos, momento, validos, validar) {
+    var momentos = json(fila.momentos, {});
+    var cambio = false;
+    validos.forEach(function (c) {
+      if (!campos || campos[c] === undefined) return;
+      if (!validar(c, texto(campos[c]))) return;
+      if (num(momento) < num(momentos[c])) return;
+      fila[c] = texto(campos[c]);
+      momentos[c] = num(momento);
+      cambio = true;
+    });
+    if (cambio) fila.momentos = JSON.stringify(momentos);
+    return cambio;
+  }
+
   var acciones = {
 
     ping: function () {
@@ -277,8 +351,106 @@ function crearNucleo(dep) {
         directorio: dir ? { version: num(dir.version), datos: dir.datos } : null,
         config: { reglasClave: cfg.reglasClave, exigirCambioInicial: !!cfg.exigirCambioInicial, diasSesion: num(cfg.diasSesion) },
         hoy: hoyPublico(registrosDelDia()),
-        contenido: contenidoPublico(cfg)
+        contenido: contenidoPublico(cfg),
+        emergencia: estadoEmergencia()
       });
+    },
+
+    // Consulta liviana y sin bloqueo: ¿hay una emergencia activa y en qué versión va?
+    pulso: function () {
+      var e = emergenciaActiva();
+      return ok({ activa: e ? { id: e.id, tipo: e.tipo, simulacro: texto(e.simulacro) === 'true', inicio: num(e.inicio), version: num(e.version) } : null });
+    },
+
+    emergencia: function (d) {
+      return ok(estadoEmergencia(d.id));
+    },
+
+    activarEmergencia: function (d, p) {
+      var simulacro = !!d.simulacro;
+      if (!puedeEditar(p, simulacro ? ROLES_SIMULACRO : ROLES_ACTIVAR)) {
+        return falla('PERMISO', simulacro ? 'Solo el coordinador o el administrador pueden iniciar un simulacro.' : 'No tiene permiso para activar una emergencia.');
+      }
+      if (TIPOS_EMERGENCIA.indexOf(d.tipo) < 0) return falla('DATOS', 'Tipo de emergencia no válido.');
+      var actual = emergenciaActiva();
+      if (actual) return falla('YA_ACTIVA', 'Ya hay ' + (texto(actual.simulacro) === 'true' ? 'un simulacro' : 'una emergencia') + ' en curso.');
+      var e = {
+        id: 'E-' + dep.hoy() + '-' + dep.uuid().slice(0, 6), tipo: d.tipo, descripcion: texto(d.descripcion).slice(0, 200),
+        simulacro: simulacro ? 'true' : 'false', estado: 'activa', inicio: dep.ahora(), activadaPor: p.codigo,
+        cierre: '', cerradaPor: '', version: 1, esperados: JSON.stringify(fotoEsperados())
+      };
+      dep.agregar('Emergencias', e);
+      bitacora(p.codigo, simulacro ? 'simulacro-inicio' : 'emergencia-inicio', e.id + ' ' + e.tipo);
+      return ok(estadoEmergencia(e.id));
+    },
+
+    // Marcas del piso y del punto de encuentro, persona por persona o por conteo.
+    // Cada persona puede reportarse a sí misma; brigadistas, coordinación y
+    // administración pueden reportar a cualquiera.
+    // op = { id, emergencia, momento, tipo: 'persona', codigo, campos: { estado?, asistencia?, llegada? } }
+    //    | { id, emergencia, momento, tipo: 'conteo', piso, campos: { evacuados?, noUbicados?, apoyo? } }
+    marcarEmergencia: function (d, p) {
+      var lista = dep.leer('Emergencias');
+      var personas = dep.leer('Personas').filter(activa);
+      var marcas = dep.leer('MarcasEmergencia');
+      var conteos = dep.leer('ConteosEmergencia');
+      var reporta = puedeEditar(p, ROLES_REPORTAR);
+      var ahora = new Date(dep.ahora()).toISOString();
+      var tocadas = {};
+      var resultados = (d.ops || []).map(function (op) {
+        var e = op && lista.filter(function (x) { return x.id === op.emergencia; })[0];
+        if (!e) return { id: op && op.id, estado: 'emergencia' };
+        if (e.estado !== 'activa') return { id: op.id, estado: 'cerrada' };
+        var cambio;
+        if (op.tipo === 'conteo') {
+          if (!reporta) return { id: op.id, estado: 'permiso' };
+          var piso = num(op.piso);
+          if (!piso) return { id: op.id, estado: 'datos' };
+          var c = conteos.filter(function (x) { return x.emergencia === e.id && num(x.piso) === piso; })[0];
+          if (!c) { c = { emergencia: e.id, piso: piso, evacuados: 0, noUbicados: 0, apoyo: 0, momentos: '{}' }; conteos.push(c); }
+          cambio = aplicarCampos(c, op.campos, op.momento, ['evacuados', 'noUbicados', 'apoyo'],
+            function (k, v) { return /^\d{1,3}$/.test(v); });
+          if (cambio) { c.reportadoPor = p.codigo; c.actualizado = ahora; }
+        } else {
+          if (!personas.some(function (x) { return x.codigo === op.codigo; })) return { id: op.id, estado: 'persona' };
+          var propio = op.codigo === p.codigo;
+          if (!propio && !reporta) return { id: op.id, estado: 'permiso' };
+          var m = marcas.filter(function (x) { return x.emergencia === e.id && x.codigo === op.codigo; })[0];
+          if (!m) { m = { emergencia: e.id, codigo: op.codigo, estado: '', asistencia: 'false', llegada: '', momentos: '{}' }; marcas.push(m); }
+          cambio = aplicarCampos(m, op.campos, op.momento, ['estado', 'asistencia', 'llegada'], function (k, v) {
+            if (k === 'estado') return v === '' || (ESTADOS_EN_EMERGENCIA.indexOf(v) >= 0 && (reporta || v !== 'no_ubicado'));
+            if (k === 'asistencia') return v === 'true' || v === 'false';
+            return v === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+          });
+          if (cambio) { m.reportadoPor = p.codigo; m.actualizado = ahora; }
+        }
+        if (cambio) tocadas[e.id] = true;
+        return { id: op.id, estado: 'ok' };
+      });
+      dep.escribir('MarcasEmergencia', marcas);
+      dep.escribir('ConteosEmergencia', conteos);
+      if (Object.keys(tocadas).length) {
+        lista.forEach(function (e) { if (tocadas[e.id]) e.version = num(e.version) + 1; });
+        dep.escribir('Emergencias', lista);
+      }
+      return ok({ resultados: resultados, estado: estadoEmergencia() });
+    },
+
+    cerrarEmergencia: function (d, p) {
+      var lista = dep.leer('Emergencias');
+      var e = lista.filter(function (x) { return x.id === d.id && x.estado === 'activa'; })[0];
+      if (!e) return falla('NO_ACTIVA', 'Esa emergencia ya fue cerrada.');
+      var simulacro = texto(e.simulacro) === 'true';
+      if (!puedeEditar(p, simulacro ? ROLES_SIMULACRO : ROLES_CERRAR)) {
+        return falla('PERMISO', simulacro ? 'Solo el coordinador o el administrador pueden terminar un simulacro.' : 'Solo la coordinación o el administrador pueden cerrar la emergencia.');
+      }
+      e.estado = 'cerrada';
+      e.cierre = dep.ahora();
+      e.cerradaPor = p.codigo;
+      e.version = num(e.version) + 1;
+      dep.escribir('Emergencias', lista);
+      bitacora(p.codigo, simulacro ? 'simulacro-cierre' : 'emergencia-cierre', e.id);
+      return ok(estadoEmergencia(e.id));
     },
 
     // Guarda un sobre de contenido (contactos, recomendaciones o rutas).
@@ -456,17 +628,20 @@ function crearNucleo(dep) {
   };
 
   var PUBLICAS = { ping: true, inicializar: true, ingresar: true };
+  // Solo leen: no toman el candado, para que muchos celulares consulten a la vez.
+  var SIN_BLOQUEO = { pulso: true, emergencia: true, bajarArchivo: true };
 
   function procesar(peticion) {
     try {
       var accion = peticion && peticion.accion;
       if (!acciones[accion]) return falla('ACCION', 'Acción desconocida.');
-      return dep.bloqueo(function () {
+      var ejecutar = function () {
         if (PUBLICAS[accion]) return acciones[accion](peticion);
         var p = sesionActual(peticion.token);
         if (!p) return falla('SESION', 'La sesión expiró. Ingrese de nuevo.');
         return acciones[accion](peticion, p);
-      });
+      };
+      return SIN_BLOQUEO[accion] ? ejecutar() : dep.bloqueo(ejecutar);
     } catch (e) {
       return falla('ERROR', String(e && e.message || e));
     }
