@@ -23,7 +23,12 @@ async function remoto(accion, datos) {
     throw new ErrorApi('Sin conexión con el servidor.', 'RED');
   }
   if (!r.ok) throw new ErrorApi('El servidor respondió con un error (' + r.status + ').', 'RED');
-  return r.json();
+  try {
+    return await r.json();
+  } catch {
+    // Google a veces responde con una página en vez de datos (por ejemplo, al "despertar").
+    throw new ErrorApi('El servidor no respondió como se esperaba. Intente de nuevo en unos segundos.', 'RED');
+  }
 }
 
 let simulado;

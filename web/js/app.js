@@ -124,7 +124,21 @@ async function enrutar() {
   if (!sesion.activa()) {
     pintarNav(null);
     if (servidorListo === null) {
-      try { servidorListo = (await llamar('ping')).inicializado; } catch { servidorListo = true; }
+      try {
+        const r = await llamar('ping');
+        if (!r || typeof r.inicializado !== 'boolean') throw new Error('El servidor dio una respuesta inesperada.');
+        servidorListo = r.inicializado;
+      } catch (e) {
+        // Sin respuesta no se sabe si el servidor ya está configurado: se avisa y se ofrece
+        // reintentar, en vez de suponer y mostrar una pantalla que no corresponde.
+        vista.innerHTML = `
+          <div class="titulo-vista"><h2>Sin conexión con el servidor</h2>
+            <p class="sutil">Para ingresar por primera vez en este dispositivo se necesita internet.</p></div>
+          <div class="nota nota-error">${icono('alerta')}<span>${esc(e && e.message ? e.message : 'El servidor no respondió.')}</span></div>
+          <p style="margin-top:1rem"><button class="btn btn-oscuro" id="reintentar" type="button">Reintentar</button></p>`;
+        vista.querySelector('#reintentar').addEventListener('click', enrutar);
+        return;
+      }
     }
     if (!servidorListo) return vistaInstalacion(vista, { ...ctx, alTerminar: () => { servidorListo = true; ctx.navegar('ingreso'); } });
     if (ruta !== 'ingreso') { ctx.navegar('ingreso'); return; }

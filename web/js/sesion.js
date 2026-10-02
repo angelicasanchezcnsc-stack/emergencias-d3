@@ -95,6 +95,7 @@ export async function refrescar() {
 export async function ingresar(correo, clave) {
   const cred = await cripto.credenciales(correo, clave);
   const r = await llamar('ingresar', { hashCorreo: cred.hashCorreo, verificador: cred.verificador });
+  if (!r || !r.token || !r.perfil) throw new ErrorApi('El servidor dio una respuesta inesperada. Intente de nuevo en unos segundos.', 'DATOS');
   estado.token = r.token;
   estado.perfil = r.perfil;
   fijarToken(r.token);
