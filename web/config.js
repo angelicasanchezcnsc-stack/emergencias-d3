@@ -4,7 +4,7 @@
 
 export const CONFIG = {
   APP_NOMBRE: 'EMERGENCIAS D3',
-  VERSION: 'v0.7',
+  VERSION: 'v0.7.2',
   SUBTITULO: 'Despacho 3 — Sede Calle 96',
   CREDITOS: 'Aplicativo de emergencias del Despacho 3 — Edwin Arturo Ruiz Moreno — 2026',
 
@@ -17,6 +17,10 @@ export const CONFIG = {
   // deben crearse de nuevo. No es secreta.
   SAL_PUBLICA: 'D3-CNSC-CALLE96-2026',
   ITERACIONES: 100000,
+  // Repeticiones para lo que sale de la contraseña (verificador y llave de los sobres).
+  // Más alto = más lento de adivinar por fuerza bruta. Si se cambia, todas las contraseñas
+  // deben restablecerse.
+  ITERACIONES_CLAVE: 600000,
 
   PISOS: [2, 4, 6, 7],
   PREFIJO_CODIGO: 'D3-'

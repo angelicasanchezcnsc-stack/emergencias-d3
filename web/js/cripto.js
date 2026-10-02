@@ -35,8 +35,8 @@ export async function hashCorreo(correo) {
 export async function credenciales(correo, clave) {
   const hc = await hashCorreo(correo);
   const [ver, bitsEnv] = await Promise.all([
-    pbkdf2(clave, 'D3E|acceso|' + hc),
-    pbkdf2(clave, 'D3E|sobre|' + hc)
+    pbkdf2(clave, 'D3E|acceso|' + hc, CONFIG.ITERACIONES_CLAVE),
+    pbkdf2(clave, 'D3E|sobre|' + hc, CONFIG.ITERACIONES_CLAVE)
   ]);
   const envoltura = await crypto.subtle.importKey('raw', bitsEnv, 'AES-GCM', false, ['encrypt', 'decrypt']);
   return { hashCorreo: hc, verificador: aHex(ver), envoltura };
@@ -116,16 +116,21 @@ export function claveTemporal(largo = 10) {
 }
 
 // Archivo de la llave maestra: cifrado con una frase que solo conoce el administrador.
+// Versión 1: 250.000 repeticiones; versión 2: 600.000. Se siguen abriendo las dos.
+const REPETICIONES_LLAVE = { 1: 250000, 2: 600000 };
+
 export async function cifrarConFrase(frase, obj) {
   const sal = aB64(crypto.getRandomValues(new Uint8Array(16)));
-  const k = await crypto.subtle.importKey('raw', await pbkdf2(frase, 'D3E|llave|' + sal, 250000),
+  const k = await crypto.subtle.importKey('raw', await pbkdf2(frase, 'D3E|llave|' + sal, REPETICIONES_LLAVE[2]),
     'AES-GCM', false, ['encrypt']);
-  return { formato: 'D3E-LLAVE', version: 1, sal, datos: await cifrarJSON(k, obj) };
+  return { formato: 'D3E-LLAVE', version: 2, sal, datos: await cifrarJSON(k, obj) };
 }
 
 export async function descifrarConFrase(frase, archivo) {
   if (!archivo || archivo.formato !== 'D3E-LLAVE') throw new Error('El archivo no es una llave de EMERGENCIAS D3.');
-  const k = await crypto.subtle.importKey('raw', await pbkdf2(frase, 'D3E|llave|' + archivo.sal, 250000),
+  const rep = REPETICIONES_LLAVE[archivo.version || 1];
+  if (!rep) throw new Error('Esta llave es de una versión más nueva del aplicativo.');
+  const k = await crypto.subtle.importKey('raw', await pbkdf2(frase, 'D3E|llave|' + archivo.sal, rep),
     'AES-GCM', false, ['decrypt']);
   try {
     return await descifrarJSON(k, archivo.datos);

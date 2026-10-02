@@ -333,7 +333,9 @@ function panelConfig(panel) {
       <hr style="border:none;border-top:1px solid var(--corp-light);margin:1rem 0">
       <label class="casilla"><input type="checkbox" id="exigir" ${cfg.exigirCambioInicial ? 'checked' : ''}>Obligar a cambiar la contraseña temporal en el primer ingreso</label>
       <div class="campo" style="margin-top:.8rem"><label class="etiqueta" for="dias">Días que dura una sesión en el celular (1 a 90)</label><input id="dias" type="number" min="1" max="90" value="${cfg.diasSesion || 30}"></div>
-      <p class="ayuda">Recomendación: al menos 8 caracteres. Una contraseña débil también debilita la protección de los sobres cifrados.</p>
+      <div class="campo"><label class="etiqueta" for="dhist">Días que se conserva el registro diario archivado (7 a 730)</label><input id="dhist" type="number" min="7" max="730" value="${cfg.diasHistorico || 90}"></div>
+      <div class="campo"><label class="etiqueta" for="dbit">Días que se conserva la bitácora de accesos (30 a 1825)</label><input id="dbit" type="number" min="30" max="1825" value="${cfg.diasBitacora || 365}"></div>
+      <p class="ayuda">Recomendación: al menos 10 caracteres y obligar el cambio de la contraseña temporal. Una contraseña débil también debilita la protección de los sobres cifrados. Lo archivado más antiguo que el plazo se borra solo, una vez al día.</p>
       <button class="btn btn-oscuro" type="submit">${icono('guardar', 'ic-s')}Guardar configuración</button>
     </form>`
   });
@@ -343,7 +345,8 @@ function panelConfig(panel) {
     try {
       await llamar('guardarConfig', {
         reglasClave: { minimo: Math.max(0, Number(f.minimo.value) || 0), mayuscula: f.mayuscula.checked, numero: f.numero.checked, simbolo: f.simbolo.checked },
-        exigirCambioInicial: f.exigir.checked, diasSesion: Number(f.dias.value) || 30
+        exigirCambioInicial: f.exigir.checked, diasSesion: Number(f.dias.value) || 30,
+        diasHistorico: Number(f.dhist.value) || 90, diasBitacora: Number(f.dbit.value) || 365
       });
       await sesion.refrescar();
       aviso('Configuración guardada.', 'exito');

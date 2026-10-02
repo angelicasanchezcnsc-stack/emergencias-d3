@@ -72,7 +72,10 @@ var MINUTOS_BLOQUEO = 15;
 var CONFIG_INICIAL = {
   reglasClave: { minimo: 0, mayuscula: false, numero: false, simbolo: false },
   exigirCambioInicial: false,
-  diasSesion: 30
+  diasSesion: 30,
+  // Días que se conservan el registro diario archivado y la bitácora (lo mínimo necesario).
+  diasHistorico: 90,
+  diasBitacora: 365
 };
 
 /**
@@ -240,8 +243,23 @@ function crearNucleo(dep) {
       dep.agregarVarias('RegistroHistorico', viejas);
       filas = filas.filter(function (f) { return f.fecha === hoy; });
       dep.escribir('RegistroHoy', filas);
+      purgarAntiguos();
     }
     return filas;
+  }
+
+  // Una vez al día (al cambiar la fecha) se borra lo que superó el plazo de conservación.
+  function purgarAntiguos() {
+    var cfg = leerConfig();
+    var limite = function (dias) { return new Date(dep.ahora() - Math.max(1, num(dias)) * 86400000).toISOString().slice(0, 10); };
+    var lh = limite(cfg.diasHistorico || 90);
+    var hist = dep.leer('RegistroHistorico');
+    var hist2 = hist.filter(function (f) { return texto(f.fecha) >= lh; });
+    if (hist2.length < hist.length) dep.escribir('RegistroHistorico', hist2);
+    var lb = limite(cfg.diasBitacora || 365);
+    var bit = dep.leer('Bitacora');
+    var bit2 = bit.filter(function (f) { return texto(f.fecha).slice(0, 10) >= lb; });
+    if (bit2.length < bit.length) dep.escribir('Bitacora', bit2);
   }
 
   function registroPublico(f) {
@@ -295,10 +313,27 @@ function crearNucleo(dep) {
     };
   }
 
-  function estadoEmergencia(id) {
+  // Quien no reporta en emergencias (no es brigadista, coordinación ni administración) solo
+  // recibe su propia marca y las cifras por piso: nunca el detalle de otras personas
+  // (por ejemplo, quién necesita asistencia por discapacidad).
+  function estadoEmergencia(id, p) {
     var lista = dep.leer('Emergencias');
     var e = id ? lista.filter(function (x) { return x.id === id; })[0] : emergenciaActiva(lista);
     if (!e) return { emergencia: null, marcas: [], conteos: [] };
+    if (p && !puedeEditar(p, ROLES_REPORTAR)) {
+      var pub = emergenciaPublica(e);
+      pub.esperados = {};
+      var r = e.estado === 'activa' ? resumenCierre(e, '') : null;
+      var propia = dep.leer('MarcasEmergencia').filter(function (m) { return m.emergencia === e.id && m.codigo === p.codigo; })
+        .map(function (m) { return { codigo: m.codigo, estado: texto(m.estado), asistencia: texto(m.asistencia) === 'true', llegada: texto(m.llegada), reportadoPor: '', actualizado: '' }; });
+      return {
+        emergencia: pub, marcas: propia, conteos: [],
+        cifras: r ? {
+          pisos: r.pisos.map(function (f) { return { piso: f.piso, esperados: f.esperados, porVerificar: f.porVerificar, evacuados: f.evacuados, noUbicados: f.noUbicados, apoyo: f.apoyo, pendientes: f.pendientes, llegaron: f.llegaron, porConteo: f.porConteo, reportado: f.reportado }; }),
+          total: { esperados: r.total.esperados, evacuados: r.total.evacuados, llegaron: r.total.llegaron, noUbicados: r.total.noUbicados, apoyo: r.total.apoyo, pendientes: r.total.pendientes, porVerificar: r.total.porVerificar }
+        } : null
+      };
+    }
     return {
       emergencia: emergenciaPublica(e),
       marcas: dep.leer('MarcasEmergencia').filter(function (m) { return m.emergencia === e.id; }).map(function (m) {
@@ -381,6 +416,9 @@ function crearNucleo(dep) {
         : en.filter(function (c) { return !(marca[c] && marca[c].estado); }).length;
       var completo = en.length > 0 && (conteo ? cifras.evacuados >= en.length
         : en.every(function (c) { return marca[c] && (marca[c].estado === 'evacuado' || texto(marca[c].llegada)); }));
+      // El piso tiene reporte si hay conteo, si nadie quedó pendiente o si alguien reportó a otra persona.
+      var reportado = !!conteo || (en.length > 0 && pendientes === 0) ||
+        conMarca.some(function (c) { return texto(marca[c].estado) && texto(marca[c].reportadoPor) && marca[c].reportadoPor !== c; });
       var ultimaSalida = vacioNulo(salidas, Math.max);
       var tConteo = conteo ? num(json(conteo.momentos, {}).evacuados) : 0;
       Array.prototype.push.apply(todasSalidas, salidas);
@@ -391,7 +429,7 @@ function crearNucleo(dep) {
         evacuados: cifras.evacuados, noUbicados: cifras.noUbicados, apoyo: cifras.apoyo, pendientes: pendientes,
         asistencia: conMarca.filter(function (c) { return texto(marca[c].asistencia) === 'true'; }).length,
         llegaron: conMarca.filter(function (c) { return texto(marca[c].llegada); }).length,
-        porConteo: !!conteo, completo: completo,
+        porConteo: !!conteo, completo: completo, reportado: reportado,
         primeraSalida: vacioNulo(salidas, Math.min), ultimaSalida: ultimaSalida,
         ultimaLlegada: vacioNulo(llegadas, Math.max),
         tEvacuacionMs: completo ? (ultimaSalida !== null ? ultimaSalida - inicio : (tConteo ? tConteo - inicio : null)) : null
@@ -415,8 +453,16 @@ function crearNucleo(dep) {
     };
   }
 
+  // El momento lo pone el celular (sirve sin conexión). Se limita para que un reloj
+  // adelantado, o alguien malintencionado, no "congele" un dato con una fecha futura.
+  var MAX_OPS = 500;
+  function momentoCliente(m) {
+    return Math.min(num(m), dep.ahora() + 5 * 60000);
+  }
+
   // Aplica campos con "gana el más reciente" (igual que el registro diario).
   function aplicarCampos(fila, campos, momento, validos, validar) {
+    momento = momentoCliente(momento);
     var momentos = json(fila.momentos, {});
     var cambio = false;
     validos.forEach(function (c) {
@@ -496,10 +542,10 @@ function crearNucleo(dep) {
         personas: dep.leer('Personas').map(publica),
         puestos: dep.leer('Puestos').map(function (x) { return { piso: num(x.piso), puesto: num(x.puesto), estado: texto(x.estado) }; }),
         directorio: dir ? { version: num(dir.version), datos: dir.datos } : null,
-        config: { reglasClave: cfg.reglasClave, exigirCambioInicial: !!cfg.exigirCambioInicial, diasSesion: num(cfg.diasSesion) },
+        config: { reglasClave: cfg.reglasClave, exigirCambioInicial: !!cfg.exigirCambioInicial, diasSesion: num(cfg.diasSesion), diasHistorico: num(cfg.diasHistorico), diasBitacora: num(cfg.diasBitacora) },
         hoy: hoyPublico(registrosDelDia()),
         contenido: contenidoPublico(cfg),
-        emergencia: estadoEmergencia()
+        emergencia: estadoEmergencia(null, p)
       });
     },
 
@@ -509,8 +555,8 @@ function crearNucleo(dep) {
       return ok({ activa: e ? { id: e.id, tipo: e.tipo, simulacro: texto(e.simulacro) === 'true', inicio: num(e.inicio), version: num(e.version) } : null });
     },
 
-    emergencia: function (d) {
-      return ok(estadoEmergencia(d.id));
+    emergencia: function (d, p) {
+      return ok(estadoEmergencia(d.id, p));
     },
 
     activarEmergencia: function (d, p) {
@@ -522,7 +568,7 @@ function crearNucleo(dep) {
       var actual = emergenciaActiva();
       // "unirse": un celular que activó la emergencia sin conexión la sincroniza.
       // Si ya hay una en curso, se une a ella; si no, se crea con la hora de inicio real.
-      if (actual && d.unirse) return ok(estadoEmergencia(actual.id));
+      if (actual && d.unirse) return ok(estadoEmergencia(actual.id, p));
       if (actual) return falla('YA_ACTIVA', 'Ya hay ' + (texto(actual.simulacro) === 'true' ? 'un simulacro' : 'una emergencia') + ' en curso.');
       var ahora = dep.ahora();
       var inicio = d.unirse && num(d.inicio) ? Math.min(ahora, Math.max(ahora - 12 * 3600000, num(d.inicio))) : ahora;
@@ -533,7 +579,7 @@ function crearNucleo(dep) {
       };
       dep.agregar('Emergencias', e);
       bitacora(p.codigo, simulacro ? 'simulacro-inicio' : 'emergencia-inicio', e.id + ' ' + e.tipo);
-      return ok(estadoEmergencia(e.id));
+      return ok(estadoEmergencia(e.id, p));
     },
 
     // Marcas del piso y del punto de encuentro, persona por persona o por conteo.
@@ -549,7 +595,8 @@ function crearNucleo(dep) {
       var reporta = puedeEditar(p, ROLES_REPORTAR);
       var ahora = new Date(dep.ahora()).toISOString();
       var tocadas = {};
-      var resultados = (d.ops || []).map(function (op) {
+      if (!Array.isArray(d.ops) || d.ops.length > MAX_OPS) return falla('DATOS', 'Demasiadas operaciones en un solo envío.');
+      var resultados = d.ops.map(function (op) {
         var e = op && lista.filter(function (x) { return x.id === op.emergencia; })[0];
         if (!e) return { id: op && op.id, estado: 'emergencia' };
         if (e.estado !== 'activa') return { id: op.id, estado: 'cerrada' };
@@ -585,7 +632,7 @@ function crearNucleo(dep) {
         lista.forEach(function (e) { if (tocadas[e.id]) e.version = num(e.version) + 1; });
         dep.escribir('Emergencias', lista);
       }
-      return ok({ resultados: resultados, estado: estadoEmergencia() });
+      return ok({ resultados: resultados, estado: estadoEmergencia(null, p) });
     },
 
     cerrarEmergencia: function (d, p) {
@@ -608,7 +655,7 @@ function crearNucleo(dep) {
       dep.escribir('ConteosEmergencia', dep.leer('ConteosEmergencia').filter(function (c) { return c.emergencia !== e.id; }));
       dep.escribir('Emergencias', lista);
       bitacora(p.codigo, simulacro ? 'simulacro-cierre' : 'emergencia-cierre', e.id);
-      return ok(estadoEmergencia(e.id));
+      return ok(estadoEmergencia(e.id, p));
     },
 
     // ---------- Caracterización individual (todo llega cifrado desde el navegador) ----------
@@ -835,7 +882,8 @@ function crearNucleo(dep) {
       var hoy = dep.hoy();
       var filas = registrosDelDia();
       var personas = dep.leer('Personas').filter(activa);
-      var resultados = (d.ops || []).map(function (op) {
+      if (!Array.isArray(d.ops) || d.ops.length > MAX_OPS) return falla('DATOS', 'Demasiadas operaciones en un solo envío.');
+      var resultados = d.ops.map(function (op) {
         if (!op || op.fecha !== hoy) return { id: op && op.id, estado: 'fecha' };
         var persona = personas.filter(function (x) { return x.codigo === op.codigo; })[0];
         if (!persona) return { id: op.id, estado: 'persona' };
@@ -846,13 +894,14 @@ function crearNucleo(dep) {
           filas.push(f);
         }
         var momentos = json(f.momentos, {});
+        var momento = momentoCliente(op.momento);
         var cambio = false;
         CAMPOS_REGISTRO.forEach(function (c) {
           if (!op.campos || op.campos[c] === undefined) return;
           if (!valorValido(c, op.campos[c])) return;
-          if (num(op.momento) < num(momentos[c])) return;
+          if (momento < num(momentos[c])) return;
           f[c] = texto(op.campos[c]);
-          momentos[c] = num(op.momento);
+          momentos[c] = momento;
           cambio = true;
         });
         if (cambio) {
@@ -879,6 +928,9 @@ function crearNucleo(dep) {
       yo.debeCambiar = 'false';
       yo.actualizado = new Date(dep.ahora()).toISOString();
       dep.escribir('Personas', personas);
+      // Se cierran las demás sesiones de la persona (otro celular, un equipo prestado): solo sigue esta.
+      var actual = sha256(texto(d.token));
+      dep.escribir('Sesiones', dep.leer('Sesiones').filter(function (s) { return s.codigo !== p.codigo || s.tokenHash === actual; }));
       bitacora(p.codigo, 'cambio-clave', '');
       return ok({ perfil: perfil(yo) });
     },
@@ -903,7 +955,9 @@ function crearNucleo(dep) {
         var x = personas.filter(function (y) { return y.codigo === c.codigo; })[0];
         if (!x) throw new Error('No existe la persona ' + c.codigo + '.');
         x.roles = [].concat(c.roles || []).filter(function (r) { return ROLES_VALIDOS.indexOf(r) >= 0; }).join(',');
-        x.pisoBrigada = tieneRol(x, 'brigadista') && c.pisoBrigada ? c.pisoBrigada : '';
+        var pisoB = num(c.pisoBrigada);
+        var pisosSede = dep.leer('Puestos').map(function (q) { return num(q.piso); });
+        x.pisoBrigada = tieneRol(x, 'brigadista') && pisoB && pisosSede.indexOf(pisoB) >= 0 ? pisoB : '';
       });
       if (contarAdmins(personas) < 1) return falla('ADMIN', 'Debe quedar al menos un administrador activo.');
       dep.escribir('Personas', personas);
@@ -918,6 +972,8 @@ function crearNucleo(dep) {
       if (d.reglasClave) cfg.reglasClave = d.reglasClave;
       if (d.exigirCambioInicial !== undefined) cfg.exigirCambioInicial = !!d.exigirCambioInicial;
       if (d.diasSesion) cfg.diasSesion = Math.max(1, Math.min(90, num(d.diasSesion)));
+      if (d.diasHistorico) cfg.diasHistorico = Math.max(7, Math.min(730, num(d.diasHistorico)));
+      if (d.diasBitacora) cfg.diasBitacora = Math.max(30, Math.min(1825, num(d.diasBitacora)));
       escribirConfig(cfg);
       bitacora(p.codigo, 'config', '');
       return ok({ config: cfg });

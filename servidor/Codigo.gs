@@ -43,16 +43,20 @@ function adaptadorSheets() {
         return o;
       });
     },
+    // Se escribe encima de las filas existentes y solo se limpia lo que sobra al final.
+    // Así una lectura sin candado (pulso, emergencia) nunca ve la tabla vacía a medio escribir.
     escribir: function (nombre, filas) {
       var h = hoja(nombre);
       var cols = ESQUEMA[nombre];
       var ultima = h.getLastRow();
-      if (ultima > 1) h.getRange(2, 1, ultima - 1, cols.length).clearContent();
-      if (!filas.length) return;
-      var datos = filas.map(function (f) {
-        return cols.map(function (c) { return f[c] === undefined || f[c] === null ? '' : String(f[c]); });
-      });
-      h.getRange(2, 1, datos.length, cols.length).setNumberFormat('@').setValues(datos);
+      if (filas.length) {
+        var datos = filas.map(function (f) {
+          return cols.map(function (c) { return f[c] === undefined || f[c] === null ? '' : String(f[c]); });
+        });
+        h.getRange(2, 1, datos.length, cols.length).setNumberFormat('@').setValues(datos);
+      }
+      var sobra = ultima - 1 - filas.length;
+      if (sobra > 0) h.getRange(2 + filas.length, 1, sobra, cols.length).clearContent();
     },
     agregar: function (nombre, fila) {
       var cols = ESQUEMA[nombre];

@@ -34,6 +34,8 @@ En modo prueba, el "servidor" funciona dentro del propio navegador. Nada sale de
 
 **Para empezar de cero en modo prueba:** en Edge, abra Configuración → Cookies y permisos del sitio → Administrar y eliminar cookies → Ver todos los datos del sitio → busque `localhost` → Eliminar.
 
+> **Desde la versión v0.7.2** las contraseñas se protegen con más repeticiones (600.000). Las cuentas de prueba creadas antes ya no abren: empiece de cero como se indica arriba. El archivo de llave anterior sí se sigue abriendo.
+
 ---
 
 ## B. Servidor real en Google (cuenta personal)
@@ -58,6 +60,7 @@ En modo prueba, el "servidor" funciona dentro del propio navegador. Nada sale de
    MODO_SERVIDOR: 'apps-script',
    URL_SERVIDOR: 'https://script.google.com/macros/s/…/exec',
    ```
+7. En `web/index.html`, dentro de la línea `Content-Security-Policy`, quite `'unsafe-eval'` (solo lo necesita el modo prueba). Así el navegador no ejecuta código armado a partir de texto.
 
 **Al actualizar el código del servidor más adelante:**
 1. Pegue los archivos nuevos.

@@ -111,7 +111,17 @@ export async function consultar() {
 }
 
 export async function traer() {
-  try { adoptar(await llamar('emergencia')); programar(); return true; } catch { return false; }
+  try {
+    let r = await llamar('emergencia');
+    // Antes de dar por terminada la emergencia que se ve en pantalla, se confirma por su id:
+    // una lectura que coincidió con una escritura no debe apagar la alerta en el celular.
+    const a = actual();
+    if (a && !esLocal() && !(r && r.emergencia)) {
+      const v = await llamar('emergencia', { id: a.emergencia.id });
+      if (v && v.emergencia && v.emergencia.estado === 'activa') r = v;
+    }
+    adoptar(r); programar(); return true;
+  } catch { return false; }
 }
 
 export async function activar(tipo, descripcion, simulacro) {
@@ -245,6 +255,17 @@ export async function enviar() {
 // Resumen por piso a partir de la foto de esperados, las marcas y los conteos.
 export function resumen(est = actual()) {
   if (!est || !est.emergencia) return null;
+  // Quien no es brigadista ni coordinación recibe del servidor solo cifras por piso.
+  if (est.cifras) {
+    const vacio = n => ({ piso: n, esperados: 0, porVerificar: 0, evacuados: 0, noUbicados: 0, apoyo: 0, pendientes: 0, llegaron: 0, porConteo: false, reportado: false });
+    const pisos = [...new Set([...CONFIG.PISOS, ...est.cifras.pisos.map(f => f.piso)])].sort((a, b) => a - b);
+    const filas = pisos.map(n => ({ ...(est.cifras.pisos.find(f => f.piso === n) || vacio(n)), miembros: [], porPersona: null, asistencia: 0, sinLlegar: 0, conteo: null }));
+    return {
+      filas,
+      total: { ...est.cifras.total, sinLlegar: 0 },
+      sinReporte: filas.filter(f => (f.esperados || f.porVerificar) && !f.reportado).map(f => f.piso)
+    };
+  }
   const esperados = est.emergencia.esperados || {};
   const personas = (sesion.base() && sesion.base().personas) || [];
   const marcas = new Map(est.marcas.map(m => [m.codigo, m]));
