@@ -13,6 +13,7 @@ import { vistaRutas } from './vistas/rutas.js';
 import { vistaRecomendaciones } from './vistas/recomendaciones.js';
 import { vistaEmergencia } from './vistas/emergencia.js';
 import { vistaPunto } from './vistas/punto.js';
+import { vistaHistorico } from './vistas/historico.js';
 import * as contenido from './contenido.js';
 import * as registro from './registro.js';
 import * as emergencia from './emergencia.js';
@@ -26,6 +27,7 @@ const RUTAS = {
   inicio: { titulo: 'Inicio', icono: 'inicio', vista: vistaInicio },
   emergencia: { titulo: 'Emergencia', icono: 'alerta', vista: vistaEmergencia },
   punto: { titulo: 'Punto de encuentro', icono: 'ubicacion', vista: vistaPunto, roles: emergencia.ROLES_REPORTAR },
+  historico: { titulo: 'Histórico', icono: 'reloj', vista: vistaHistorico, roles: emergencia.ROLES_REPORTAR },
   dia: { titulo: 'Mi día', icono: 'reloj', vista: vistaDia },
   hoy: { titulo: 'Hoy en la sede', icono: 'personas', vista: vistaHoy },
   planta: { titulo: 'Planta física', icono: 'edificio', vista: vistaPlanta },

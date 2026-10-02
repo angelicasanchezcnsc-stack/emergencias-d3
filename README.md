@@ -25,7 +25,7 @@ Sirve para saber quién está en la sede, en qué piso y en qué puesto; para qu
 
 ## Estado
 
-Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **7, punto de encuentro sin conexión**.
+Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **8, cierre, informe e histórico**.
 
 - [x] Acceso con correo y contraseña, bloqueo tras 5 intentos fallidos
 - [x] Llave maestra cifrada y carga seudonimizada del Excel de puestos (con recarga y comparación de cambios)
@@ -44,7 +44,9 @@ Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **7, punt
 - [x] Punto de encuentro: registro de llegadas (también «Llegué» desde el celular propio), búsqueda, filtro por piso y pantalla para pleno sol
 - [x] Conciliación piso–punto de encuentro y lista de ausentes con piso, puesto y última ubicación (imprimible y copiable)
 - [x] Emergencia activada sin conexión en el celular, con unión automática a la del servidor al volver la señal
-- [ ] Reporte PDF e histórico, caracterización (etapas 8 y 9)
+- [x] Cierre con observaciones e informe de totales y tiempos por piso (línea de tiempo con la estructura del Anexo 7 del plan), imprimible o en PDF
+- [x] Histórico de simulacros y emergencias, sin nombres; al cerrar se borra el detalle por persona
+- [ ] Caracterización con consentimiento (etapa 9)
 
 ## Probar y publicar
 

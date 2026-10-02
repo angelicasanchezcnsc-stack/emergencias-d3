@@ -26,7 +26,8 @@ var ESQUEMA = {
   Archivos: ['id', 'parte', 'datos'],
   // Emergencias y simulacros. "esperados" es la foto de quién estaba en la sede, por piso,
   // al momento de activar (solo códigos).
-  Emergencias: ['id', 'tipo', 'descripcion', 'simulacro', 'estado', 'inicio', 'activadaPor', 'cierre', 'cerradaPor', 'version', 'esperados'],
+  // Al cerrar, "resumen" guarda solo totales y tiempos; se borra el detalle por persona.
+  Emergencias: ['id', 'tipo', 'descripcion', 'simulacro', 'estado', 'inicio', 'activadaPor', 'cierre', 'cerradaPor', 'version', 'esperados', 'resumen'],
   MarcasEmergencia: ['emergencia', 'codigo', 'estado', 'asistencia', 'llegada', 'reportadoPor', 'actualizado', 'momentos'],
   ConteosEmergencia: ['emergencia', 'piso', 'evacuados', 'noUbicados', 'apoyo', 'reportadoPor', 'actualizado', 'momentos']
 };
@@ -268,6 +269,95 @@ function crearNucleo(dep) {
     return foto;
   }
 
+  // Informe de cierre: totales y tiempos por piso, sin nombres ni códigos.
+  // Los tiempos salen del momento en que se hizo cada marca (reloj del celular).
+  function resumenCierre(e, observaciones) {
+    var foto = json(e.esperados, {});
+    var marcas = dep.leer('MarcasEmergencia').filter(function (m) { return m.emergencia === e.id; });
+    var conteos = dep.leer('ConteosEmergencia').filter(function (c) { return c.emergencia === e.id; });
+    var personas = dep.leer('Personas');
+    var pisoDe = {}, grupoDe = {}, marca = {};
+    Object.keys(foto).forEach(function (piso) {
+      (foto[piso].en || []).forEach(function (c) { pisoDe[c] = num(piso); grupoDe[c] = 'en'; });
+      (foto[piso].sin || []).forEach(function (c) { pisoDe[c] = num(piso); grupoDe[c] = 'sin'; });
+    });
+    marcas.forEach(function (m) {
+      marca[m.codigo] = m;
+      if (pisoDe[m.codigo] === undefined) {
+        var p = personas.filter(function (x) { return x.codigo === m.codigo; })[0];
+        if (p) { pisoDe[m.codigo] = num(p.piso); grupoDe[m.codigo] = 'extra'; }
+      }
+    });
+    var inicio = num(e.inicio);
+    function momentoSalida(m) {
+      var mo = json(m.momentos, {});
+      var t = [];
+      if (m.estado === 'evacuado' && num(mo.estado)) t.push(num(mo.estado));
+      if (texto(m.llegada) && num(mo.llegada)) t.push(num(mo.llegada));
+      return t.length ? Math.min.apply(null, t) : null;
+    }
+    function momentoLlegada(m) {
+      var mo = json(m.momentos, {});
+      return texto(m.llegada) && num(mo.llegada) ? num(mo.llegada) : null;
+    }
+    function vacioNulo(lista, f) { var v = lista.filter(function (t) { return t !== null; }); return v.length ? f.apply(null, v) : null; }
+
+    var todos = {};
+    Object.keys(pisoDe).forEach(function (c) { todos[pisoDe[c]] = true; });
+    conteos.forEach(function (c) { todos[num(c.piso)] = true; });
+    var todasSalidas = [], todasLlegadas = [];
+
+    var pisos = Object.keys(todos).map(Number).sort(function (a, b) { return a - b; }).map(function (n) {
+      var codigos = Object.keys(pisoDe).filter(function (c) { return pisoDe[c] === n; });
+      var en = codigos.filter(function (c) { return grupoDe[c] === 'en'; });
+      var conMarca = codigos.filter(function (c) { return marca[c]; });
+      var evacuados = conMarca.filter(function (c) { return marca[c].estado === 'evacuado' || texto(marca[c].llegada); });
+      var cuenta = function (s) { return conMarca.filter(function (c) { return marca[c].estado === s; }).length; };
+      var salidas = evacuados.map(function (c) { return momentoSalida(marca[c]); });
+      var llegadas = conMarca.map(function (c) { return momentoLlegada(marca[c]); });
+      var conteo = conteos.filter(function (c) { return num(c.piso) === n; })[0] || null;
+      var cifras = conteo
+        ? { evacuados: num(conteo.evacuados), noUbicados: num(conteo.noUbicados), apoyo: num(conteo.apoyo) }
+        : { evacuados: evacuados.length, noUbicados: cuenta('no_ubicado'), apoyo: cuenta('apoyo') };
+      var pendientes = conteo
+        ? Math.max(0, en.length - cifras.evacuados - cifras.noUbicados - cifras.apoyo)
+        : en.filter(function (c) { return !(marca[c] && marca[c].estado); }).length;
+      var completo = en.length > 0 && (conteo ? cifras.evacuados >= en.length
+        : en.every(function (c) { return marca[c] && (marca[c].estado === 'evacuado' || texto(marca[c].llegada)); }));
+      var ultimaSalida = vacioNulo(salidas, Math.max);
+      var tConteo = conteo ? num(json(conteo.momentos, {}).evacuados) : 0;
+      Array.prototype.push.apply(todasSalidas, salidas);
+      Array.prototype.push.apply(todasLlegadas, llegadas);
+      return {
+        piso: n, esperados: en.length,
+        porVerificar: codigos.filter(function (c) { return grupoDe[c] === 'sin' && !(marca[c] && marca[c].estado); }).length,
+        evacuados: cifras.evacuados, noUbicados: cifras.noUbicados, apoyo: cifras.apoyo, pendientes: pendientes,
+        asistencia: conMarca.filter(function (c) { return texto(marca[c].asistencia) === 'true'; }).length,
+        llegaron: conMarca.filter(function (c) { return texto(marca[c].llegada); }).length,
+        porConteo: !!conteo, completo: completo,
+        primeraSalida: vacioNulo(salidas, Math.min), ultimaSalida: ultimaSalida,
+        ultimaLlegada: vacioNulo(llegadas, Math.max),
+        tEvacuacionMs: completo ? (ultimaSalida !== null ? ultimaSalida - inicio : (tConteo ? tConteo - inicio : null)) : null
+      };
+    });
+
+    var suma = function (k) { return pisos.reduce(function (s, f) { return s + f[k]; }, 0); };
+    return {
+      version: 1,
+      duracionMs: Math.max(0, num(e.cierre) - inicio),
+      hitos: {
+        primeraSalida: vacioNulo(todasSalidas, Math.min), ultimaSalida: vacioNulo(todasSalidas, Math.max),
+        primeraLlegada: vacioNulo(todasLlegadas, Math.min), ultimaLlegada: vacioNulo(todasLlegadas, Math.max)
+      },
+      total: {
+        esperados: suma('esperados'), evacuados: suma('evacuados'), llegaron: suma('llegaron'), noUbicados: suma('noUbicados'),
+        apoyo: suma('apoyo'), asistencia: suma('asistencia'), pendientes: suma('pendientes'), porVerificar: suma('porVerificar')
+      },
+      pisos: pisos,
+      observaciones: texto(observaciones).slice(0, 600)
+    };
+  }
+
   // Aplica campos con "gana el más reciente" (igual que el registro diario).
   function aplicarCampos(fila, campos, momento, validos, validar) {
     var momentos = json(fila.momentos, {});
@@ -453,9 +543,31 @@ function crearNucleo(dep) {
       e.cierre = dep.ahora();
       e.cerradaPor = p.codigo;
       e.version = num(e.version) + 1;
+      // El informe guarda solo totales y tiempos. Se borra el detalle por persona
+      // (quién estaba, a quién se marcó, quién necesitó asistencia): lo mínimo necesario.
+      e.resumen = JSON.stringify(resumenCierre(e, d.observaciones));
+      e.esperados = '{}';
+      dep.escribir('MarcasEmergencia', dep.leer('MarcasEmergencia').filter(function (m) { return m.emergencia !== e.id; }));
+      dep.escribir('ConteosEmergencia', dep.leer('ConteosEmergencia').filter(function (c) { return c.emergencia !== e.id; }));
       dep.escribir('Emergencias', lista);
       bitacora(p.codigo, simulacro ? 'simulacro-cierre' : 'emergencia-cierre', e.id);
       return ok(estadoEmergencia(e.id));
+    },
+
+    // Histórico de emergencias y simulacros cerrados: solo totales y tiempos.
+    historial: function (d, p) {
+      if (!puedeEditar(p, ROLES_REPORTAR)) return falla('PERMISO', 'No tiene permiso para ver el histórico.');
+      var cerradas = dep.leer('Emergencias').filter(function (e) { return e.estado === 'cerrada'; })
+        .sort(function (a, b) { return num(b.inicio) - num(a.inicio); }).slice(0, 100)
+        .map(function (e) {
+          var o = emergenciaPublica(e);
+          delete o.esperados;
+          delete o.activadaPor;
+          delete o.cerradaPor;
+          o.resumen = json(e.resumen, null);
+          return o;
+        });
+      return ok({ emergencias: cerradas });
     },
 
     // Guarda un sobre de contenido (contactos, recomendaciones o rutas).
@@ -634,7 +746,7 @@ function crearNucleo(dep) {
 
   var PUBLICAS = { ping: true, inicializar: true, ingresar: true };
   // Solo leen: no toman el candado, para que muchos celulares consulten a la vez.
-  var SIN_BLOQUEO = { pulso: true, emergencia: true, bajarArchivo: true };
+  var SIN_BLOQUEO = { pulso: true, emergencia: true, bajarArchivo: true, historial: true };
 
   function procesar(peticion) {
     try {

@@ -53,7 +53,8 @@ Respuesta: `{ "ok": true, "datos": {...} }` o `{ "ok": false, "codigo": "...", "
 | `emergencia` | sesión | Estado completo: emergencia, foto de esperados por piso, marcas y conteos |
 | `activarEmergencia` | real: administrador, coordinador, suplente o brigadista; simulacro: administrador o coordinador | Abre la emergencia y toma la foto de quién está en la sede. Con `unirse: true` (emergencia activada sin conexión), se une a la que esté en curso o la crea con su hora de inicio real |
 | `marcarEmergencia` | cada persona sobre sí misma; brigadistas, coordinación y administración sobre cualquiera | Marcas por persona o por conteo (gana la más reciente) |
-| `cerrarEmergencia` | real: administrador, coordinador o suplente; simulacro: administrador o coordinador | Cierra la emergencia |
+| `cerrarEmergencia` | real: administrador, coordinador o suplente; simulacro: administrador o coordinador | Cierra la emergencia, calcula el informe (totales y tiempos por piso, con observaciones) y **borra el detalle por persona** de esa emergencia |
+| `historial` | administrador, coordinador, suplente o brigadista | Últimos 100 eventos cerrados con su informe; sin nombres, códigos ni quién activó o cerró |
 
 ## 3. Llave maestra
 

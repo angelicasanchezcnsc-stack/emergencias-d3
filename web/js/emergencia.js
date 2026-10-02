@@ -55,8 +55,19 @@ function adoptar(nuevo, { sincronizacion = false } = {}) {
   almacen.guardar('emergencia', estado);
   const ahora = actual();
   if (!sincronizacion && ahora && (!antes || antes.emergencia.id !== ahora.emergencia.id)) alertar();
+  if (!ahora) limpiarCopiaBase();
   if (antes && !ahora) dispatchEvent(new CustomEvent('emergencia-terminada', { detail: antes.emergencia }));
   avisar();
+}
+
+// Al terminar la emergencia no debe quedar en el celular el detalle por persona:
+// tampoco en la copia de la información del día que se guarda para uso sin conexión.
+function limpiarCopiaBase() {
+  const b = sesion.base();
+  if (b && b.emergencia && b.emergencia.emergencia) {
+    b.emergencia = { emergencia: null, marcas: [], conteos: [] };
+    sesion.guardarBase();
+  }
 }
 
 export async function iniciar() {
@@ -149,14 +160,21 @@ async function sincronizarLocal() {
   dispatchEvent(new CustomEvent('emergencia-sincronizada'));
 }
 
-export async function cerrar() {
+// Cierra la emergencia y devuelve el id del informe generado.
+export async function cerrar(observaciones = '') {
   if (esLocal()) await enviar();
   if (esLocal()) throw new ErrorApi('Sin conexión: esta emergencia se activó sin internet y aún no llega al servidor. Podrá cerrarse cuando haya conexión.', 'RED');
   const a = actual();
-  if (!a) return;
-  await llamar('cerrarEmergencia', { id: a.emergencia.id });
+  if (!a) return null;
+  const id = a.emergencia.id;
+  // Antes de cerrar se envía lo pendiente para que cuente en el informe.
+  await enviar();
+  await llamar('cerrarEmergencia', { id, observaciones });
+  cola = cola.filter(o => o.emergencia !== id);
+  await almacen.guardar('colaEmergencia', cola);
   adoptar(null);
   programar();
+  return id;
 }
 
 // ---------- Marcas ----------

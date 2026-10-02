@@ -322,6 +322,18 @@ textarea { width: 100%; padding: .7rem .8rem; background: #fff; border: 1px soli
 details.tarjeta[open] .resumen-plegable { margin-bottom: .5rem; }
 .fila-alerta td { background: var(--adv-bg); }
 .lista-ausentes { padding-left: 1.4rem; line-height: 1.5; }
+
+/* Informe de cierre */
+.informe { overflow-x: auto; overflow-wrap: anywhere; }
+.informe h2 { font-size: 1rem; margin: 1.5rem 0 .5rem; }
+.informe table { min-width: 28rem; }
+@media (max-width: 640px) { .informe .tabla-ficha { min-width: 0; } .informe .tabla-ficha th, .informe .tabla-ficha td { display: block; width: auto; } }
+.informe table, #censo-impreso table { width: 100%; border-collapse: collapse; }
+.informe .tabla-ficha th { width: 22%; text-align: left; background: rgba(240, 240, 240, .5); }
+.informe .tablero { display: block; overflow-x: auto; }
+.informe tfoot td { font-weight: 800; border-top: 2px solid var(--corp-light); }
+#censo-impreso .tabla-ficha th { width: 24%; text-align: left; background: #eee; }
+#censo-impreso h2 { font-size: 12pt; margin: 12pt 0 4pt; }
 .lista-ausentes li { margin-bottom: .6rem; }
 
 /* Pantalla para pleno sol: máximo contraste, sin transparencias */

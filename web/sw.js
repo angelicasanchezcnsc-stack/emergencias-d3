@@ -1,6 +1,6 @@
 // Trabajador de servicio: guarda la aplicación en el celular para que abra sin internet.
 // Al publicar una versión nueva, cambie VERSION para renovar la copia guardada.
-const VERSION = 'd3e-v0.5.0';
+const VERSION = 'd3e-v0.6.0';
 
 const ARCHIVOS = [
   './', 'index.html', 'config.js', 'manifest.webmanifest', 'css/earm.css',
@@ -10,7 +10,7 @@ const ARCHIVOS = [
   'js/vistas/admin.js', 'js/vistas/comun.js', 'js/vistas/cuenta.js', 'js/vistas/ingreso.js',
   'js/vistas/inicio.js', 'js/vistas/instalacion.js', 'js/vistas/planta.js', 'js/vistas/dia.js', 'js/vistas/hoy.js',
   'js/vistas/contactos.js', 'js/vistas/rutas.js', 'js/vistas/recomendaciones.js',
-  'js/emergencia.js', 'js/vistas/emergencia.js', 'js/vistas/punto.js'
+  'js/emergencia.js', 'js/vistas/emergencia.js', 'js/vistas/punto.js', 'js/vistas/historico.js'
 ];
 
 self.addEventListener('install', e => {

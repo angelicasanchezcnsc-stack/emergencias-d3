@@ -3,7 +3,7 @@
 import { CONFIG } from '../../config.js';
 import * as sesion from '../sesion.js';
 import * as emergencia from '../emergencia.js';
-import { esc, icono, aviso, insignia, confirmar } from '../ui.js';
+import { esc, icono, aviso, insignia, confirmar, modal } from '../ui.js';
 import { horaLegible, horaBogota } from '../tiempo.js';
 
 const { TIPOS, PROTOCOLO, ROLES_ACTIVAR, ROLES_SIMULACRO, ROLES_CERRAR, ROLES_REPORTAR, tiene } = emergencia;
@@ -68,7 +68,8 @@ export function vistaEmergencia(vista) {
         </section>`}
         <section class="tarjeta">
           <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-verde">${icono('ubicacion')}</div><div><h3>Prepárese</h3><p class="sutil">Revise antes de que ocurra</p></div></div>
-          <div class="fila"><a class="btn btn-secundario" href="#/rutas">Ruta y punto de encuentro</a><a class="btn btn-secundario" href="#/recomendaciones">Recomendaciones</a></div>
+          <div class="fila"><a class="btn btn-secundario" href="#/rutas">Ruta y punto de encuentro</a><a class="btn btn-secundario" href="#/recomendaciones">Recomendaciones</a>
+            ${tiene(ROLES_REPORTAR) ? '<a class="btn btn-secundario" href="#/historico">Histórico de simulacros</a>' : ''}</div>
         </section>
       </div>`;
     const f = vista.querySelector('#f-activar');
@@ -256,10 +257,25 @@ export function vistaEmergencia(vista) {
 
     // Cierre
     vista.querySelector('#cerrar')?.addEventListener('click', async () => {
-      const extra = r.total.pendientes || r.total.noUbicados ? `<br><br>Atención: hay ${r.total.pendientes} pendiente(s) y ${r.total.noUbicados} no ubicado(s).` : '';
-      if (!await confirmar(e.simulacro ? 'Terminar simulacro' : 'Cerrar emergencia', `¿Confirma que ${e.simulacro ? 'el simulacro terminó' : 'la emergencia terminó'}?${extra}`, e.simulacro ? 'Terminar' : 'Cerrar', true)) return;
-      try { await emergencia.cerrar(); aviso(e.simulacro ? 'Simulacro terminado.' : 'Emergencia cerrada.', 'exito'); }
-      catch (err) { aviso(err.codigo === 'RED' ? 'Sin conexión: no se pudo cerrar. Intente de nuevo con internet.' : err.message, 'error'); }
+      const extra = r.total.pendientes || r.total.noUbicados ? `<div class="nota nota-adv">${icono('alerta')}<span>Atención: hay ${r.total.pendientes} pendiente(s) y ${r.total.noUbicados} no ubicado(s).</span></div>` : '';
+      const observaciones = await modal({
+        titulo: e.simulacro ? 'Terminar simulacro' : 'Cerrar emergencia',
+        cuerpo: `<p>¿Confirma que ${e.simulacro ? 'el simulacro terminó' : 'la emergencia terminó'}? Se genera el informe de totales y tiempos por piso.</p>${extra}
+          <div class="campo"><label class="etiqueta" for="obs">Observaciones del cierre (opcional)</label>
+            <textarea id="obs" rows="3" maxlength="600" placeholder="Ej.: la escalera del piso 4 estaba obstruida"></textarea>
+            <p class="ayuda">No escriba nombres ni datos de salud: el informe solo lleva totales y tiempos.</p></div>
+          <div class="nota nota-info">${icono('info')}<span>Al cerrar se borra el detalle por persona de esta emergencia: solo quedan los totales y los tiempos.</span></div>`,
+        acciones: [
+          { texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
+          { texto: e.simulacro ? 'Terminar' : 'Cerrar emergencia', clase: 'btn-peligro', valor: f => f.querySelector('#obs').value.trim() }
+        ]
+      });
+      if (observaciones === null) return;
+      try {
+        const id = await emergencia.cerrar(observaciones);
+        aviso(e.simulacro ? 'Simulacro terminado. Informe generado.' : 'Emergencia cerrada. Informe generado.', 'exito');
+        if (id && tiene(ROLES_REPORTAR)) location.hash = '#/historico?id=' + encodeURIComponent(id);
+      } catch (err) { aviso(err.codigo === 'RED' ? 'Sin conexión: no se pudo cerrar. Intente de nuevo con internet.' : err.message, 'error'); }
     });
   };
 
