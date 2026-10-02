@@ -94,7 +94,7 @@ export async function vistaInstalacion(vista, ctx) {
     if (!codigo) return aviso('Escriba el código de instalación (paso 4).', 'error');
 
     const copia = llave.instantanea();
-    const capa = espera('Creando cuentas y cifrando datos…');
+    let capa = espera('Creando cuentas y cifrando datos…');
     try {
       const cambios = llave.compararExcel(filas);
       const { items, puestos } = await llave.aplicarExcel(filas, cambios, { alAvanzar: capa.progreso });
@@ -109,14 +109,17 @@ export async function vistaInstalacion(vista, ctx) {
       }
       const admin = llave.personas().find(p => p.correo === correoAdmin);
       items.find(i => i.codigo === admin.codigo).roles = ['admin'];
-      capa.texto('Enviando al servidor…');
+      // Primero se guarda la llave con las cuentas nuevas y sus contraseñas: si el
+      // servidor se inicializara sin ella, nadie podría ingresar.
+      capa.cerrar();
+      if (!await guardarLlave()) throw new Error('No se inicializó: primero hay que guardar la llave. Oprima de nuevo «Inicializar el aplicativo» y, cuando se le pida, guarde la llave.');
+      capa = espera('Enviando al servidor…');
       await llamar('inicializar', {
         codigoInstalacion: codigo, personas: items, puestos,
         sobreDirectorio: await llave.sobreDirectorio(),
         sobresContenido: await llave.sobresIniciales(SEMILLAS)
       });
       capa.cerrar();
-      await guardarLlave();
       await mostrarCredencial(admin);
       aviso('Aplicativo inicializado. Ingrese con su correo y la contraseña temporal.', 'exito');
       ctx.alTerminar();

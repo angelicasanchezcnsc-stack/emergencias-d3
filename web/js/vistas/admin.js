@@ -115,7 +115,9 @@ function panelExcel(panel, abrir) {
       capa.texto('Enviando al servidor…');
       await llamar('guardarPadron', { personas: items, puestos, sobreDirectorio: await llave.sobreDirectorio() });
       capa.cerrar();
-      await guardarLlave();
+      // El servidor ya tiene las contraseñas nuevas: sin la llave guardada nadie podría
+      // consultarlas, así que se insiste hasta que quede guardada.
+      while (!await guardarLlave()) { /* se vuelve a pedir */ }
       await sesion.refrescar();
       const nuevas = cambios.filter(c => c.tipo === 'nueva' || c.tipo === 'correo').length;
       aviso(`Cambios aplicados.${nuevas ? ` Hay ${nuevas} contraseña(s) temporal(es) por entregar.` : ''}`, 'exito');

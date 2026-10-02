@@ -109,9 +109,9 @@ export async function guardarLlave() {
   try {
     const modo = await llave.guardar();
     aviso(modo === 'archivo' ? 'Llave guardada en su computador.' : 'Llave descargada. Muévala a una carpeta segura fuera de APP.', 'exito');
-    return;
+    return true;
   } catch (e) {
-    if (e.name === 'AbortError') { aviso('No se guardó la llave. Guárdela antes de cerrar.', 'advertencia'); return; }
+    if (e.name === 'AbortError') { aviso('No se guardó la llave. Guárdela antes de cerrar.', 'advertencia'); return false; }
     var motivo = e.name === 'NotAllowedError' || e.name === 'SecurityError' ? '' : (e.message || String(e));
   }
   const si = await modal({
@@ -121,6 +121,7 @@ export async function guardarLlave() {
   });
   if (si) return guardarLlave();
   aviso('Recuerde guardar la llave desde Administración → Llave.', 'advertencia');
+  return false;
 }
 
 // Abre un archivo de llave (con acceso para volver a escribirlo si el navegador lo permite).
