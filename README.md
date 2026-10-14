@@ -13,7 +13,7 @@ Sirve para saber quién está en la sede, en qué piso y en qué puesto; para qu
 | Adaptador | `servidor/Codigo.gs` | Conecta el núcleo con Google Sheets mediante Apps Script. |
 | Configuración | `web/config.js` | Único archivo que cambia al publicar o migrar. |
 | Herramientas | `herramientas/` | Servidor local para probar en el computador. |
-| Documentación | `docs/` | Instalación y migración. |
+| Documentación | `docs/` | Arquitectura, instalación y migración. |
 
 ## Protección de datos (Ley 1581 de 2012)
 
@@ -26,7 +26,7 @@ Sirve para saber quién está en la sede, en qué piso y en qué puesto; para qu
 
 ## Estado
 
-Ver la bitácora `CLAUDE.md` en la carpeta del proyecto. Etapa actual: **9, caracterización individual**.
+Etapa actual: **10, piloto**. La app está publicada en GitHub Pages y conectada al servidor real. Para trabajar en el código: [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) y las reglas del equipo en [CLAUDE.md](CLAUDE.md).
 
 - [x] Acceso con correo y contraseña, bloqueo tras 5 intentos fallidos
 - [x] Llave maestra cifrada y carga seudonimizada del Excel de puestos (con recarga y comparación de cambios)
