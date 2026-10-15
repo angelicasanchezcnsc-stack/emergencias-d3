@@ -28,7 +28,7 @@ Celular / computador (navegador)                     Google (cuenta personal del
 | `index.html` | Carga `js/app.js`. Tiene la política de contenido (CSP). |
 | `sw.js` | Service worker: primero la red y, sin conexión, la copia guardada. **Al publicar, subir `VERSION`** (y `CONFIG.VERSION`). |
 | `css/earm.css` | Sistema de diseño EARM en CSS plano (tokens, tarjetas, botones, tablas, modales). |
-| `js/app.js` | Arranque, menú, rutas (`RUTAS` con roles), franja de emergencia, avisos globales. |
+| `js/app.js` | Arranque, menú, rutas (`RUTAS` con roles y `grupo`), franja de emergencia, avisos globales. El menú tiene como máximo cinco pestañas (`GRUPOS`: Inicio, Emergencia, Hoy en la sede, Información y Gestión); cada pestaña lleva a la primera ruta permitida de su grupo y, si el grupo tiene dos o más rutas permitidas, se pintan encima de la vista como subnavegación. Mi cuenta (botón del encabezado) y Mi caracterización no tienen pestaña. |
 | `js/api.js` | Única puerta al servidor: `llamar(accion, datos)`. Agrega token e `idPeticion` y reintenta cuando Google pierde la respuesta. |
 | `js/sesion.js` | Ingreso, sesión guardada, base del día (`base`), llave del directorio, par de llaves personal, cambio de contraseña. |
 | `js/cripto.js` | WebCrypto: huella del correo, verificador, envolturas AES-GCM, ECDH P-256 + HKDF, archivo de llave. |

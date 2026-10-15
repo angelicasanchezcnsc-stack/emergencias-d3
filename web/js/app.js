@@ -25,20 +25,30 @@ import { vistaCuenta } from './vistas/cuenta.js';
 import { vistaAdmin } from './vistas/admin.js';
 import { vistaInstalacion } from './vistas/instalacion.js';
 
+// Cinco pestañas como máximo. Cada ruta pertenece a un grupo; las rutas sin grupo (Mi cuenta y Mi
+// caracterización) no tienen pestaña: se llega a ellas desde el encabezado o desde Inicio.
+const GRUPOS = [
+  { id: 'inicio', titulo: 'Inicio', icono: 'inicio' },
+  { id: 'emergencia', titulo: 'Emergencia', icono: 'alerta' },
+  { id: 'sede', titulo: 'Hoy en la sede', icono: 'personas' },
+  { id: 'info', titulo: 'Información', icono: 'libro' },
+  { id: 'gestion', titulo: 'Gestión', icono: 'ajustes' }
+];
+
 const RUTAS = {
-  inicio: { titulo: 'Inicio', icono: 'inicio', vista: vistaInicio },
-  emergencia: { titulo: 'Emergencia', icono: 'alerta', vista: vistaEmergencia },
-  punto: { titulo: 'Punto de encuentro', icono: 'ubicacion', vista: vistaPunto, roles: emergencia.ROLES_REPORTAR },
-  historico: { titulo: 'Histórico', icono: 'reloj', vista: vistaHistorico, roles: emergencia.ROLES_REPORTAR },
-  caracterizaciones: { titulo: 'Caracterizaciones', icono: 'escudo', vista: vistaCaracterizaciones, roles: ['admin', 'coordinador', 'suplente'] },
+  inicio: { titulo: 'Inicio', icono: 'inicio', vista: vistaInicio, grupo: 'inicio' },
+  emergencia: { titulo: 'Emergencia', icono: 'alerta', vista: vistaEmergencia, grupo: 'emergencia' },
+  punto: { titulo: 'Punto de encuentro', icono: 'ubicacion', vista: vistaPunto, roles: emergencia.ROLES_REPORTAR, grupo: 'emergencia' },
+  historico: { titulo: 'Histórico', icono: 'reloj', vista: vistaHistorico, roles: emergencia.ROLES_REPORTAR, grupo: 'emergencia' },
+  caracterizaciones: { titulo: 'Caracterizaciones', icono: 'escudo', vista: vistaCaracterizaciones, roles: ['admin', 'coordinador', 'suplente'], grupo: 'gestion' },
   caracterizacion: { titulo: 'Mi caracterización', icono: 'candado', vista: vistaCaracterizacion, nav: false },
-  hoy: { titulo: 'Hoy en la sede', icono: 'personas', vista: vistaHoy },
-  planta: { titulo: 'Planta física', icono: 'edificio', vista: vistaPlanta },
-  contactos: { titulo: 'Contactos', icono: 'telefono', vista: vistaContactos },
-  rutas: { titulo: 'Rutas', icono: 'ubicacion', vista: vistaRutas },
-  recomendaciones: { titulo: 'Recomendaciones', icono: 'libro', vista: vistaRecomendaciones },
-  cuenta: { titulo: 'Mi cuenta', icono: 'persona', vista: vistaCuenta },
-  admin: { titulo: 'Administración', icono: 'ajustes', vista: vistaAdmin, rol: 'admin' }
+  hoy: { titulo: 'Hoy en la sede', icono: 'personas', vista: vistaHoy, grupo: 'sede' },
+  planta: { titulo: 'Planta física', icono: 'edificio', vista: vistaPlanta, grupo: 'sede' },
+  contactos: { titulo: 'Contactos', icono: 'telefono', vista: vistaContactos, grupo: 'info' },
+  rutas: { titulo: 'Rutas', icono: 'ubicacion', vista: vistaRutas, grupo: 'info' },
+  recomendaciones: { titulo: 'Recomendaciones', icono: 'libro', vista: vistaRecomendaciones, grupo: 'info' },
+  cuenta: { titulo: 'Mi cuenta', icono: 'persona', vista: vistaCuenta, nav: false },
+  admin: { titulo: 'Administración', icono: 'ajustes', vista: vistaAdmin, rol: 'admin', grupo: 'gestion' }
 };
 
 const ctx = { navegar: ruta => { location.hash = '#/' + ruta; }, recargar: () => enrutar() };
@@ -57,12 +67,14 @@ function armazon() {
         <div class="fila">
           ${CONFIG.MODO_SERVIDOR === 'simulado' ? '<span class="insignia insignia-prueba" title="Los datos quedan solo en este navegador">Modo prueba</span>' : ''}
           <div id="estado-red" class="estado-red"></div>
+          <a id="btn-cuenta" class="btn btn-fantasma btn-chico oculto" href="#/cuenta" title="Mi cuenta">${icono('persona', 'ic-s')}<span>Mi cuenta</span></a>
           <button id="btn-salir" class="btn btn-fantasma btn-chico oculto" title="Cerrar sesión">${icono('salir', 'ic-s')}<span>Salir</span></button>
         </div>
       </div>
       <nav id="nav" class="navegacion oculto" aria-label="Secciones"></nav>
       <a id="banner-emergencia" class="banner-emergencia oculto" href="#/emergencia"></a>
     </header>
+    <nav id="subnav" class="navegacion subnav oculto" aria-label="Subsecciones"></nav>
     <main id="vista"></main>
     <footer class="pie">${esc(CONFIG.APP_NOMBRE)} ${esc(CONFIG.VERSION)} — ${esc(CONFIG.CREDITOS)}</footer>`);
   document.getElementById('btn-salir').addEventListener('click', async () => {
@@ -105,16 +117,34 @@ function pintarBanner() {
   el.innerHTML = `${icono('alerta', 'ic-s')}<span><strong>${e.simulacro ? 'Simulacro' : 'Emergencia'} en curso</strong> · ${esc(emergencia.TIPOS[e.tipo])} · desde las ${esc(horaLegible(horaBogota(new Date(e.inicio))))}${e.local ? ' · <strong>sin conexión</strong>' : ''}</span><span class="banner-ir">Ver</span>`;
 }
 
+// Rutas de un grupo que la persona puede ver, en el orden de RUTAS.
+const rutasDelGrupo = grupo => Object.entries(RUTAS).filter(([, r]) => r.grupo === grupo && r.nav !== false && permitida(r));
+
 function pintarNav(actual) {
   const nav = document.getElementById('nav');
+  const sub = document.getElementById('subnav');
   const salir = document.getElementById('btn-salir');
-  if (!sesion.activa()) { nav.classList.add('oculto'); salir.classList.add('oculto'); return; }
+  const cuenta = document.getElementById('btn-cuenta');
+  if (!sesion.activa()) {
+    [nav, sub, salir, cuenta].forEach(el => el.classList.add('oculto'));
+    return;
+  }
   nav.classList.remove('oculto');
   salir.classList.remove('oculto');
-  nav.innerHTML = Object.entries(RUTAS)
-    .filter(([, r]) => permitida(r) && r.nav !== false)
-    .map(([id, r]) => `<a href="#/${id}" class="pestana ${id === actual ? 'activa' : ''}">${icono(r.icono, 'ic-s')}${esc(r.titulo)}</a>`)
-    .join('');
+  cuenta.classList.remove('oculto');
+  const grupoActual = actual && RUTAS[actual] ? RUTAS[actual].grupo : null;
+  // Una pestaña por grupo con al menos una ruta permitida; lleva a la primera ruta permitida del grupo.
+  nav.innerHTML = GRUPOS.map(g => {
+    const rutas = rutasDelGrupo(g.id);
+    if (!rutas.length) return '';
+    return `<a href="#/${rutas[0][0]}" class="pestana ${g.id === grupoActual ? 'activa' : ''}">${icono(g.icono, 'ic-s')}<span>${esc(g.titulo)}</span></a>`;
+  }).join('');
+  // Subnavegación: si el grupo actual tiene dos o más rutas permitidas, se muestran encima de la vista.
+  const hermanas = grupoActual ? rutasDelGrupo(grupoActual) : [];
+  sub.classList.toggle('oculto', hermanas.length < 2);
+  sub.innerHTML = hermanas.length < 2 ? '' : hermanas.map(([id, r]) =>
+    `<a href="#/${id}" class="pestana ${id === actual ? 'activa' : ''}">${icono(r.icono, 'ic-s')}${esc(r.titulo)}</a>`).join('');
+  cuenta.classList.toggle('activo', actual === 'cuenta');
 }
 
 let servidorListo = null; // ¿el servidor ya fue inicializado?

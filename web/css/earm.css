@@ -97,6 +97,10 @@ a { color: var(--corp-dark); }
 }
 .pestana:hover { color: var(--corp-dark); background: rgba(240, 240, 240, .5); }
 .pestana.activa { background: #fff; color: var(--corp-dark); border-color: var(--corp-light); box-shadow: var(--sombra); }
+/* Subnavegación del grupo actual (encima de la vista). */
+.subnav { padding-top: .75rem; padding-bottom: 0; position: relative; z-index: 1; width: 100%; min-width: 0; box-sizing: border-box; }
+#btn-cuenta { text-decoration: none; }
+#btn-cuenta.activo { background: #fff; border-color: var(--corp-light); }
 
 /* Contenido */
 main { position: relative; z-index: 1; flex: 1; width: 100%; max-width: 80rem; margin: 0 auto; padding: 1.25rem 1rem 2rem; }
@@ -389,8 +393,14 @@ details.tarjeta[open] .resumen-plegable { margin-bottom: .5rem; }
   .marca .version { display: none; }
   .marca-icono { width: 2.1rem; height: 2.1rem; }
   .cabecera-interior .fila { gap: .35rem; flex-wrap: nowrap; }
-  #btn-salir span { display: none; }
-  #btn-salir { padding: .4rem; }
+  #btn-salir span, #btn-cuenta span { display: none; }
+  #btn-salir, #btn-cuenta { padding: .4rem; }
+  /* La subnavegación va solo con texto para que sus pestañas quepan sin cortarse. */
+  .subnav .pestana { padding: .5rem .6rem; }
+  .subnav .pestana .ic-s { display: none; }
+  /* Las cinco pestañas caben en una fila: ícono sobre el texto y el texto puede partirse en dos líneas. */
+  #nav { flex-wrap: nowrap; overflow-x: visible; gap: .15rem; padding-bottom: .4rem; }
+  #nav .pestana { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: flex-start; gap: .15rem; padding: .4rem .15rem; font-size: .65rem; line-height: 1.15; text-align: center; white-space: normal; }
   .insignia-prueba { display: none; }
   main { padding-top: 1rem; }
   td, th { padding: .6rem .7rem; }
