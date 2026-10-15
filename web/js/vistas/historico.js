@@ -6,6 +6,7 @@ import * as emergencia from '../emergencia.js';
 import { llamar } from '../api.js';
 import { esc, icono, insignia, aviso } from '../ui.js';
 import { fechaLegible, horaLegible, horaBogota, fechaBogota } from '../tiempo.js';
+import { enSedeDe } from '../presencia.js';
 
 const { TIPOS } = emergencia;
 const hora = ms => ms ? horaLegible(horaBogota(new Date(ms))) : '—';
@@ -44,12 +45,14 @@ function hitos(e) {
 function cuerpoInforme(e) {
   const r = e.resumen;
   const t = r.total;
-  const pct = t.esperados ? Math.round((t.evacuados / t.esperados) * 100) : 0;
+  // El porcentaje se calcula sobre quienes sí estaban: las previstas menos las marcadas «No estaba hoy».
+  const enSede = enSedeDe(t);
+  const pct = enSede ? Math.round((t.evacuados / enSede) * 100) : 0;
   return `
     <table class="tabla-ficha"><tbody>
       <tr><th>Fecha</th><td>${esc(fecha(e.inicio))}</td><th>Hora de inicio</th><td>${esc(hora(e.inicio))}</td></tr>
       <tr><th>Evento</th><td>${esc(nombreEvento(e))}, ${esc(TIPOS[e.tipo] || e.tipo)}</td><th>Duración total</th><td>${esc(dur(r.duracionMs))}</td></tr>
-      <tr><th>Personas previstas al activar</th><td>${t.esperados}${t.porVerificar ? ` (+${t.porVerificar} por verificar)` : ''}</td><th>Evacuadas</th><td>${t.evacuados} (${pct} %)</td></tr>
+      <tr><th>Personas previstas al activar</th><td>${t.esperados}${t.porVerificar ? ` (+${t.porVerificar} por verificar)` : ''}</td><th>Evacuadas</th><td>${t.evacuados} de ${enSede} en la sede (${pct} %)</td></tr>
       <tr><th>Llegaron al punto de encuentro</th><td>${t.llegaron}</td><th>No ubicadas</th><td>${t.noUbicados}</td></tr>
       <tr><th>Requirieron apoyo</th><td>${t.apoyo}</td><th>Con asistencia por discapacidad</th><td>${t.asistencia}</td></tr>
       <tr><th>No estaban</th><td colspan="3">${t.noEstaban || 0} <span class="sutil">(previstas que ese día no estaban en la sede)</span></td></tr>
@@ -122,7 +125,7 @@ export async function vistaHistorico(vista) {
         const t = x.resumen && x.resumen.total;
         return `<tr><td>${esc(fecha(x.inicio))}</td><td>${insignia(nombreEvento(x), x.simulacro ? 'amarillo' : 'rojo')}</td><td>${esc(TIPOS[x.tipo] || x.tipo)}</td>
           <td>${esc(hora(x.inicio))}</td><td class="mono">${esc(dur(x.resumen && x.resumen.duracionMs))}</td>
-          <td>${t ? `${t.evacuados} de ${t.esperados}` : '—'}</td><td>${t ? t.noUbicados : '—'}</td>
+          <td>${t ? `${t.evacuados} de ${enSedeDe(t)}` : '—'}</td><td>${t ? t.noUbicados : '—'}</td>
           <td><a class="btn btn-secundario btn-chico" href="#/historico?id=${encodeURIComponent(x.id)}">Ver informe</a></td></tr>`;
       }).join('')}</tbody></table></div>`
       : `<div class="nota nota-info">${icono('info')}<span>Todavía no hay simulacros ni emergencias cerradas. Cuando cierre una, su informe aparecerá aquí.</span></div>`}

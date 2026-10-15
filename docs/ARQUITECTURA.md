@@ -51,7 +51,7 @@ Celular / computador (navegador)                     Google (cuenta personal del
 - **Concurrencia:** las escrituras toman `LockService` (`dep.bloqueo`); las lecturas de la lista `SIN_BLOQUEO` no lo toman, para que muchos celulares consulten a la vez. Por eso `escribir` nunca deja una tabla vacía a mitad de camino.
 - **Reintentos seguros:** Google a veces ejecuta la acción y pierde la respuesta. El celular reintenta con el mismo `idPeticion` y el servidor devuelve la respuesta guardada 10 minutos en `CacheService`, sin repetir la acción. La clave de lo recordado lleva un sello de quien hizo la petición (token o huella del correo), así que una respuesta guardada solo se entrega a esa misma persona.
 - **Errores:** los errores que le hablan al usuario se lanzan con `ErrorUsuario(mensaje)` y se devuelven tal cual; cualquier otro error devuelve un mensaje genérico y su detalle queda en `console.error` (registro de ejecuciones de Apps Script).
-- **Retención:** las novedades vencidas se borran al escribir; la bitácora de más de `diasBitacora` (365) se purga como máximo una vez al día, desde `guardarNovedad`. Las tablas `RegistroHoy` y `RegistroHistorico` quedaron obsoletas (nadie las lee ni las escribe). Al cerrar una emergencia queda solo el resumen y se borran las marcas por persona.
+- **Retención:** las novedades vencidas se borran al escribir; la bitácora de más de `diasBitacora` (365) se purga como máximo una vez al día, desde `ingresar` y `guardarNovedad` (así se depura aunque nadie registre novedades). Las tablas `RegistroHoy` y `RegistroHistorico` quedaron obsoletas (nadie las lee ni las escribe). Al cerrar una emergencia queda solo el resumen y se borran las marcas por persona.
 
 ## 4. Protección de datos
 

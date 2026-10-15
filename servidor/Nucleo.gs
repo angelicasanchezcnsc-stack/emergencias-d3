@@ -312,7 +312,7 @@ function crearNucleo(dep) {
   // ---------- Presencia y novedades ----------
 
   // Una vez al día se borra la bitácora que superó el plazo de conservación.
-  // Se llama solo desde acciones que escriben (guardarNovedad), nunca desde una lectura.
+  // Se llama solo desde acciones que escriben (ingresar y guardarNovedad), nunca desde una lectura.
   function purgarAntiguos() {
     var cfg = leerConfig();
     var hoy = dep.hoy();
@@ -604,6 +604,10 @@ function crearNucleo(dep) {
       var sesiones = dep.leer('Sesiones').filter(function (s) { return num(s.expira) > ahora; });
       sesiones.push({ tokenHash: sha256(token), codigo: p.codigo, creada: ahora, expira: ahora + num(cfg.diasSesion) * 86400000 });
       dep.escribir('Sesiones', sesiones);
+      // Mantenimiento: aunque nadie registre novedades, la bitácora vieja (una vez al día) y las
+      // novedades vencidas se borran al primer ingreso que ocurra.
+      purgarNovedades();
+      purgarAntiguos();
       bitacora(p.codigo, 'ingreso', '');
       return ok({ token: token, perfil: perfil(p) });
     },

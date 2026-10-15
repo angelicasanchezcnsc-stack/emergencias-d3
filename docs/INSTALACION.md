@@ -81,13 +81,16 @@ En modo prueba, el "servidor" funciona dentro del propio navegador. Nada sale de
    git add .
    git commit -m "Etapa 3: base del proyecto"
    git branch -M main
-   git remote add origin https://github.com/fabiannwhite-sketch/emergencias-d3.git
+   git remote add origin https://github.com/<su-usuario-de-GitHub>/emergencias-d3.git
    git push -u origin main
    ```
 3. En el repositorio: **Settings → Pages → Build and deployment → Deploy from a branch → `main` / `(root)` → Save**.
-4. En uno o dos minutos la app queda en `https://fabiannwhite-sketch.github.io/emergencias-d3/`.
+4. En uno o dos minutos la app queda en `https://<su-usuario-de-GitHub>.github.io/emergencias-d3/`.
+   La publicación vigente está en `https://angelicasanchezcnsc-stack.github.io/emergencias-d3/` (repositorio `angelicasanchezcnsc-stack/emergencias-d3`).
 5. Desde su computador, abra esa dirección y haga la **Configuración inicial** (paso A.3) con el código de instalación real del paso B.4.
 6. Entregue las contraseñas temporales (*Administración → Credenciales*).
+
+**Si la app cambia de cuenta de GitHub o de servidor:** la dirección anterior sigue publicada con la versión vieja hasta que su dueño la retire. Pídale que publique ahí una página que redirija a la dirección nueva (o que desactive GitHub Pages) y que vacíe la hoja del servidor anterior. Quien instaló la app desde la dirección vieja debe borrarla e instalarla de nuevo desde la nueva.
 
 **Instalar en el celular:** abra la dirección en Chrome (Android) o Safari (iPhone).
 - En Android: menú ⋮ → *Agregar a la pantalla principal*.

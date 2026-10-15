@@ -309,16 +309,18 @@ prueba(G, 'Al escribir se purgan las novedades vencidas de la tabla', () => {
   igual(e.tabla('Novedades').map(n => n.codigo), ['D3-005']);
 });
 prueba(G, 'La purga de la bitácora ocurre como máximo una vez al día', () => {
+  // El ingreso del escenario ya hizo la purga del 19/10: la prueba empieza el día siguiente.
   const e = escenario();
   const vieja = { fecha: '2020-01-01T00:00:00.000Z', codigo: 'D3-001', accion: 'ingreso', detalle: '' };
+  e.fijarFecha('2026-10-20');
   e.sembrar('Bitacora', [vieja]);
-  exito(guardar(e));
+  exito(guardar(e, { desde: '2026-10-20', hasta: '2026-10-20' }));
   igual(e.tabla('Bitacora').filter(b => b.fecha.startsWith('2020')).length, 0, 'Debía purgar la antigua');
   e.sembrar('Bitacora', [vieja]);
-  exito(guardar(e, { codigo: 'D3-005' }));
-  igual(e.tabla('Bitacora').filter(b => b.fecha.startsWith('2020')).length, 1, 'No debía purgar de nuevo el mismo día');
-  e.fijarFecha('2026-10-20');
   exito(guardar(e, { codigo: 'D3-005', desde: '2026-10-20', hasta: '2026-10-20' }));
+  igual(e.tabla('Bitacora').filter(b => b.fecha.startsWith('2020')).length, 1, 'No debía purgar de nuevo el mismo día');
+  e.fijarFecha('2026-10-21');
+  exito(guardar(e, { codigo: 'D3-005', desde: '2026-10-21', hasta: '2026-10-21' }));
   igual(e.tabla('Bitacora').filter(b => b.fecha.startsWith('2020')).length, 0, 'Al día siguiente sí purga');
 });
 
@@ -1145,6 +1147,73 @@ prueba(C6, 'El administrador puede activar o desactivar ambas opciones', () => {
   exito(e.llamar('guardarConfig', { reglasClave: { minimo: 0, mayuscula: false, numero: false, simbolo: false }, exigirCambioInicial: false }, e.token));
   const c = exito(e.llamar('base', {}, e.token)).config;
   igual([c.reglasClave.minimo, c.exigirCambioInicial], [0, false]);
+});
+
+// ---------- Ajustes de la auditoría del 15/10/2026 ----------
+
+const AJ = 'Ajustes de auditoría: depuración al ingresar (servidor)';
+const VIEJA = { fecha: '2020-01-01T00:00:00.000Z', codigo: 'D3-001', accion: 'ingreso', detalle: '' };
+const RECIENTE = { fecha: '2026-10-19T14:00:00.000Z', codigo: 'D3-001', accion: 'ingreso', detalle: '' };
+const antiguas = e => e.tabla('Bitacora').filter(b => b.fecha.startsWith('2020')).length;
+
+prueba(AJ, 'Al ingresar se purga la bitácora vieja aunque nadie registre novedades', () => {
+  const e = escenario();
+  e.fijarFecha('2026-10-20');
+  e.sembrar('Bitacora', [VIEJA, RECIENTE]);
+  e.entrar('D3-002');
+  igual(antiguas(e), 0, 'Debía borrar la entrada de 2020');
+  afirmar(e.tabla('Bitacora').some(b => b.fecha === RECIENTE.fecha), 'Debía conservar la entrada reciente');
+  igual(JSON.parse(e.tabla('Config').find(c => c.clave === 'ultimaPurga').valor), '2026-10-20');
+});
+prueba(AJ, 'Un segundo ingreso el mismo día no vuelve a purgar', () => {
+  const e = escenario();
+  e.fijarFecha('2026-10-20');
+  e.entrar('D3-002');
+  e.sembrar('Bitacora', [VIEJA]);
+  e.entrar('D3-001');
+  igual(antiguas(e), 1, 'La purga es una vez al día');
+});
+prueba(AJ, 'Un ingreso con contraseña equivocada no purga', () => {
+  const e = escenario();
+  e.fijarFecha('2026-10-20');
+  e.sembrar('Bitacora', [VIEJA]);
+  rechazo(e.llamar('ingresar', { hashCorreo: 'hc-D3-002', verificador: 'equivocada' }), 'CREDENCIALES');
+  igual(antiguas(e), 1);
+});
+prueba(AJ, 'Al ingresar se borran las novedades vencidas', () => {
+  const e = escenario();
+  e.sembrar('Novedades', [
+    { id: 'n-vieja', codigo: 'D3-003', tipo: 'no_asiste', desde: '2026-10-15', hasta: '2026-10-18', piso: '', puesto: '', registradoPor: 'D3-001', actualizado: '2026-10-15T10:00:00.000Z' },
+    { id: 'n-vigente', codigo: 'D3-005', tipo: 'no_asiste', desde: '2026-10-19', hasta: '2026-10-25', piso: '', puesto: '', registradoPor: 'D3-001', actualizado: '2026-10-19T10:00:00.000Z' }
+  ]);
+  e.entrar('D3-002');
+  igual(e.tabla('Novedades').map(n => n.id), ['n-vigente']);
+});
+
+const AN = 'Ajustes de auditoría: totales sin «No estaban» (navegador)';
+
+prueba(AN, 'enSedeDe resta a quienes no estaban', () => {
+  igual(nav.enSedeDe({ esperados: 10, noEstaban: 2 }), 8);
+});
+prueba(AN, 'enSedeDe sirve con informes anteriores que no traen noEstaban', () => {
+  igual(nav.enSedeDe({ esperados: 5 }), 5);
+});
+prueba(AN, 'enSedeDe nunca da negativo y tolera datos vacíos', () => {
+  igual(nav.enSedeDe({ esperados: 1, noEstaban: 3 }), 0);
+  igual(nav.enSedeDe(null), 0);
+  igual(nav.enSedeDe({}), 0);
+});
+prueba(AN, 'Informe real: 4 previstas, 3 evacuadas y 1 «no estaba» → 3 en la sede (100 %)', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  ['D3-001', 'D3-002', 'D3-003'].forEach(c => exito(marcar(e, 'D3-002', id, c, 'evacuado')));
+  exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba'));
+  exito(cerrar(e, 'D3-001', id));
+  const r = informe(e, id);
+  const p2 = piso2(r);
+  igual([p2.esperados, p2.noEstaban, p2.evacuados], [4, 1, 3], 'Piso 2');
+  igual(nav.enSedeDe(p2), 3);
+  igual(Math.round(p2.evacuados / nav.enSedeDe(p2) * 100), 100, 'Porcentaje del piso 2');
+  igual(nav.enSedeDe(r.total), r.total.esperados - 1, 'Total');
 });
 
 // ---------- Ejecución y resultado ----------

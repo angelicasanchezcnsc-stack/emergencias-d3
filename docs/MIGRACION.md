@@ -39,7 +39,7 @@ Errores: los que le hablan al usuario (por ejemplo, «Debe quedar al menos un ad
 |---|---|---|
 | `ping` | — | Estado del servidor e indicador de si ya fue inicializado |
 | `inicializar` | código de instalación | Primera carga del padrón |
-| `ingresar` | — | Huella del correo y verificador; devuelve sesión y perfil. **El acceso exige al menos un rol** (`admin`, `coordinador`, `suplente`, `brigadista` o `asesor`): si la contraseña es correcta pero la persona no tiene rol, responde `SIN_ACCESO` y no crea sesión. Quitarle todos los roles a alguien invalida sus sesiones en la siguiente petición |
+| `ingresar` | — | Huella del correo y verificador; devuelve sesión y perfil. **El acceso exige al menos un rol** (`admin`, `coordinador`, `suplente`, `brigadista` o `asesor`): si la contraseña es correcta pero la persona no tiene rol, responde `SIN_ACCESO` y no crea sesión. Quitarle todos los roles a alguien invalida sus sesiones en la siguiente petición. Al ingresar borra las novedades vencidas y, una vez al día, la bitácora vieja |
 | `salir` | sesión | Cierra la sesión |
 | `base` | sesión | Perfil, personas (solo códigos y agenda), puestos, directorio cifrado, configuración (incluye `festivos`) y novedades vigentes. No escribe nada |
 | `cambiarClave` | sesión | Nuevo verificador y sobres envueltos de nuevo. Cierra las demás sesiones de la persona |
@@ -48,7 +48,7 @@ Errores: los que le hablan al usuario (por ejemplo, «Debe quedar al menos un ad
 | `guardarConfig` | administrador | Reglas de contraseña, duración de la sesión, días de conservación de la bitácora (`diasBitacora`, 365) y `festivos` (hasta 60 fechas `AAAA-MM-DD` sin actividad presencial; se guardan ordenadas y sin repetir). `diasHistorico` ya no se usa y se descarta |
 | `restablecerClave` | administrador | Contraseña temporal nueva para una persona |
 | `novedades` | sesión | Solo lee: novedades vigentes (de hoy en adelante) y la fecha de hoy |
-| `guardarNovedad` | sesión | Crea una novedad de presencia (`no_asiste`, `otro_lugar` o `asiste`) por rango de fechas (máximo 92 días, sin motivo) o, con `id`, la edita. `otro_lugar` lleva piso y puesto (0 = sala o área común). Borra las novedades vencidas. Una vez al día purga la bitácora vieja |
+| `guardarNovedad` | sesión | Crea una novedad de presencia (`no_asiste`, `otro_lugar` o `asiste`) por rango de fechas (máximo 92 días, sin motivo) o, con `id`, la edita. `otro_lugar` lleva piso y puesto (0 = sala o área común). Borra las novedades vencidas. Una vez al día purga la bitácora vieja (también lo hace `ingresar`) |
 | `quitarNovedad` | sesión | Borra una novedad por `id` |
 | `hoy` / `registrar` | sesión | **Obsoletas desde la v0.9** (ya no hay registro de llegada y salida). `hoy` devuelve una lista vacía; `registrar` no escribe nada y responde `obsoleta` por cada operación, para que la cola de los celulares con la v0.8.4 se vacíe sola |
 | `guardarContenido` | administrador (contactos: también coordinador y suplente) | Sobres de contactos, recomendaciones y rutas, con control de versión |

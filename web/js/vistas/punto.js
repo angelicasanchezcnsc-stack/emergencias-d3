@@ -6,6 +6,7 @@ import * as emergencia from '../emergencia.js';
 import * as carac from '../caracterizacion.js';
 import { esc, icono, aviso, insignia, modal, confirmar } from '../ui.js';
 import { horaLegible, horaBogota } from '../tiempo.js';
+import { enSedeDe } from '../presencia.js';
 
 const normalizar = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const ESTADO_PISO = { evacuado: 'Evacuado según su piso', no_ubicado: 'NO UBICADO en el piso', apoyo: 'REQUIERE APOYO', no_estaba: 'No estaba hoy en la sede' };
@@ -72,7 +73,8 @@ export function vistaPunto(vista) {
     const e = a.emergencia;
     const r = emergencia.resumen(a);
     const faltan = emergencia.ausentes(a);
-    const esperadosTotal = r.total.esperados;
+    // Quien fue marcado «No estaba hoy» no se espera en el punto de encuentro.
+    const esperadosTotal = enSedeDe(r.total);
     const q = normalizar(busqueda);
     const filtro = x => (pisoSel === 'todos' || x.piso === pisoSel) && (!q || normalizar(sesion.nombreDe(x.codigo)).includes(q));
     const porLlegar = faltan.filter(filtro);
@@ -105,7 +107,7 @@ export function vistaPunto(vista) {
       <input id="buscar" class="buscar-grande" type="search" placeholder="Buscar por nombre…" value="${esc(busqueda)}" autocomplete="off">
       <div class="fila" id="filtro" style="margin:.75rem 0">
         <button class="pestana ${pisoSel === 'todos' ? 'activa' : ''}" data-p="todos">Todos</button>
-        ${r.filas.map(f => `<button class="pestana ${pisoSel === f.piso ? 'activa' : ''}" data-p="${f.piso}">Piso ${f.piso} (${f.llegaron}/${f.esperados})</button>`).join('')}
+        ${r.filas.map(f => `<button class="pestana ${pisoSel === f.piso ? 'activa' : ''}" data-p="${f.piso}">Piso ${f.piso} (${f.llegaron}/${enSedeDe(f)})</button>`).join('')}
       </div>
 
       <section class="tarjeta">
@@ -140,7 +142,7 @@ export function vistaPunto(vista) {
           <thead><tr><th>Piso</th><th>En la sede</th><th>Evacuados (piso)</th><th>Llegaron (punto)</th><th>Evacuados sin llegar</th><th>No ubicados</th><th>Faltan</th></tr></thead>
           <tbody>${r.filas.map(f => {
             const falta = faltan.filter(x => x.piso === f.piso).length;
-            return `<tr class="${f.sinLlegar || f.noUbicados ? 'fila-alerta' : ''}"><td><strong>Piso ${f.piso}</strong></td><td>${f.esperados}</td><td>${f.evacuados}${f.conteo ? ' <span class="sutil">(conteo)</span>' : ''}</td><td>${f.llegaron}</td><td>${f.sinLlegar}</td><td>${f.noUbicados}</td><td>${falta}</td></tr>`;
+            return `<tr class="${f.sinLlegar || f.noUbicados ? 'fila-alerta' : ''}"><td><strong>Piso ${f.piso}</strong></td><td>${enSedeDe(f)}</td><td>${f.evacuados}${f.conteo ? ' <span class="sutil">(conteo)</span>' : ''}</td><td>${f.llegaron}</td><td>${f.sinLlegar}</td><td>${f.noUbicados}</td><td>${falta}</td></tr>`;
           }).join('')}</tbody>
         </table></div>
       </section>`;

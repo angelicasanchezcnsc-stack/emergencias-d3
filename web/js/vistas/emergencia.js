@@ -6,6 +6,7 @@ import * as emergencia from '../emergencia.js';
 import * as carac from '../caracterizacion.js';
 import { esc, icono, aviso, insignia, confirmar, modal } from '../ui.js';
 import { horaLegible, horaBogota } from '../tiempo.js';
+import { enSedeDe } from '../presencia.js';
 
 const { TIPOS, PROTOCOLO, ROLES_ACTIVAR, ROLES_SIMULACRO_INICIAR, ROLES_CERRAR, ROLES_REPORTAR, tiene } = emergencia;
 
@@ -153,7 +154,7 @@ export function vistaEmergencia(vista) {
 
     const tablero = `
       <div class="resumen-grande">
-        <div><strong>${r.total.evacuados}</strong><span>de ${r.total.esperados} evacuados</span></div>
+        <div><strong>${r.total.evacuados}</strong><span>evacuados de ${enSedeDe(r.total)} en la sede</span></div>
         <div class="${r.total.pendientes ? 't-ambar' : ''}"><strong>${r.total.pendientes}</strong><span>pendientes</span></div>
         <div class="${r.total.noUbicados ? 't-rojo' : ''}"><strong>${r.total.noUbicados}</strong><span>no ubicados</span></div>
         <div class="${r.total.apoyo ? 't-ambar' : ''}"><strong>${r.total.apoyo}</strong><span>requieren apoyo</span></div>

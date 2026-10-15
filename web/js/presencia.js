@@ -44,6 +44,12 @@ export function fotoEsperadosDe(personas, fecha, novedades, festivos) {
   return foto;
 }
 
+// Personas que sí estaban en la sede: las previstas menos las marcadas «No estaba hoy» en la emergencia.
+// Es el total para los porcentajes y el «X de N» del tablero, el punto de encuentro y el informe.
+// Sirve con cifras de un piso o con el total, y con informes anteriores que no traen noEstaban.
+export const enSedeDe = cifras =>
+  Math.max(0, (Number(cifras && cifras.esperados) || 0) - (Number(cifras && cifras.noEstaban) || 0));
+
 // Presencia de una persona hoy, con la base de la sesión (novedades y festivos).
 export function ubicacionHoy(persona) {
   const base = sesion.base() || {};
