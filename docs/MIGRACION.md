@@ -33,6 +33,8 @@ Hay dos caminos.
 Petición `POST` con cuerpo JSON: `{ "accion": "...", "token": "...", ...datos }`.
 Respuesta: `{ "ok": true, "datos": {...} }` o `{ "ok": false, "codigo": "...", "error": "..." }`.
 
+Errores: los que le hablan al usuario (por ejemplo, «Debe quedar al menos un administrador activo.») se devuelven con su propio texto, en la función `ErrorUsuario` de `Nucleo.gs`. Cualquier otro error es interno: la respuesta es `{ codigo: "ERROR", error: "Ocurrió un error en el servidor. Intente de nuevo en unos segundos." }` y el detalle queda en el registro de ejecuciones del servidor (`console.error`). Un servidor nuevo debe conservar esta separación: nunca devolver trazas ni mensajes técnicos.
+
 | Acción | Requiere | Uso |
 |---|---|---|
 | `ping` | — | Estado del servidor e indicador de si ya fue inicializado |
@@ -80,6 +82,10 @@ Los puntos donde se ajusta:
 - `servidor/Nucleo.gs`: qué guarda el servidor.
 
 ## Reglas de seguridad que cualquier servidor nuevo debe conservar
+
+- **Acceso solo con rol:** una persona sin ningún rol no abre sesión (`SIN_ACCESO`) y sus sesiones dejan de valer en la siguiente petición.
+- **Respuestas recordadas por sesión:** para que un reintento no repita una acción, el servidor guarda 10 minutos la respuesta de cada acción que escribe. La clave incluye un sello de quien hizo la petición (`sha256(token o hashCorreo)`, 16 caracteres): una respuesta guardada solo se entrega a quien la originó, aunque otra persona conozca el `idPeticion`. Las lecturas no se recuerdan.
+- **Contraseñas:** el servidor nunca las recibe y no puede validar su largo. Las reglas (`reglasClave`, `exigirCambioInicial`) las aplica el navegador. Los valores por defecto para instalaciones nuevas son mínimo 10 caracteres y cambio obligatorio de la temporal; una instalación existente conserva lo que tenga guardado.
 
 - La regla de presencia (`presenciaDe` en `servidor/Nucleo.gs`) tiene una copia idéntica en `web/js/presencia.js`. Un servidor nuevo debe reproducirla igual; `herramientas/pruebas-nucleo.html` compara ambas.
 - Las marcas con `momento` (emergencia) se limitan a, como mucho, 5 minutos en el futuro, y cada envío acepta hasta 500 operaciones.

@@ -62,6 +62,8 @@ En modo prueba, el "servidor" funciona dentro del propio navegador. Nada sale de
    El modo se elige solo: simulado en `localhost` y servidor real en GitHub Pages.
 7. La política de contenido de `web/index.html` ya no incluye `'unsafe-eval'`: solo el servidor local de pruebas lo agrega al entregar el archivo. No hay nada que quitar.
 
+**Contraseñas (desde la v0.9):** en una instalación nueva, la configuración parte con contraseña de mínimo 10 caracteres y cambio obligatorio de la contraseña temporal. En una instalación que ya existe, la configuración guardada manda: el administrador debe activar ambas opciones en *Administración → Configuración* (largo mínimo 10 y «Obligar a cambiar la contraseña temporal en el primer ingreso»).
+
 **Al actualizar el código del servidor más adelante:**
 1. Pegue los archivos nuevos.
 2. Ejecute otra vez la función **`instalar`**. Crea las hojas nuevas que traiga la versión y no borra datos.

@@ -1026,6 +1026,127 @@ prueba(S, 'Si la persona se retira del Despacho, su registro asistido se borra',
   igual(e.tabla('Caracterizaciones').length, 0);
 });
 
+// ---------- Fase 6: errores, respuestas recordadas y contraseñas ----------
+
+const M = 'Fase 6: errores y mensajes (servidor)';
+const MENSAJE_GENERICO = 'Ocurrió un error en el servidor. Intente de nuevo en unos segundos.';
+// Ejecuta fn con console.error capturado y lo restaura siempre.
+const capturandoErrores = fn => {
+  const original = console.error, vistos = [];
+  console.error = (...a) => { vistos.push(a.join(' ')); };
+  try { return { resultado: fn(), vistos }; } finally { console.error = original; }
+};
+
+prueba(M, 'Un error interno devuelve el mensaje genérico y deja el detalle en el registro del servidor', () => {
+  const e = escenario();
+  const { resultado: r, vistos } = capturandoErrores(() => e.llamar('guardarPadron', { personas: [null] }, e.token));
+  rechazo(r, 'ERROR');
+  igual(r.error, MENSAJE_GENERICO);
+  afirmar(!/TypeError|null|undefined|codigo/i.test(r.error), 'El mensaje no debe revelar detalles internos');
+  afirmar(vistos.length === 1 && vistos[0].includes('guardarPadron'), 'Debía registrar el detalle con console.error: ' + JSON.stringify(vistos));
+});
+prueba(M, 'Un error de usuario devuelve su propio texto y no se registra como error interno', () => {
+  const e = escenario();
+  const { resultado: r, vistos } = capturandoErrores(() => e.llamar('guardarPadron', { personas: [{ estado: 'activo' }] }, e.token));
+  rechazo(r, 'ERROR');
+  igual(r.error, 'Falta el código de una persona.');
+  igual(vistos.length, 0);
+});
+prueba(M, 'Dejar al aplicativo sin administrador (padrón) devuelve el texto claro', () => {
+  const e = escenario();
+  const antes = e.snapshot();
+  const r = e.llamar('guardarPadron', { personas: [{ codigo: 'D3-001', estado: 'inactivo' }] }, e.token);
+  rechazo(r, 'ERROR');
+  igual(r.error, 'Debe quedar al menos un administrador activo.');
+  igual(e.snapshot(), antes, 'No debía escribir nada');
+});
+prueba(M, 'Una persona nueva sin credenciales y dos personas con el mismo correo devuelven su texto', () => {
+  const e = escenario();
+  const r1 = e.llamar('guardarPadron', { personas: [{ codigo: 'D3-050', piso: 2, puesto: 9 }] }, e.token);
+  igual(r1.error, 'La persona D3-050 es nueva y le faltan credenciales.');
+  const r2 = e.llamar('guardarPadron', { personas: [{ codigo: 'D3-003', hashCorreo: 'hc-D3-001' }] }, e.token);
+  afirmar(/mismo correo/.test(r2.error), r2.error);
+});
+prueba(M, '«reenvolver» con envoltorios no válidos devuelve su texto', () => {
+  const e = escenarioAsistida();
+  exito(asistida(e, 'D3-002', 'D3-004'));
+  const r = e.llamar('reenvolver', { cambios: [{ codigo: 'D3-004', agregar: { 'D3-004': envoltorio('D3-004') } }] }, e.t['D3-002']);   // D3-004 aún no tiene llave pública
+  rechazo(r, 'ERROR');
+  igual(r.error, 'Envoltorios no válidos.');
+});
+prueba(M, 'Una acción desconocida y una sesión vencida siguen con sus códigos', () => {
+  const e = escenario();
+  rechazo(e.llamar('noExiste', {}, e.token), 'ACCION');
+  rechazo(e.llamar('base', {}), 'SESION');
+});
+
+const R = 'Fase 6: respuestas recordadas por sesión (servidor)';
+const novedadConId = (e, id, token, extra) => e.llamar('guardarNovedad', { ...novedad(extra), idPeticion: id }, token);
+
+prueba(R, 'Un reintento con el mismo idPeticion y el mismo token recibe la respuesta guardada sin repetir la acción', () => {
+  const e = escenario();
+  const a = exito(novedadConId(e, 'p-1', e.token));
+  const b = exito(novedadConId(e, 'p-1', e.token));
+  igual(b.novedad.id, a.novedad.id);
+  igual(e.tabla('Novedades').length, 1);
+});
+prueba(R, 'La respuesta guardada NO se entrega a otra sesión que use el mismo idPeticion', () => {
+  const e = escenario();
+  const a = exito(novedadConId(e, 'p-2', e.token));
+  const otro = exito(novedadConId(e, 'p-2', e.entrar('D3-002')));
+  afirmar(otro.novedad.id !== a.novedad.id, 'Debía ejecutar la acción, no devolver la respuesta ajena');
+  igual(otro.novedad.registradoPor, 'D3-002');
+  igual(e.tabla('Novedades').length, 2);
+});
+prueba(R, 'Un reintento al ingresar con el mismo idPeticion devuelve la misma sesión', () => {
+  const e = escenario();
+  const a = exito(e.llamar('ingresar', { hashCorreo: 'hc-D3-001', verificador: 'v-D3-001', idPeticion: 'i-1' }));
+  const b = exito(e.llamar('ingresar', { hashCorreo: 'hc-D3-001', verificador: 'v-D3-001', idPeticion: 'i-1' }));
+  igual(b.token, a.token);
+});
+prueba(R, 'Al ingresar, otro correo con el mismo idPeticion no recibe la sesión de la primera persona', () => {
+  const e = escenario();
+  const a = exito(e.llamar('ingresar', { hashCorreo: 'hc-D3-001', verificador: 'v-D3-001', idPeticion: 'i-2' }));
+  const b = exito(e.llamar('ingresar', { hashCorreo: 'hc-D3-002', verificador: 'v-D3-002', idPeticion: 'i-2' }));
+  afirmar(b.token !== a.token, 'Debía crear su propia sesión');
+  igual(b.perfil.codigo, 'D3-002');
+});
+prueba(R, 'Una contraseña equivocada con el idPeticion de otra persona tampoco recibe su respuesta', () => {
+  const e = escenario();
+  exito(e.llamar('ingresar', { hashCorreo: 'hc-D3-001', verificador: 'v-D3-001', idPeticion: 'i-3' }));
+  rechazo(e.llamar('ingresar', { hashCorreo: 'hc-D3-002', verificador: 'mala', idPeticion: 'i-3' }), 'CREDENCIALES');
+});
+prueba(R, 'Las lecturas no se recuerdan (siempre traen lo último)', () => {
+  const e = escenario();
+  igual(exito(e.llamar('novedades', { idPeticion: 'l-1' }, e.token)).novedades.length, 0);
+  exito(guardar(e));
+  igual(exito(e.llamar('novedades', { idPeticion: 'l-1' }, e.token)).novedades.length, 1);
+});
+
+const C6 = 'Fase 6: contraseñas en instalaciones nuevas (servidor)';
+prueba(C6, 'Una instalación nueva pide 10 caracteres y cambio de la contraseña temporal', () => {
+  const e = escenario();
+  const c = exito(e.llamar('base', {}, e.token)).config;
+  igual(c.reglasClave.minimo, 10);
+  igual(c.exigirCambioInicial, true);
+});
+prueba(C6, 'La configuración ya guardada manda sobre los valores nuevos', () => {
+  const e = escenario();
+  e.sembrar('Config', [
+    { clave: 'reglasClave', valor: JSON.stringify({ minimo: 0, mayuscula: false, numero: false, simbolo: false }) },
+    { clave: 'exigirCambioInicial', valor: 'false' }
+  ]);
+  const c = exito(e.llamar('base', {}, e.token)).config;
+  igual(c.reglasClave.minimo, 0);
+  igual(c.exigirCambioInicial, false);
+});
+prueba(C6, 'El administrador puede activar o desactivar ambas opciones', () => {
+  const e = escenario();
+  exito(e.llamar('guardarConfig', { reglasClave: { minimo: 0, mayuscula: false, numero: false, simbolo: false }, exigirCambioInicial: false }, e.token));
+  const c = exito(e.llamar('base', {}, e.token)).config;
+  igual([c.reglasClave.minimo, c.exigirCambioInicial], [0, false]);
+});
+
 // ---------- Ejecución y resultado ----------
 
 const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

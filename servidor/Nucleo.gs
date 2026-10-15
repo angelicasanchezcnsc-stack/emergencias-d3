@@ -87,14 +87,20 @@ var MAX_INTENTOS = 5;
 var MINUTOS_BLOQUEO = 15;
 
 var CONFIG_INICIAL = {
-  reglasClave: { minimo: 0, mayuscula: false, numero: false, simbolo: false },
-  exigirCambioInicial: false,
+  // Para instalaciones nuevas. La configuración que ya está guardada manda: en una instalación existente
+  // el administrador activa estas opciones en Administración, Configuración.
+  reglasClave: { minimo: 10, mayuscula: false, numero: false, simbolo: false },
+  exigirCambioInicial: true,
   diasSesion: 30,
   // Días que se conserva la bitácora (lo mínimo necesario).
   diasBitacora: 365,
   // Fechas AAAA-MM-DD sin actividad presencial (festivos).
   festivos: []
 };
+
+// Error que le habla al usuario: su mensaje sí se devuelve tal cual. Cualquier otro error es interno y la
+// respuesta lleva un mensaje genérico (el detalle queda en el registro de ejecuciones del servidor).
+function ErrorUsuario(mensaje) { var e = new Error(mensaje); e.usuario = true; return e; }
 
 // Día de la semana ISO de una fecha 'AAAA-MM-DD' (1 = lunes ... 7 = domingo). Usa UTC para no
 // depender de la zona del servidor ni del dispositivo.
@@ -262,10 +268,10 @@ function crearNucleo(dep) {
   function aplicarPadron(items, personas) {
     var ahora = new Date(dep.ahora()).toISOString();
     items.forEach(function (it) {
-      if (!it.codigo) throw new Error('Falta el código de una persona.');
+      if (!it.codigo) throw ErrorUsuario('Falta el código de una persona.');
       var p = personas.filter(function (x) { return x.codigo === it.codigo; })[0];
       if (!p) {
-        if (!it.hashCorreo || !it.verificador) throw new Error('La persona ' + it.codigo + ' es nueva y le faltan credenciales.');
+        if (!it.hashCorreo || !it.verificador) throw ErrorUsuario('La persona ' + it.codigo + ' es nueva y le faltan credenciales.');
         p = { codigo: it.codigo, roles: '', pisoBrigada: '', intentos: 0, bloqueadoHasta: 0, estado: 'activo' };
         personas.push(p);
       }
@@ -281,10 +287,10 @@ function crearNucleo(dep) {
     });
     var vistos = {};
     personas.filter(activa).forEach(function (p) {
-      if (vistos[p.hashCorreo]) throw new Error('Hay dos personas activas con el mismo correo (' + vistos[p.hashCorreo] + ' y ' + p.codigo + ').');
+      if (vistos[p.hashCorreo]) throw ErrorUsuario('Hay dos personas activas con el mismo correo (' + vistos[p.hashCorreo] + ' y ' + p.codigo + ').');
       vistos[p.hashCorreo] = p.codigo;
     });
-    if (contarAdmins(personas) < 1) throw new Error('Debe quedar al menos un administrador activo.');
+    if (contarAdmins(personas) < 1) throw ErrorUsuario('Debe quedar al menos un administrador activo.');
   }
 
   function soloAdmin(p) { return p && tieneRol(p, 'admin'); }
@@ -528,7 +534,7 @@ function crearNucleo(dep) {
     return Math.min(num(m), dep.ahora() + 5 * 60000);
   }
 
-  // Aplica campos con "gana el más reciente" (igual que el registro diario).
+  // Aplica campos con "gana el más reciente": sirve para reenviar marcas guardadas sin conexión.
   function aplicarCampos(fila, campos, momento, validos, validar) {
     momento = momentoCliente(momento);
     var momentos = json(fila.momentos, {});
@@ -913,7 +919,7 @@ function crearNucleo(dep) {
           var nuevos = c[par[1]];
           if (nuevos && Object.keys(nuevos).length) {
             var validos = mapaEnvoltorios(nuevos, pubs);
-            if (!validos) throw new Error('Envoltorios no válidos.');
+            if (!validos) throw ErrorUsuario('Envoltorios no válidos.');
             Object.keys(validos).forEach(function (k) { mapa[k] = validos[k]; });
           }
           (c[par[2]] || []).forEach(function (k) { if (k !== f.codigo) delete mapa[k]; });   // la persona nunca pierde su acceso
@@ -1216,13 +1222,19 @@ function crearNucleo(dep) {
   // Google a veces pierde la respuesta después de ejecutar la acción. El celular reintenta
   // con el mismo idPeticion y el servidor devuelve la respuesta guardada en vez de repetirla
   // (cambiar dos veces una contraseña, cerrar dos veces una emergencia...).
+  // La clave lleva un sello de quien hizo la petición (su token, o la huella del correo al ingresar): una
+  // respuesta guardada solo se entrega a esa misma persona, aunque otra conozca el idPeticion.
+  function claveRecordada(peticion) {
+    var sello = sha256(texto(peticion.token) || texto(peticion.hashCorreo)).slice(0, 16);
+    return 'r:' + texto(peticion.idPeticion).slice(0, 64) + '|' + sello;
+  }
   function recordada(peticion) {
     if (!dep.cache || !peticion.idPeticion || LECTURAS[peticion.accion]) return null;
-    try { var v = dep.cache.get('r:' + texto(peticion.idPeticion).slice(0, 64)); return v ? JSON.parse(v) : null; } catch (e) { return null; }
+    try { var v = dep.cache.get(claveRecordada(peticion)); return v ? JSON.parse(v) : null; } catch (e) { return null; }
   }
   function recordar(peticion, respuesta) {
     if (!dep.cache || !peticion.idPeticion || LECTURAS[peticion.accion]) return;
-    try { dep.cache.put('r:' + texto(peticion.idPeticion).slice(0, 64), JSON.stringify(respuesta), 600); } catch (e) { /* respuesta muy grande: no se recuerda */ }
+    try { dep.cache.put(claveRecordada(peticion), JSON.stringify(respuesta), 600); } catch (e) { /* respuesta muy grande: no se recuerda */ }
   }
 
   function procesar(peticion) {
@@ -1244,7 +1256,11 @@ function crearNucleo(dep) {
       };
       return SIN_BLOQUEO[accion] ? ejecutar() : dep.bloqueo(ejecutar);
     } catch (e) {
-      return falla('ERROR', String(e && e.message || e));
+      if (e && e.usuario) return falla('ERROR', String(e.message));
+      // Error interno: no se le cuenta el detalle al usuario (podría revelar cómo está armado el servidor).
+      // En Apps Script, console.error queda en el registro de ejecuciones.
+      console.error('Error interno en la acción ' + (peticion && peticion.accion) + ': ' + (e && e.stack || e));
+      return falla('ERROR', 'Ocurrió un error en el servidor. Intente de nuevo en unos segundos.');
     }
   }
 
