@@ -14,16 +14,16 @@ const falta = (id, grupo, nombre, nota = NOTA_FALTA) =>
 export const contactosIniciales = () => ({
   contactos: [
     linea('c-123', 'Líneas de emergencia', 'Línea de emergencias (CAD)', '123'),
-    linea('c-gaula', 'Líneas de emergencia', 'GAULA — secuestro y extorsión', '165'),
+    linea('c-gaula', 'Líneas de emergencia', 'GAULA (secuestro y extorsión)', '165'),
     linea('c-antiterrorista', 'Líneas de emergencia', 'Línea antiterrorista de la Policía', '01 8000 91 96 21'),
-    linea('c-policia', 'Líneas de emergencia', 'Policía — línea directa', '01 8000 91 06 00'),
+    linea('c-policia', 'Líneas de emergencia', 'Policía (línea directa)', '01 8000 91 06 00'),
     linea('c-bomberos', 'Líneas de emergencia', 'Bomberos voluntarios de Cundinamarca', '311 482 8992',
       'El plan lista este número de Cundinamarca. Verifique cuál es la línea de bomberos para Bogotá.'),
-    linea('c-defensa-24', 'Líneas de emergencia', 'Defensa Civil — 24 horas', '640 0090'),
+    linea('c-defensa-24', 'Líneas de emergencia', 'Defensa Civil (24 horas)', '640 0090'),
     linea('c-defensa-134', 'Líneas de emergencia', 'Defensa Civil Cundinamarca', '134'),
-    linea('c-idiger', 'Líneas de emergencia', 'IDIGER — gestión del riesgo', '429 28 00',
+    linea('c-idiger', 'Líneas de emergencia', 'IDIGER (gestión del riesgo)', '429 28 00',
       'El plan escribe «IDEGER». Verifique el nombre y el teléfono.'),
-    linea('c-fiscalia', 'Líneas de emergencia', 'Fiscalía — centro de comunicaciones', '122'),
+    linea('c-fiscalia', 'Líneas de emergencia', 'Fiscalía (centro de comunicaciones)', '122'),
 
     linea('c-sst-5555', 'Seguridad y Salud en el Trabajo (CNSC)', 'Línea de Seguridad y Salud en el Trabajo', '5555',
       'El plan indica esta línea para reportar situaciones sospechosas.'),
@@ -32,10 +32,10 @@ export const contactosIniciales = () => ({
       'Pendiente: el plan de 2024 nombra a una persona; confirme quién es hoy y su contacto. ' + NOTA_FALTA),
     falta('c-evacuacion', 'Seguridad y Salud en el Trabajo (CNSC)', 'Coordinación del plan de evacuación del edificio',
       'Pendiente: el plan de 2024 nombra a una persona; confirme quién es hoy y su contacto. ' + NOTA_FALTA),
-    falta('c-arl', 'Seguridad y Salud en el Trabajo (CNSC)', 'ARL de la CNSC — línea de atención'),
+    falta('c-arl', 'Seguridad y Salud en el Trabajo (CNSC)', 'ARL de la CNSC (línea de atención)'),
 
     falta('c-edificio', 'Edificio', 'Administración del edificio'),
-    falta('c-vigilancia', 'Edificio', 'Vigilancia — seguridad física')
+    falta('c-vigilancia', 'Edificio', 'Vigilancia (seguridad física)')
   ]
 });
 
@@ -180,7 +180,7 @@ export const recomendacionesIniciales = () => ({
         'Evite gritar y fomentar la violencia; si es posible, ayude a controlar los brotes de violencia.',
         'Evite el pánico.'
       ]],
-      ['Después — si evacúa', [
+      ['Después, si evacúa', [
         'Siga el protocolo de evacuación dado al inicio de este plan.',
         'Reúnase con sus compañeros en el punto de encuentro.',
         'No regrese a las instalaciones hasta que lo autorice el comité de emergencias o las autoridades competentes.',
@@ -188,7 +188,7 @@ export const recomendacionesIniciales = () => ({
         'Atienda las indicaciones de los brigadistas, los coordinadores de evacuación y los grupos de apoyo.',
         'Espere el llamado de lista por parte de la brigada de emergencias.'
       ]],
-      ['Después — si no evacúa', [
+      ['Después, si no evacúa', [
         'No salga del lugar hasta que haya terminado el desorden civil.',
         'Informe a su jefe inmediato el estado de salud suyo y de sus compañeros.',
         'Al salir de las instalaciones, hágalo en forma segura, buscando lugares de refugio si se llegase a presentar nuevamente el desorden civil.',
@@ -201,7 +201,7 @@ export const recomendacionesIniciales = () => ({
         'Realice simulacros, fortaleciendo las salidas y rutas de evacuación.',
         'Contacte a las fuerzas de orden público y, en lo posible, establezca con ellas protocolos de acción ante un eventual atentado en el perímetro de la institución.'
       ]],
-      ['Durante — si sospecha de una situación', [
+      ['Durante, si sospecha de una situación', [
         'Si descubre elementos sospechosos o encuentra personas con comportamientos extraños e inusuales, notifique a su jefe inmediato, a la Línea 5555 de seguridad y salud en el trabajo, y al personal de seguridad física, quien activará de inmediato el plan de evacuación por sospecha y hará enlace con las fuerzas de orden público.',
         'Siga el protocolo de evacuación.',
         'Comunique inmediatamente a los grupos de apoyo y a la fuerza pública.',
@@ -210,7 +210,7 @@ export const recomendacionesIniciales = () => ({
         'Lleve con usted a sus visitantes.',
         'Vaya al sitio de reunión establecido y espere instrucciones del coordinador del área.'
       ]],
-      ['Durante — si recibe una llamada de amenaza', [
+      ['Durante, si recibe una llamada de amenaza', [
         'Prolongue el tiempo de la conversación.',
         'Si tiene un mecanismo de grabación, actívelo.',
         'Si puede establecer intercomunicación, hágalo con el líder de brigada.',
@@ -257,10 +257,10 @@ export const recomendacionesIniciales = () => ({
 export const consentimientoInicial = () => ({
   version: 'v1',
   texto: [
-    'AUTORIZACIÓN PARA EL TRATAMIENTO DE DATOS PERSONALES Y SENSIBLES — CARACTERIZACIÓN PARA EMERGENCIAS',
+    'AUTORIZACIÓN PARA EL TRATAMIENTO DE DATOS PERSONALES Y SENSIBLES: CARACTERIZACIÓN PARA EMERGENCIAS',
     'Responsable del tratamiento: Comisión Nacional del Servicio Civil (CNSC), a través del Despacho del Comisionado Edwin Arturo Ruiz Moreno (Despacho 3). Dirección: Carrera 16 No. 96-64, Bogotá D. C. Política de tratamiento de datos personales de la CNSC: https://www.cnsc.gov.co/politica-de-privacidad-y-proteccion-de-datos-personales',
     'Finalidad: identificar qué apoyo puede necesitar usted para evacuar de forma segura, contactar a la persona que usted indique y orientar a la brigada y a la coordinación de emergencias del Despacho 3 durante una emergencia o un simulacro. Sus datos no se usan para ninguna otra finalidad, ni para evaluar su desempeño ni para decisiones laborales.',
-    'Datos que se recolectan: cargo o vinculación; nombre, parentesco y teléfono de su contacto de emergencia; categoría de condición relevante para la evacuación (movilidad reducida, salud con manejo por horario, embarazo, alergia grave u otra); una nota operativa breve; el apoyo que necesita para evacuar; y observaciones. Algunos de estos datos son sensibles porque se refieren a su salud.',
+    'Datos que se recolectan: empleo o vinculación; nombre, parentesco y teléfono de su contacto de emergencia; categoría de condición relevante para la evacuación (movilidad reducida, salud con manejo por horario, embarazo, alergia grave u otra); una nota operativa breve; el apoyo que necesita para evacuar; y observaciones. Algunos de estos datos son sensibles porque se refieren a su salud.',
     'Carácter facultativo: usted no está obligado a autorizar el tratamiento de datos sensibles ni a responder preguntas sobre ellos. No diligenciar este formulario no tiene ninguna consecuencia laboral ni contractual. Procure no escribir diagnósticos: describa solo qué ayuda necesita.',
     'Quién puede ver sus datos: usted; el administrador del aplicativo y la coordinación de emergencias del Despacho (coordinador y suplente) pueden ver el detalle completo; los brigadistas de su piso solo ven, durante una emergencia o un simulacro, que usted requiere apoyo, de qué tipo y la persona que haya designado como acompañante; esa persona acompañante ve la misma información mínima.',
     'Medidas de seguridad: la información se cifra en su dispositivo antes de guardarse y solo puede abrirse con las llaves de las personas autorizadas. No se almacena en claro en servidores de terceros.',
@@ -272,7 +272,7 @@ export const consentimientoInicial = () => ({
 
 // ---------- Protocolos individuales (derivados de la caracterización) ----------
 // Texto general y prudente. Debe revisarlo el Área de Seguridad y Salud en el Trabajo.
-const PI = (id, titulo, secciones) => P(id, 'Protocolo individual — ' + titulo, secciones);
+const PI = (id, titulo, secciones) => P(id, 'Protocolo individual: ' + titulo, secciones);
 const REVISAR = 'Este protocolo es una guía general: revíselo con el Área de Seguridad y Salud en el Trabajo y con su médico si es necesario.';
 
 export const PROTOCOLOS_INDIVIDUALES = () => [
@@ -337,6 +337,6 @@ export const PROTOCOLOS_INDIVIDUALES = () => [
 // Espacios para archivos que el administrador carga desde la app.
 export const ARCHIVOS = [
   { id: 'punto', nombre: 'Mapa del punto de encuentro', tipo: 'imagen' },
-  ...[2, 4, 6, 7].map(n => ({ id: 'ruta-' + n, nombre: `Ruta de evacuación — piso ${n}`, tipo: 'imagen', piso: n })),
-  ...[2, 4, 6, 7].map(n => ({ id: 'plano-' + n, nombre: `Plano de planta con puestos — piso ${n}`, tipo: 'plano', piso: n }))
+  ...[2, 4, 6, 7].map(n => ({ id: 'ruta-' + n, nombre: `Ruta de evacuación, piso ${n}`, tipo: 'imagen', piso: n })),
+  ...[2, 4, 6, 7].map(n => ({ id: 'plano-' + n, nombre: `Plano de planta con puestos, piso ${n}`, tipo: 'plano', piso: n }))
 ];

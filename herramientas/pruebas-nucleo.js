@@ -819,6 +819,213 @@ prueba(G3, 'La agenda llega a la app (base) y la regla de presencia del navegado
   igual(nav.presenciaDe(p, '2026-10-19', [], []).presente, false);   // lunes
 });
 
+// ---------- Fase 5: caracterización asistida ----------
+
+// Llaves públicas y envoltorios ficticios con la forma que valida el servidor (huella = SHA-256 de la pública).
+const pubDe = c => JSON.stringify({ kty: 'EC', crv: 'P-256', x: 'x-' + c, y: 'y-' + c });
+const envoltorio = c => ({ h: N.sha256(pubDe(c)).slice(0, 16), e: 'e-' + c, c: 'c-' + c });
+const sobres = codigos => Object.fromEntries(codigos.map(c => [c, envoltorio(c)]));
+
+// Personas: 1 admin, 2 coordinador, 3 brigadista del piso 2, 6 asesora (todas con llave y acceso);
+// 4 (piso 2) y 5 (piso 6) sin rol y sin llave; 7 inactiva.
+function escenarioAsistida() {
+  const e = crearEntorno();
+  e.fijarFecha('2026-10-19');
+  e.sembrar('Puestos', PUESTOS);
+  e.sembrar('Personas', [
+    persona(1, 2, 1, { roles: 'admin', pub: pubDe('D3-001') }),
+    persona(2, 2, 2, { roles: 'coordinador', pub: pubDe('D3-002') }),
+    persona(3, 2, 3, { roles: 'brigadista', pisoBrigada: 2, pub: pubDe('D3-003') }),
+    persona(4, 2, 4),
+    persona(5, 6, 1),
+    persona(6, 4, 1, { roles: 'asesor', pub: pubDe('D3-006') }),
+    persona(7, 7, 1, { estado: 'inactivo' })
+  ]);
+  e.t = {};
+  ['D3-001', 'D3-002', 'D3-003', 'D3-006'].forEach(c => { e.t[c] = e.entrar(c); });
+  e.token = e.t['D3-001'];
+  e.reiniciarEscrituras();
+  return e;
+}
+const S = 'Fase 5: caracterización asistida (servidor)';
+const carga = (owner, extra = {}) => ({
+  codigo: owner, datos: 'cifrado-datos', apoyo: 'cifrado-apoyo',
+  claves: sobres(['D3-001', 'D3-002']), clavesApoyo: sobres(['D3-001', 'D3-002', 'D3-003']),
+  consentimiento: { v: 'v1', fisico: true, fechaFirma: '2026-10-15' }, ...extra
+});
+const asistida = (e, quien, owner, extra) => e.llamar('guardarCaracterizacionAsistida', carga(owner, extra), e.t[quien]);
+const filaCarac = (e, codigo) => e.tabla('Caracterizaciones').find(c => c.codigo === codigo);
+const listado = e => exito(e.llamar('caracterizaciones', {}, e.t['D3-002'])).caracterizaciones;
+
+prueba(S, 'Un coordinador registra la caracterización asistida de una persona sin acceso', () => {
+  const e = escenarioAsistida();
+  const d = exito(asistida(e, 'D3-002', 'D3-004'));
+  igual(d.version, 1);
+  const f = filaCarac(e, 'D3-004');
+  igual(JSON.parse(f.consentimiento), { v: 'v1', f: '2026-10-15T00:00:00.000Z', modo: 'fisico', por: 'D3-002' });
+  igual(Object.keys(JSON.parse(f.claves)).sort(), ['D3-001', 'D3-002']);
+});
+prueba(S, 'El administrador también puede registrarla', () => { const e = escenarioAsistida(); exito(asistida(e, 'D3-001', 'D3-004', { claves: sobres(['D3-001']), clavesApoyo: sobres(['D3-001']) })); });
+prueba(S, 'Deja bitácora con el código de la persona', () => {
+  const e = escenarioAsistida(); exito(asistida(e, 'D3-002', 'D3-004'));
+  igual(e.tabla('Bitacora').filter(b => b.accion === 'caracterizacion-asistida').map(b => [b.codigo, b.detalle]), [['D3-002', 'D3-004']]);
+});
+prueba(S, 'Rechazada para una persona que tiene acceso (con mensaje claro)', () => {
+  const e = escenarioAsistida();
+  const r = asistida(e, 'D3-002', 'D3-006');
+  rechazo(r, 'PERMISO');
+  afirmar(/diligenciar su caracterización ella misma/.test(r.error), r.error);
+  igual(e.tabla('Caracterizaciones').length, 0);
+});
+prueba(S, 'Rechazada para un brigadista que intenta registrarla', () => {
+  const e = escenarioAsistida();
+  rechazo(asistida(e, 'D3-003', 'D3-004', { claves: sobres(['D3-003']), clavesApoyo: sobres(['D3-003']) }), 'PERMISO');
+  igual(e.tabla('Caracterizaciones').length, 0);
+});
+prueba(S, 'Rechazada para una asesora', () => {
+  const e = escenarioAsistida();
+  rechazo(asistida(e, 'D3-006', 'D3-004', { claves: sobres(['D3-006']), clavesApoyo: sobres(['D3-006']) }), 'PERMISO');
+});
+prueba(S, 'Rechazada sin «fisico: true»', () => {
+  const e = escenarioAsistida();
+  rechazo(asistida(e, 'D3-002', 'D3-004', { consentimiento: { v: 'v1', fechaFirma: '2026-10-15' } }), 'CONSENTIMIENTO');
+  rechazo(asistida(e, 'D3-002', 'D3-004', { consentimiento: { v: 'v1', fisico: 'true', fechaFirma: '2026-10-15' } }), 'CONSENTIMIENTO');
+  rechazo(asistida(e, 'D3-002', 'D3-004', { consentimiento: undefined }), 'CONSENTIMIENTO');
+  igual(e.tabla('Caracterizaciones').length, 0);
+});
+prueba(S, 'Rechazada sin versión del texto firmado', () => {
+  const e = escenarioAsistida();
+  rechazo(asistida(e, 'D3-002', 'D3-004', { consentimiento: { fisico: true, fechaFirma: '2026-10-15' } }), 'CONSENTIMIENTO');
+});
+prueba(S, 'Rechazada con fecha de firma futura o inválida', () => {
+  const e = escenarioAsistida();
+  rechazo(asistida(e, 'D3-002', 'D3-004', { consentimiento: { v: 'v1', fisico: true, fechaFirma: '2026-10-20' } }), 'CONSENTIMIENTO');
+  rechazo(asistida(e, 'D3-002', 'D3-004', { consentimiento: { v: 'v1', fisico: true, fechaFirma: '2026-02-30' } }), 'CONSENTIMIENTO');
+  rechazo(asistida(e, 'D3-002', 'D3-004', { consentimiento: { v: 'v1', fisico: true, fechaFirma: '' } }), 'CONSENTIMIENTO');
+});
+prueba(S, 'Acepta la fecha de firma de hoy', () => {
+  const e = escenarioAsistida();
+  exito(asistida(e, 'D3-002', 'D3-004', { consentimiento: { v: 'v1', fisico: true, fechaFirma: '2026-10-19' } }));
+});
+prueba(S, 'Rechazada sin el envoltorio de quien registra', () => {
+  const e = escenarioAsistida();
+  rechazo(asistida(e, 'D3-002', 'D3-004', { claves: sobres(['D3-001']) }), 'DATOS');
+  rechazo(asistida(e, 'D3-002', 'D3-004', { clavesApoyo: sobres(['D3-001', 'D3-003']) }), 'DATOS');
+  igual(e.tabla('Caracterizaciones').length, 0);
+});
+prueba(S, 'Rechaza envoltorios de una llave desactualizada o de una persona sin llave', () => {
+  const e = escenarioAsistida();
+  const viejo = { ...envoltorio('D3-001'), h: '0000000000000000' };
+  rechazo(asistida(e, 'D3-002', 'D3-004', { claves: { ...sobres(['D3-002']), 'D3-001': viejo } }), 'DATOS');
+  rechazo(asistida(e, 'D3-002', 'D3-004', { claves: { ...sobres(['D3-002']), 'D3-004': envoltorio('D3-004') } }), 'DATOS');   // la persona no tiene llave pública
+});
+prueba(S, 'Rechazada para una persona inactiva o inexistente', () => {
+  const e = escenarioAsistida();
+  rechazo(asistida(e, 'D3-002', 'D3-007'), 'DATOS');
+  rechazo(asistida(e, 'D3-002', 'D3-999'), 'DATOS');
+});
+prueba(S, 'Rechaza un contenido demasiado largo', () => {
+  const e = escenarioAsistida();
+  rechazo(asistida(e, 'D3-002', 'D3-004', { datos: 'x'.repeat(45001) }), 'DATOS');
+});
+prueba(S, 'Control de versión: una edición con versión vieja da CONFLICTO', () => {
+  const e = escenarioAsistida();
+  exito(asistida(e, 'D3-002', 'D3-004'));
+  rechazo(asistida(e, 'D3-002', 'D3-004', { versionBase: 0 }), 'CONFLICTO');
+  igual(exito(asistida(e, 'D3-002', 'D3-004', { versionBase: 1 })).version, 2);
+  igual(e.tabla('Caracterizaciones').length, 1);
+});
+prueba(S, 'Al editar queda registrado quien la editó', () => {
+  const e = escenarioAsistida();
+  exito(asistida(e, 'D3-002', 'D3-004'));
+  exito(asistida(e, 'D3-001', 'D3-004', { claves: sobres(['D3-001']), clavesApoyo: sobres(['D3-001']) }));
+  igual(JSON.parse(filaCarac(e, 'D3-004').consentimiento).por, 'D3-001');
+});
+prueba(S, 'La asistida sin acceso aparece en el listado con modo «fisico» y conAcceso falso', () => {
+  const e = escenarioAsistida(); exito(asistida(e, 'D3-002', 'D3-004'));
+  const r = listado(e).find(x => x.codigo === 'D3-004');
+  igual([r.modo, r.conAcceso], ['fisico', false]);
+  igual(r.consentimiento.por, 'D3-002');
+});
+prueba(S, 'La propia guarda modo «propio» y quién la registró', () => {
+  const e = escenarioAsistida();
+  exito(e.llamar('guardarCaracterizacion', { datos: 'd', apoyo: 'a', claves: sobres(['D3-006', 'D3-001']), clavesApoyo: sobres(['D3-006', 'D3-001']), consentimiento: { v: 'v1' } }, e.t['D3-006']));
+  const c = JSON.parse(filaCarac(e, 'D3-006').consentimiento);
+  igual([c.v, c.modo, c.por], ['v1', 'propio', 'D3-006']);
+  const r = listado(e).find(x => x.codigo === 'D3-006');
+  igual([r.modo, r.conAcceso], ['propio', true]);
+});
+prueba(S, 'Un registro viejo sin «modo» se lee como «propio»', () => {
+  const e = escenarioAsistida();
+  e.sembrar('Caracterizaciones', [{ codigo: 'D3-006', version: 1, datos: 'd', claves: JSON.stringify(sobres(['D3-006', 'D3-001'])), apoyo: 'a', clavesApoyo: JSON.stringify(sobres(['D3-006', 'D3-001'])), consentimiento: JSON.stringify({ v: 'v1', f: '2026-10-01T00:00:00.000Z' }), actualizado: '' }]);
+  igual(listado(e).find(x => x.codigo === 'D3-006').modo, 'propio');
+});
+prueba(S, 'Revocación por un lector: borra el registro de una persona sin acceso', () => {
+  const e = escenarioAsistida(); exito(asistida(e, 'D3-002', 'D3-004'));
+  exito(e.llamar('revocarCaracterizacionDe', { codigo: 'D3-004' }, e.t['D3-002']));
+  igual(e.tabla('Caracterizaciones').length, 0);
+  igual(e.tabla('Bitacora').filter(b => b.accion === 'revocacion-asistida').map(b => [b.codigo, b.detalle]), [['D3-002', 'D3-004']]);
+});
+prueba(S, 'Revocación: rechazada para una persona con acceso, para quien no es lector y para quien no existe', () => {
+  const e = escenarioAsistida(); exito(asistida(e, 'D3-002', 'D3-004'));
+  exito(e.llamar('guardarCaracterizacion', { datos: 'd', apoyo: 'a', claves: sobres(['D3-006', 'D3-001']), clavesApoyo: sobres(['D3-006', 'D3-001']), consentimiento: { v: 'v1' } }, e.t['D3-006']));
+  rechazo(e.llamar('revocarCaracterizacionDe', { codigo: 'D3-006' }, e.t['D3-002']), 'PERMISO');
+  rechazo(e.llamar('revocarCaracterizacionDe', { codigo: 'D3-004' }, e.t['D3-003']), 'PERMISO');
+  rechazo(e.llamar('revocarCaracterizacionDe', { codigo: 'D3-999' }, e.t['D3-002']), 'DATOS');
+  igual(e.tabla('Caracterizaciones').length, 2);
+});
+prueba(S, 'Revocación: si no hay registro no falla ni escribe en la bitácora', () => {
+  const e = escenarioAsistida();
+  exito(e.llamar('revocarCaracterizacionDe', { codigo: 'D3-004' }, e.t['D3-002']));
+  igual(e.tabla('Bitacora').filter(b => b.accion === 'revocacion-asistida').length, 0);
+});
+prueba(S, 'La brigadista del piso ve el apoyo de la asistida de su piso, no el de otro piso', () => {
+  const e = escenarioAsistida();
+  exito(asistida(e, 'D3-002', 'D3-004'));                 // piso 2
+  exito(asistida(e, 'D3-002', 'D3-005'));                 // piso 6
+  const apoyos = exito(e.llamar('apoyos', {}, e.t['D3-003'])).apoyos;
+  igual(apoyos.map(a => a.codigo), ['D3-004']);
+  igual(apoyos[0].clave, envoltorio('D3-003'));
+});
+prueba(S, 'Si después se le da acceso, registra su llave y tras «reenvolver» puede abrir su registro', () => {
+  const e = escenarioAsistida();
+  exito(asistida(e, 'D3-002', 'D3-004'));
+  exito(e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-004', roles: ['asesor'] }] }, e.token));
+  const t4 = e.entrar('D3-004');
+  igual(exito(e.llamar('miCaracterizacion', {}, t4)).registro.clave, null, 'Aún no puede abrirla');
+  exito(e.llamar('registrarPar', { pub: pubDe('D3-004'), priv: 'privada-cifrada' }, t4));
+  const r = exito(e.llamar('reenvolver', { cambios: [{ codigo: 'D3-004', agregar: { 'D3-004': envoltorio('D3-004') }, agregarApoyo: { 'D3-004': envoltorio('D3-004') } }] }, e.t['D3-002']));
+  igual(r.n, 1);
+  const mio = exito(e.llamar('miCaracterizacion', {}, t4)).registro;
+  igual([mio.clave, mio.claveApoyo], [envoltorio('D3-004'), envoltorio('D3-004')]);
+  igual(JSON.parse(mio.consentimiento ? JSON.stringify(mio.consentimiento) : 'null').modo, 'fisico');
+});
+prueba(S, 'Con acceso ya no se puede editar ni revocar de forma asistida', () => {
+  const e = escenarioAsistida();
+  exito(asistida(e, 'D3-002', 'D3-004'));
+  exito(e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-004', roles: ['asesor'] }] }, e.token));
+  rechazo(asistida(e, 'D3-002', 'D3-004'), 'PERMISO');
+  rechazo(e.llamar('revocarCaracterizacionDe', { codigo: 'D3-004' }, e.t['D3-002']), 'PERMISO');
+  igual(listado(e).find(x => x.codigo === 'D3-004').conAcceso, true);
+});
+prueba(S, 'La propia sobre una asistida usa fecha nueva y modo «propio» (no reutiliza la del papel)', () => {
+  const e = escenarioAsistida();
+  exito(asistida(e, 'D3-002', 'D3-004'));
+  exito(e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-004', roles: ['asesor'] }] }, e.token));
+  const t4 = e.entrar('D3-004');
+  exito(e.llamar('registrarPar', { pub: pubDe('D3-004'), priv: 'privada-cifrada' }, t4));
+  exito(e.llamar('guardarCaracterizacion', { datos: 'd2', apoyo: 'a2', claves: sobres(['D3-004', 'D3-002']), clavesApoyo: sobres(['D3-004', 'D3-002']), consentimiento: { v: 'v1' } }, t4));
+  const c = JSON.parse(filaCarac(e, 'D3-004').consentimiento);
+  igual([c.modo, c.por, c.f.startsWith('2026-10-15')], ['propio', 'D3-004', false]);
+  igual(e.tabla('Bitacora').filter(b => b.accion === 'consentimiento' && b.codigo === 'D3-004').length, 1);
+});
+prueba(S, 'Si la persona se retira del Despacho, su registro asistido se borra', () => {
+  const e = escenarioAsistida();
+  exito(asistida(e, 'D3-002', 'D3-004'));
+  exito(e.llamar('guardarPadron', { personas: [{ codigo: 'D3-004', estado: 'inactivo' }] }, e.token));
+  igual(e.tabla('Caracterizaciones').length, 0);
+});
+
 // ---------- Ejecución y resultado ----------
 
 const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

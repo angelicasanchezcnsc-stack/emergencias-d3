@@ -171,7 +171,7 @@ export function imprimirCenso() {
     <td>${x.r.otroLugar ? 'En otro lugar' : 'Prevista'}</td><td class="casilla-papel">☐</td></tr>`).join('');
   const html = `
     <div id="censo-impreso">
-      <h1>${esc(CONFIG.APP_NOMBRE)} — Censo del día</h1>
+      <h1>${esc(CONFIG.APP_NOMBRE)}: censo del día</h1>
       <p>${esc(fechaLegible(fechaBogota()))} · Despacho 3, sede Calle 96</p>
       <p><strong>Previstas en la sede: ${t.previstas}</strong> · En otro lugar: ${t.otroLugar} · No asisten hoy: ${t.noAsisten}</p>
       ${CONFIG.PISOS.map(n => {

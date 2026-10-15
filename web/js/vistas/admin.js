@@ -302,7 +302,7 @@ function panelCredenciales(panel, abrir) {
     <div id="credenciales">${pendientes.map(p => `
       <div class="credencial" data-codigo="${esc(p.codigo)}">
         <div class="fila entre">
-          <div><strong>${esc(CONFIG.APP_NOMBRE)}</strong> — acceso inicial<br>
+          <div><strong>${esc(CONFIG.APP_NOMBRE)}</strong>: acceso inicial<br>
             <span>${esc(p.nombre)}</span> · <span class="sutil">P${p.piso}-${p.puesto}</span></div>
           <label class="casilla no-imprimir"><input type="checkbox" data-entregada>Entregada</label>
         </div>

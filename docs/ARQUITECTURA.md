@@ -38,7 +38,7 @@ Celular / computador (navegador)                     Google (cuenta personal del
 | `js/presencia.js` | Regla de presencia (`presenciaDe`, idéntica a la del servidor), foto de esperados y `ubicacionHoy`. |
 | `js/novedades.js` | Novedades de presencia (no asiste, otro lugar, asiste) por rango de fechas y sin motivo. Requieren conexión. |
 | `js/emergencia.js` | Estado de la emergencia, consulta periódica (60 s; 15 s en emergencia), marcas con cola, modo sin conexión (`L-…`), tablero y ausentes. |
-| `js/caracterizacion.js` | Caracterización cifrada por persona y apoyos para brigadistas. |
+| `js/caracterizacion.js` | Caracterización cifrada por persona (propia o asistida por la coordinación con un formato firmado, para quien no tiene acceso) y apoyos para brigadistas. |
 | `js/contenido.js`, `js/contenido-inicial.js` | Contactos, recomendaciones, rutas y consentimiento (semillas iniciales y lectura y escritura de sus sobres cifrados), archivos (planos y mapas). |
 | `js/vistas/*.js` | Una pantalla por archivo. `comun.js` tiene piezas compartidas (llave, credenciales, Excel). |
 | `js/ui.js` | `esc` (escape HTML), íconos, avisos, modales, confirmaciones, tarjetas. **Todo texto variable se pasa por `esc`.** `confirmar(titulo, texto)` inserta `texto` como HTML: quien llama debe escapar. |

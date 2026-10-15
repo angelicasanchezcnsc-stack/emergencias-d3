@@ -76,7 +76,7 @@ function armazon() {
     </header>
     <nav id="subnav" class="navegacion subnav oculto" aria-label="Subsecciones"></nav>
     <main id="vista"></main>
-    <footer class="pie">${esc(CONFIG.APP_NOMBRE)} ${esc(CONFIG.VERSION)} — ${esc(CONFIG.CREDITOS)}</footer>`);
+    <footer class="pie">${esc(CONFIG.APP_NOMBRE)} ${esc(CONFIG.VERSION)} · ${esc(CONFIG.CREDITOS)}</footer>`);
   document.getElementById('btn-salir').addEventListener('click', async () => {
     const n = emergencia.pendientes();
     if (n && !await confirmar('Reportes sin enviar', `Hay ${n} reporte(s) guardado(s) en este celular que aún no llegan al servidor. Si cierra la sesión se perderán.`, 'Cerrar de todos modos', true)) return;

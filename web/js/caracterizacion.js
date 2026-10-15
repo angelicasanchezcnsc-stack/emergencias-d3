@@ -21,7 +21,7 @@ export const CATEGORIAS = [
 export const APOYOS = [
   ['ninguno', 'No necesito apoyo'], ['acompanamiento', 'Acompañamiento'], ['ruta_alternativa', 'Ruta alternativa']
 ];
-export const VINCULACIONES = ['Funcionario(a) de planta', 'Contratista', 'Asesor(a)', 'Profesional', 'Otro'];
+export const VINCULACIONES = ['Funcionario(a) de planta', 'Contratista', 'Asesor(a)', 'Profesional', 'Otro'];   // «Empleo o vinculación»
 export const etiqueta = (lista, valor) => (lista.find(x => x[0] === valor) || [, valor || '—'])[1];
 
 const ROLES_LECTORES = ['admin', 'coordinador', 'suplente'];
@@ -123,6 +123,30 @@ export async function guardarMio(datos, apoyo, versionConsentimiento, versionBas
 
 export async function revocarMio() { await llamar('revocarCaracterizacion'); }
 
+// ---------- Caracterización asistida (personas sin acceso) ----------
+
+// La coordinación registra la caracterización de una persona sin acceso al aplicativo, a partir del
+// formato de autorización impreso y firmado por ella (que custodia la coordinación). Los destinatarios
+// son los mismos de siempre; la persona sin llave pública queda fuera sola (envolverA la omite) y, si
+// después se le da acceso, reconciliar() le agrega su envoltorio. El contexto de cifrado usa el código
+// de la persona dueña, para que ella pueda abrirlo luego.
+export async function guardarAsistida(codigo, datos, apoyo, versionConsentimiento, fechaFirma, versionBase) {
+  if (!esLector()) throw new ErrorApi('No tiene permiso para registrar caracterizaciones.', 'PERMISO');
+  if (!listoParaUsar()) throw new ErrorApi('Cierre sesión y vuelva a ingresar para activar la protección de los datos.', 'LLAVE');
+  const c = await nuevaLlave(), a = await nuevaLlave();
+  const datosCif = await cripto.cifrarJSON(c.llave, datos);
+  const apoyoCif = await cripto.cifrarJSON(a.llave, apoyo);
+  const claves = await envolverA(c.raw, destinatariosDatos(codigo), ctxDatos(codigo));
+  const clavesApoyo = await envolverA(a.raw, destinatariosApoyo(codigo, apoyo), ctxApoyo(codigo));
+  return llamar('guardarCaracterizacionAsistida', {
+    codigo, datos: datosCif, claves: claves.mapa, apoyo: apoyoCif, clavesApoyo: clavesApoyo.mapa,
+    consentimiento: { v: versionConsentimiento, fisico: true, fechaFirma }, versionBase
+  });
+}
+
+// Borra el registro de una persona sin acceso, a solicitud de ella.
+export async function revocarDe(codigo) { await llamar('revocarCaracterizacionDe', { codigo }); }
+
 // ---------- Coordinación: ver todas ----------
 
 // Abre todos los registros a los que esta sesión tiene acceso.
@@ -132,7 +156,7 @@ export async function leerTodas() {
   const r = await llamar('caracterizaciones');
   const salida = [];
   for (const reg of r.caracterizaciones) {
-    const base = { codigo: reg.codigo, version: reg.version, consentimiento: reg.consentimiento, actualizado: reg.actualizado };
+    const base = { codigo: reg.codigo, version: reg.version, consentimiento: reg.consentimiento, actualizado: reg.actualizado, modo: reg.modo || 'propio', conAcceso: !!reg.conAcceso };
     if (!priv || !reg.clave || !reg.claveApoyo) { salida.push({ ...base, estado: 'sin-acceso' }); continue; }
     try {
       const dc = await cripto.desenvolver(priv, reg.clave, ctxDatos(reg.codigo));

@@ -79,7 +79,7 @@ export async function vistaInstalacion(vista, ctx) {
       const personas = filas.filter(x => x.correo);
       $('#admin').disabled = false;
       $('#admin').innerHTML = '<option value="">Elija al administrador…</option>' + personas.map(x =>
-        `<option value="${esc(x.correo)}">${esc(x.nombre)} — ${esc(x.correo)} — P${x.piso}-${x.puesto}</option>`).join('');
+        `<option value="${esc(x.correo)}">${esc(x.nombre)} (${esc(x.correo)}), P${x.piso}-${x.puesto}</option>`).join('');
     } catch (e) {
       aviso('No se pudo leer el Excel: ' + e.message, 'error');
     }

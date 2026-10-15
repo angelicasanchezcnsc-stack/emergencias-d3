@@ -50,6 +50,7 @@ Etapa actual: **10, piloto**. La app está publicada en GitHub Pages y conectada
 - [x] Caracterización individual voluntaria, con autorización informada (texto editable y versionado), cifrada de extremo a extremo: solo la persona, el administrador y la coordinación abren el detalle
 - [x] Apoyo para evacuar visible, solo durante una emergencia, para los brigadistas de su piso, la coordinación y el acompañante que la persona designe
 - [x] Revocación y borrado por la propia persona; el registro se borra si la persona se retira del Despacho
+- [x] Caracterización asistida: la coordinación registra a las personas sin acceso a partir de un formato de autorización impreso y firmado (generado por la app), que custodia la coordinación
 - [x] Protocolos individuales derivados de la caracterización (editables)
 - [ ] Pruebas con el equipo, piloto en un piso y ajustes finales (etapas 10 y 11)
 

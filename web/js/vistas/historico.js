@@ -48,7 +48,7 @@ function cuerpoInforme(e) {
   return `
     <table class="tabla-ficha"><tbody>
       <tr><th>Fecha</th><td>${esc(fecha(e.inicio))}</td><th>Hora de inicio</th><td>${esc(hora(e.inicio))}</td></tr>
-      <tr><th>Evento</th><td>${esc(nombreEvento(e))} — ${esc(TIPOS[e.tipo] || e.tipo)}</td><th>Duración total</th><td>${esc(dur(r.duracionMs))}</td></tr>
+      <tr><th>Evento</th><td>${esc(nombreEvento(e))}, ${esc(TIPOS[e.tipo] || e.tipo)}</td><th>Duración total</th><td>${esc(dur(r.duracionMs))}</td></tr>
       <tr><th>Personas previstas al activar</th><td>${t.esperados}${t.porVerificar ? ` (+${t.porVerificar} por verificar)` : ''}</td><th>Evacuadas</th><td>${t.evacuados} (${pct} %)</td></tr>
       <tr><th>Llegaron al punto de encuentro</th><td>${t.llegaron}</td><th>No ubicadas</th><td>${t.noUbicados}</td></tr>
       <tr><th>Requirieron apoyo</th><td>${t.apoyo}</td><th>Con asistencia por discapacidad</th><td>${t.asistencia}</td></tr>
@@ -76,7 +76,7 @@ function cuerpoInforme(e) {
 function imprimirInforme(e) {
   document.body.insertAdjacentHTML('beforeend', `
     <div id="censo-impreso">
-      <h1>${esc(CONFIG.APP_NOMBRE)} — Informe de ${e.simulacro ? 'simulacro' : 'emergencia'}</h1>
+      <h1>${esc(CONFIG.APP_NOMBRE)}: informe de ${e.simulacro ? 'simulacro' : 'emergencia'}</h1>
       <p>Despacho 3, sede Calle 96 · generado el ${esc(fecha(Date.now()))} a las ${esc(hora(Date.now()))}</p>
       ${cuerpoInforme(e)}
     </div>`);

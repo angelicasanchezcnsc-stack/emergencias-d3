@@ -4,9 +4,8 @@ import * as sesion from '../sesion.js';
 import * as carac from '../caracterizacion.js';
 import { esc, icono, aviso, confirmar } from '../ui.js';
 import { fechaLegible, fechaBogota } from '../tiempo.js';
+import { formularioCaracterizacion } from './form-caracterizacion.js';
 
-const { CATEGORIAS, APOYOS, VINCULACIONES } = carac;
-const opciones = (lista, actual) => lista.map(([v, t]) => `<option value="${esc(v)}" ${v === actual ? 'selected' : ''}>${esc(t)}</option>`).join('');
 const parrafos = texto => String(texto || '').split(/\n\n+/)
   .map(p => `<p>${esc(p).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')}</p>`).join('');
 
@@ -31,13 +30,14 @@ export async function vistaCaracterizacion(vista) {
   ]);
   const existe = !!mio;
   const ilegible = !!(mio && mio.ilegible);
-  const d = (mio && mio.datos) || { vinculacion: '', contacto: { nombre: '', parentesco: '', telefono: '' }, categoria: 'ninguna', nota: '', observaciones: '' };
-  const a = (mio && mio.apoyo) || { apoyo: 'ninguno', detalle: '', acompanante: null };
+  const d = (mio && mio.datos) || null;
+  const a = (mio && mio.apoyo) || null;
   const aceptada = mio && mio.consentimiento && mio.consentimiento.v;
   const versionCambio = existe && aceptada !== consent.version;
   const colegas = (sesion.base().personas || []).filter(p => p.estado === 'activo' && p.codigo !== yo.codigo)
     .sort((x, y) => sesion.nombreDe(x.codigo).localeCompare(sesion.nombreDe(y.codigo), 'es'));
   const lectores = carac.lectores();
+  const formu = formularioCaracterizacion({ datos: d, apoyo: a, colegas });
   const protocolo = existe && !ilegible ? await carac.protocoloIndividual(carac.idProtocoloIndividual(d, a)) : null;
   const fechaAut = mio && mio.consentimiento ? mio.consentimiento.f : (mio && mio.actualizado);
 
@@ -68,33 +68,7 @@ export async function vistaCaracterizacion(vista) {
         <label class="casilla"><input type="checkbox" id="tercero" ${existe ? 'checked' : ''}><span>Informé a mi contacto de emergencia que sus datos se usarán solo para avisarle en una emergencia.</span></label>
       </section>
 
-      <section class="tarjeta">
-        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-verde">${icono('persona')}</div><div><h3>Mis datos</h3><p class="sutil">Registre solo lo necesario para una evacuación segura</p></div></div>
-        <div class="campo"><label class="etiqueta" for="vinculacion">Cargo o vinculación</label>
-          <select id="vinculacion"><option value="">Seleccione…</option>${VINCULACIONES.map(v => `<option ${v === d.vinculacion ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
-        <h4>Contacto de emergencia</h4>
-        <div class="campo"><label class="etiqueta" for="c-nombre">Nombre</label><input id="c-nombre" type="text" maxlength="80" value="${esc(d.contacto.nombre)}" autocomplete="off"></div>
-        <div class="fila">
-          <div class="campo" style="flex:1;min-width:10rem"><label class="etiqueta" for="c-parentesco">Parentesco</label><input id="c-parentesco" type="text" maxlength="40" value="${esc(d.contacto.parentesco)}" placeholder="Ej.: madre, esposo" autocomplete="off"></div>
-          <div class="campo" style="flex:1;min-width:10rem"><label class="etiqueta" for="c-telefono">Teléfono</label><input id="c-telefono" type="tel" maxlength="20" value="${esc(d.contacto.telefono)}" autocomplete="off"></div>
-        </div>
-        <h4>Condición relevante para evacuar</h4>
-        <div class="campo"><label class="etiqueta" for="categoria">Categoría</label><select id="categoria">${opciones(CATEGORIAS, d.categoria)}</select></div>
-        <div class="campo"><label class="etiqueta" for="nota">Nota operativa (opcional)</label><textarea id="nota" rows="2" maxlength="200" placeholder="Qué hacer o a quién avisar si la emergencia se prolonga">${esc(d.nota)}</textarea>
-          <p class="ayuda">No escriba diagnósticos ni nombres de enfermedades.</p></div>
-        <div class="campo"><label class="etiqueta" for="observaciones">Observaciones (opcional)</label><textarea id="observaciones" rows="2" maxlength="300">${esc(d.observaciones)}</textarea></div>
-      </section>
-
-      <section class="tarjeta">
-        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-rojo">${icono('alerta')}</div><div><h3>Apoyo para evacuar</h3><p class="sutil">Esto sí lo verán los brigadistas de su piso durante una emergencia</p></div></div>
-        <div class="campo"><label class="etiqueta" for="apoyo">Apoyo que necesito</label><select id="apoyo">${opciones(APOYOS, a.apoyo)}</select></div>
-        <div id="bloque-apoyo" class="${a.apoyo === 'ninguno' ? 'oculto' : ''}">
-          <div class="campo"><label class="etiqueta" for="detalle">¿Qué necesita exactamente? (breve)</label><input id="detalle" type="text" maxlength="120" value="${esc(a.detalle)}" placeholder="Ej.: ayuda para bajar por la escalera" autocomplete="off"></div>
-          <div class="campo"><label class="etiqueta" for="acompanante">Persona que me acompaña (opcional)</label>
-            <select id="acompanante"><option value="">Ninguna</option>${colegas.map(p => `<option value="${esc(p.codigo)}" ${p.codigo === a.acompanante ? 'selected' : ''}>${esc(sesion.nombreDe(p.codigo))} — P${p.piso}-${p.puesto}</option>`).join('')}</select>
-            <p class="ayuda">Esa persona verá, en una emergencia, que usted necesita su ayuda y de qué tipo. Hable con ella antes.</p></div>
-        </div>
-      </section>
+${formu.html}
 
       <div id="error" class="nota nota-error oculto"></div>
       <div class="fila">
@@ -106,8 +80,7 @@ export async function vistaCaracterizacion(vista) {
     ${seccionProtocolo(protocolo)}`;
 
   const f = vista.querySelector('#f-carac');
-  const apoyoSel = f.querySelector('#apoyo');
-  apoyoSel.addEventListener('change', () => f.querySelector('#bloque-apoyo').classList.toggle('oculto', apoyoSel.value === 'ninguno'));
+  formu.enlazar(f);
 
   f.addEventListener('submit', async ev => {
     ev.preventDefault();
@@ -116,15 +89,9 @@ export async function vistaCaracterizacion(vista) {
     error.classList.add('oculto');
     if (!f.acepto.checked) return falla('Para guardar debe leer y aceptar la autorización de tratamiento de datos.');
     if (!f.tercero.checked) return falla('Confirme que informó a su contacto de emergencia.');
-    const contacto = { nombre: f['c-nombre'].value.trim(), parentesco: f['c-parentesco'].value.trim(), telefono: f['c-telefono'].value.trim() };
-    if (!contacto.nombre || !contacto.telefono) return falla('Escriba el nombre y el teléfono de su contacto de emergencia.');
-    const apoyo = apoyoSel.value;
-    const datos = { vinculacion: f.vinculacion.value, contacto, categoria: f.categoria.value, nota: f.nota.value.trim(), observaciones: f.observaciones.value.trim() };
-    const apoyoDatos = {
-      apoyo, detalle: apoyo === 'ninguno' ? '' : f.detalle.value.trim(),
-      acompanante: apoyo === 'ninguno' ? null : (f.acompanante.value || null)
-    };
-    if (apoyo !== 'ninguno' && !apoyoDatos.detalle) return falla('Describa brevemente qué apoyo necesita, para que puedan ayudarle.');
+    const lectura = formu.leer(f, { propia: true });
+    if (lectura.error) return falla(lectura.error);
+    const { datos, apoyo: apoyoDatos } = lectura;
     const boton = f.querySelector('#guardar');
     boton.disabled = true;
     try {

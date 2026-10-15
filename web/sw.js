@@ -11,7 +11,7 @@ const ARCHIVOS = [
   'js/vistas/inicio.js', 'js/vistas/instalacion.js', 'js/vistas/planta.js', 'js/vistas/hoy.js',
   'js/vistas/contactos.js', 'js/vistas/rutas.js', 'js/vistas/recomendaciones.js',
   'js/emergencia.js', 'js/vistas/emergencia.js', 'js/vistas/punto.js', 'js/vistas/historico.js',
-  'js/caracterizacion.js', 'js/vistas/caracterizacion.js', 'js/vistas/caracterizaciones.js'
+  'js/caracterizacion.js', 'js/vistas/caracterizacion.js', 'js/vistas/caracterizaciones.js', 'js/vistas/form-caracterizacion.js'
 ];
 
 self.addEventListener('install', e => {

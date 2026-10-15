@@ -42,6 +42,8 @@ var ESQUEMA = {
   // "datos" es el detalle completo (lo leen la persona y la coordinación) y "apoyo" es
   // solo lo que necesitan brigadistas y acompañante. "claves" y "clavesApoyo" guardan, por
   // destinatario, la llave de los datos envuelta con su llave pública. El servidor no puede leer nada.
+  // "consentimiento" es un JSON { v, f, modo, por }: versión del texto aceptado, fecha, "propio" (la persona
+  // lo aceptó en la app) o "fisico" (formato impreso y firmado, registrado por "por", de la coordinación).
   Caracterizaciones: ['codigo', 'version', 'datos', 'claves', 'apoyo', 'clavesApoyo', 'consentimiento', 'actualizado']
 };
 
@@ -771,15 +773,69 @@ function crearNucleo(dep) {
       }
       var ahora = new Date(dep.ahora()).toISOString();
       var previo = actual ? json(actual.consentimiento, {}) : {};
+      // La fecha anterior solo se conserva si la autorización anterior también fue propia: la de un formato
+      // físico lleva la fecha de la firma en papel y no vale como aceptación en la app.
+      var conservaFecha = previo.v === v && previo.f && previo.modo !== 'fisico';
       var fila = {
         codigo: p.codigo, version: versionActual + 1, datos: d.datos, claves: JSON.stringify(claves),
         apoyo: d.apoyo, clavesApoyo: JSON.stringify(clavesApoyo),
-        consentimiento: JSON.stringify({ v: v, f: previo.v === v && previo.f ? previo.f : ahora }), actualizado: ahora
+        consentimiento: JSON.stringify({ v: v, f: conservaFecha ? previo.f : ahora, modo: 'propio', por: p.codigo }), actualizado: ahora
       };
       dep.escribir('Caracterizaciones', filas.filter(function (c) { return c.codigo !== p.codigo; }).concat([fila]));
-      if (previo.v !== v) bitacora(p.codigo, 'consentimiento', v);
+      if (previo.v !== v || previo.modo === 'fisico') bitacora(p.codigo, 'consentimiento', v);
       bitacora(p.codigo, 'caracterizacion', 'v' + fila.version);
       return ok({ version: fila.version, consentimiento: JSON.parse(fila.consentimiento) });
+    },
+
+    // La coordinación registra la caracterización de una persona SIN acceso al aplicativo, a partir de un
+    // formato de autorización impreso y firmado que custodia la coordinación. La persona no tiene llave:
+    // solo reciben el registro quien lo registra y los demás destinatarios. Si después se le da acceso y
+    // ella registra su llave pública, la coordinación (reenvolver) le agrega su envoltorio.
+    guardarCaracterizacionAsistida: function (d, p) {
+      if (!puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden registrar una caracterización asistida.');
+      var dueno = dep.leer('Personas').filter(function (x) { return x.codigo === d.codigo && activa(x); })[0];
+      if (!dueno) return falla('DATOS', 'La persona no existe o ya no está activa.');
+      if (tieneAcceso(dueno)) return falla('PERMISO', 'Esta persona tiene acceso al aplicativo: debe diligenciar su caracterización ella misma.');
+      var pubs = llavesPublicas();
+      var claves = mapaEnvoltorios(d.claves, pubs);
+      var clavesApoyo = mapaEnvoltorios(d.clavesApoyo, pubs);
+      // Quien registra conserva el acceso; la persona dueña puede no estar (no tiene llave).
+      if (!claves || !clavesApoyo || !claves[p.codigo] || !clavesApoyo[p.codigo]) return falla('DATOS', 'Datos incompletos o llaves desactualizadas. Cierre sesión y vuelva a ingresar.');
+      if (typeof d.datos !== 'string' || typeof d.apoyo !== 'string' || !d.datos || !d.apoyo || d.datos.length > LIMITE_CELDA || d.apoyo.length > LIMITE_CELDA) {
+        return falla('DATOS', 'El contenido es demasiado largo.');
+      }
+      var c = d.consentimiento || {};
+      var v = texto(c.v).slice(0, 20);
+      if (!v || c.fisico !== true) return falla('CONSENTIMIENTO', 'Falta confirmar que la persona firmó el formato de autorización de tratamiento de datos.');
+      if (!fechaValida(c.fechaFirma)) return falla('CONSENTIMIENTO', 'La fecha de la firma no es válida.');
+      if (c.fechaFirma > dep.hoy()) return falla('CONSENTIMIENTO', 'La fecha de la firma no puede ser futura.');
+      var filas = dep.leer('Caracterizaciones');
+      var actual = filas.filter(function (x) { return x.codigo === d.codigo; })[0];
+      var versionActual = actual ? num(actual.version) : 0;
+      if (d.versionBase !== undefined && d.versionBase !== null && num(d.versionBase) !== versionActual) {
+        return falla('CONFLICTO', 'Esta caracterización cambió mientras la editaba. Recargue e intente de nuevo.');
+      }
+      var ahora = new Date(dep.ahora()).toISOString();
+      var fila = {
+        codigo: d.codigo, version: versionActual + 1, datos: d.datos, claves: JSON.stringify(claves),
+        apoyo: d.apoyo, clavesApoyo: JSON.stringify(clavesApoyo),
+        consentimiento: JSON.stringify({ v: v, f: c.fechaFirma + 'T00:00:00.000Z', modo: 'fisico', por: p.codigo }), actualizado: ahora
+      };
+      dep.escribir('Caracterizaciones', filas.filter(function (x) { return x.codigo !== d.codigo; }).concat([fila]));
+      bitacora(p.codigo, 'caracterizacion-asistida', d.codigo);
+      return ok({ version: fila.version, consentimiento: JSON.parse(fila.consentimiento) });
+    },
+
+    // La coordinación borra el registro de una persona sin acceso, a solicitud de ella.
+    revocarCaracterizacionDe: function (d, p) {
+      if (!puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden hacer esto.');
+      var dueno = dep.leer('Personas').filter(function (x) { return x.codigo === d.codigo; })[0];
+      if (!dueno) return falla('DATOS', 'La persona no existe.');
+      if (tieneAcceso(dueno)) return falla('PERMISO', 'Esta persona tiene acceso al aplicativo: ella misma puede revocar su autorización.');
+      var filas = dep.leer('Caracterizaciones');
+      var quedan = filas.filter(function (x) { return x.codigo !== d.codigo; });
+      if (quedan.length !== filas.length) { dep.escribir('Caracterizaciones', quedan); bitacora(p.codigo, 'revocacion-asistida', d.codigo); }
+      return ok();
     },
 
     miCaracterizacion: function (d, p) {
@@ -807,11 +863,15 @@ function crearNucleo(dep) {
     caracterizaciones: function (d, p) {
       if (!puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden ver las caracterizaciones.');
       var activos = llavesPublicas();
+      var personas = dep.leer('Personas');
       return ok({
         caracterizaciones: dep.leer('Caracterizaciones').filter(function (f) { return activos[f.codigo] !== undefined; }).map(function (f) {
           var c = json(f.claves, {}), a = json(f.clavesApoyo, {});
+          var cons = json(f.consentimiento, null);
+          var dueno = personas.filter(function (x) { return x.codigo === f.codigo; })[0];
           return {
             codigo: f.codigo, version: num(f.version), datos: f.datos, apoyo: f.apoyo,
+            modo: cons && cons.modo === 'fisico' ? 'fisico' : 'propio', conAcceso: !!dueno && tieneAcceso(dueno),
             clave: c[p.codigo] || null, claveApoyo: a[p.codigo] || null,
             huellas: soloHuellas(c), huellasApoyo: soloHuellas(a),
             consentimiento: json(f.consentimiento, null), actualizado: f.actualizado

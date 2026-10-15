@@ -35,7 +35,7 @@ function textoApoyo(codigo) {
 
 function chipApoyo(codigo) {
   const t = textoApoyo(codigo);
-  return t ? `<span class="chip-apoyo">${icono('alerta', 'ic-s')}<span>Necesita apoyo — ${esc(t)}</span></span>` : '';
+  return t ? `<span class="chip-apoyo">${icono('alerta', 'ic-s')}<span>Necesita apoyo: ${esc(t)}</span></span>` : '';
 }
 
 // Si la marca la puso alguien de la brigada de otro piso, se avisa para que la brigada de este piso lo sepa.
@@ -182,7 +182,7 @@ export function vistaEmergencia(vista) {
           `<button class="pestana ${f.piso === fila.piso ? 'activa' : ''}" data-p="${f.piso}">Piso ${f.piso}${f.piso === yo.pisoBrigada ? ' · su brigada' : ''} (${f.esperados})</button>`).join('')}</div>
         <input id="buscar" type="text" placeholder="Buscar por nombre en este piso o en todo el Despacho…" value="${esc(busqueda)}" autocomplete="off" style="margin-bottom:.5rem">
         ${grupo('Previstas hoy en este piso', delPiso.filter(x => x.grupo === 'en'), '')}
-        ${grupo('Sin reporte del día — verifique si están en la sede', delPiso.filter(x => x.grupo === 'sin'), '')}
+        ${grupo('Sin reporte del día (verifique si están en la sede)', delPiso.filter(x => x.grupo === 'sin'), '')}
         ${grupo('Reportados aunque no estaban en la lista', delPiso.filter(x => x.grupo === 'extra'), '')}
         ${otros.length ? `<h4>En otros pisos</h4>${otros.map(p => filaPersona(p.codigo, marcas.get(p.codigo), `P${p.piso}-${p.puesto} · `, fila.piso)).join('')}` : ''}
         ${!fila.miembros.length && !otros.length ? '<p class="sutil">No había nadie previsto en este piso al activar.</p>' : ''}

@@ -20,7 +20,7 @@ export function vistaPlanta(vista) {
           <div class="fila">${insignia(`${ocupados} personas`, 'gris')} ${insignia(`${puestos.length - ocupados} vacantes`, 'gris')}</div>
         </div>
         <p class="sutil" style="margin-bottom:.75rem">${icono('escudo', 'ic-s')} Brigadistas: ${brigadistas.length
-          ? brigadistas.map(b => `${esc(sesion.nombreDe(b.codigo))}${sesion.celularDe(b.codigo) ? ` · <a href="tel:${esc(sesion.celularDe(b.codigo).replace(/\s/g, ''))}">${esc(sesion.celularDe(b.codigo))}</a>` : ''}`).join(' — ')
+          ? brigadistas.map(b => `${esc(sesion.nombreDe(b.codigo))}${sesion.celularDe(b.codigo) ? ` · <a href="tel:${esc(sesion.celularDe(b.codigo).replace(/\s/g, ''))}">${esc(sesion.celularDe(b.codigo))}</a>` : ''}`).join('; ')
           : 'sin asignar'}</p>
         <div class="puestos">${puestos.map(x => {
           const p = activas.find(a => a.piso === n && a.puesto === x.puesto);

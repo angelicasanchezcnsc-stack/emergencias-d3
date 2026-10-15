@@ -34,16 +34,16 @@ function ultimaUbicacion(x) {
 
 // Texto plano de los ausentes, para leerlo por teléfono o copiarlo.
 function textoAusentes(lista, e) {
-  const enc = `${CONFIG.APP_NOMBRE} — Personas que no han llegado al punto de encuentro (${horaLegible(horaBogota())})\n` +
+  const enc = `${CONFIG.APP_NOMBRE}: personas que no han llegado al punto de encuentro (${horaLegible(horaBogota())})\n` +
     `${e.simulacro ? 'SIMULACRO' : 'EMERGENCIA'}: ${emergencia.TIPOS[e.tipo]}. Despacho 3, sede Calle 96.\n\n`;
-  return enc + lista.map((x, i) => `${i + 1}. ${sesion.nombreDe(x.codigo)} — ${ubicacionTexto(x)} — ${ultimaUbicacion(x)}`).join('\n');
+  return enc + lista.map((x, i) => `${i + 1}. ${sesion.nombreDe(x.codigo)}, ${ubicacionTexto(x)}, ${ultimaUbicacion(x)}`).join('\n');
 }
 
 function imprimirAusentes(lista, e) {
   const filas = lista.map(x => `<tr><td>${esc(sesion.nombreDe(x.codigo))}</td><td>${x.piso}</td><td>${x.puesto || '—'}</td><td>${esc(ultimaUbicacion(x))}</td><td class="casilla-papel">☐</td></tr>`).join('');
   document.body.insertAdjacentHTML('beforeend', `
     <div id="censo-impreso">
-      <h1>${esc(CONFIG.APP_NOMBRE)} — Ausentes en el punto de encuentro</h1>
+      <h1>${esc(CONFIG.APP_NOMBRE)}: ausentes en el punto de encuentro</h1>
       <p>${e.simulacro ? 'SIMULACRO' : 'EMERGENCIA'}: ${esc(emergencia.TIPOS[e.tipo])} · generado a las ${esc(horaLegible(horaBogota()))} · Despacho 3, sede Calle 96</p>
       <table><thead><tr><th>Nombre</th><th>Piso</th><th>Puesto</th><th>Última ubicación reportada</th><th>Ubicado</th></tr></thead>
       <tbody>${filas || '<tr><td colspan="5">No hay ausentes.</td></tr>'}</tbody></table>
@@ -169,7 +169,7 @@ export function vistaPunto(vista) {
       const lista = emergencia.ausentes(a);
       const accion = await modal({
         titulo: `Ausentes en el punto de encuentro (${lista.length})`, ancho: 'ancho',
-        cuerpo: lista.length ? `<ol class="lista-ausentes">${lista.map(x => `<li><strong>${esc(sesion.nombreDe(x.codigo))}</strong> — ${esc(ubicacionTexto(x))}<br><span class="sutil">${esc(ultimaUbicacion(x))}</span></li>`).join('')}</ol>
+        cuerpo: lista.length ? `<ol class="lista-ausentes">${lista.map(x => `<li><strong>${esc(sesion.nombreDe(x.codigo))}</strong>, ${esc(ubicacionTexto(x))}<br><span class="sutil">${esc(ultimaUbicacion(x))}</span></li>`).join('')}</ol>
           <p class="ayuda">Entregue esta lista a la brigada del edificio o a los bomberos. Contiene datos personales: úsela solo para la emergencia.</p>` : '<p>Todas las personas de la lista ya llegaron.</p>',
         acciones: [
           { texto: 'Cerrar', valor: null, clase: 'btn-fantasma' },
