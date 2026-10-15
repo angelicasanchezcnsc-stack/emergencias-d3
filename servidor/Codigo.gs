@@ -113,6 +113,19 @@ function instalar() {
   Logger.log('Instalación lista. Código de instalación: ' + props.getProperty('CODIGO_INSTALACION'));
 }
 
+/**
+ * Ejecutar UNA SOLA VEZ, con autorización del administrador, al publicar la v0.9: borra el contenido
+ * de las hojas del registro horario (RegistroHoy y RegistroHistorico), que la app ya no usa.
+ * Conserva los encabezados. Es irreversible.
+ */
+function limpiarRegistroHorario() {
+  ['RegistroHoy', 'RegistroHistorico'].forEach(function (n) {
+    var h = SpreadsheetApp.getActive().getSheetByName(n);
+    if (h && h.getLastRow() > 1) h.getRange(2, 1, h.getLastRow() - 1, h.getLastColumn()).clearContent();
+  });
+  Logger.log('Registro horario borrado.');
+}
+
 /** Muestra de nuevo el código de instalación, por si se perdió. */
 function verCodigoInstalacion() {
   Logger.log(PropertiesService.getScriptProperties().getProperty('CODIGO_INSTALACION'));
