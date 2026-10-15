@@ -71,11 +71,13 @@ var MIMES_VALIDOS = ['image/jpeg', 'image/png', 'application/pdf'];
 
 // Emergencias
 var TIPOS_EMERGENCIA = ['sismo', 'incendio', 'estructural', 'riesgo-publico', 'atentado', 'otro'];
-var ESTADOS_EN_EMERGENCIA = ['evacuado', 'no_ubicado', 'apoyo'];
+// "no_estaba": la persona figuraba prevista pero ese día no estaba en la sede. No cuenta como
+// pendiente ni como evacuada. Como "no_ubicado", solo la ponen quienes reportan.
+var ESTADOS_EN_EMERGENCIA = ['evacuado', 'no_ubicado', 'apoyo', 'no_estaba'];
 var ROLES_ACTIVAR = ['admin', 'coordinador', 'suplente', 'brigadista'];
-var ROLES_SIMULACRO = ['admin', 'coordinador'];
-var ROLES_CERRAR = ['admin', 'coordinador', 'suplente'];
-var ROLES_REPORTAR = ['admin', 'coordinador', 'suplente', 'brigadista'];
+var ROLES_SIMULACRO_INICIAR = ['admin', 'coordinador'];
+var ROLES_CERRAR = ['admin', 'coordinador', 'suplente', 'brigadista'];   // emergencias reales y simulacros
+var ROLES_REPORTAR = ['admin', 'coordinador', 'suplente', 'brigadista', 'asesor'];
 var MAX_INTENTOS = 5;
 var MINUTOS_BLOQUEO = 15;
 
@@ -372,8 +374,8 @@ function crearNucleo(dep) {
       return {
         emergencia: pub, marcas: propia, conteos: [],
         cifras: r ? {
-          pisos: r.pisos.map(function (f) { return { piso: f.piso, esperados: f.esperados, porVerificar: f.porVerificar, evacuados: f.evacuados, noUbicados: f.noUbicados, apoyo: f.apoyo, pendientes: f.pendientes, llegaron: f.llegaron, porConteo: f.porConteo, reportado: f.reportado }; }),
-          total: { esperados: r.total.esperados, evacuados: r.total.evacuados, llegaron: r.total.llegaron, noUbicados: r.total.noUbicados, apoyo: r.total.apoyo, pendientes: r.total.pendientes, porVerificar: r.total.porVerificar }
+          pisos: r.pisos.map(function (f) { return { piso: f.piso, esperados: f.esperados, porVerificar: f.porVerificar, evacuados: f.evacuados, noUbicados: f.noUbicados, apoyo: f.apoyo, noEstaban: f.noEstaban, pendientes: f.pendientes, llegaron: f.llegaron, porConteo: f.porConteo, reportado: f.reportado }; }),
+          total: { esperados: r.total.esperados, evacuados: r.total.evacuados, llegaron: r.total.llegaron, noUbicados: r.total.noUbicados, apoyo: r.total.apoyo, noEstaban: r.total.noEstaban, pendientes: r.total.pendientes, porVerificar: r.total.porVerificar }
         } : null
       };
     }
@@ -453,11 +455,14 @@ function crearNucleo(dep) {
       var cifras = conteo
         ? { evacuados: num(conteo.evacuados), noUbicados: num(conteo.noUbicados), apoyo: num(conteo.apoyo) }
         : { evacuados: evacuados.length, noUbicados: cuenta('no_ubicado'), apoyo: cuenta('apoyo') };
+      // "No estaba hoy": previstas que ese día no estaban en la sede. No son pendientes ni evacuadas.
+      var noEstaban = en.filter(function (c) { return marca[c] && marca[c].estado === 'no_estaba'; }).length;
       var pendientes = conteo
-        ? Math.max(0, en.length - cifras.evacuados - cifras.noUbicados - cifras.apoyo)
+        ? Math.max(0, en.length - noEstaban - cifras.evacuados - cifras.noUbicados - cifras.apoyo)
         : en.filter(function (c) { return !(marca[c] && marca[c].estado); }).length;
-      var completo = en.length > 0 && (conteo ? cifras.evacuados >= en.length
-        : en.every(function (c) { return marca[c] && (marca[c].estado === 'evacuado' || texto(marca[c].llegada)); }));
+      // Si todas las previstas resultaron "no estaba", no hay nadie que evacuar: no se completa.
+      var completo = en.length - noEstaban > 0 && (conteo ? cifras.evacuados >= en.length - noEstaban
+        : en.every(function (c) { return marca[c] && (marca[c].estado === 'evacuado' || texto(marca[c].llegada) || marca[c].estado === 'no_estaba'); }));
       // El piso tiene reporte si hay conteo, si nadie quedó pendiente o si alguien reportó a otra persona.
       var reportado = !!conteo || (en.length > 0 && pendientes === 0) ||
         conMarca.some(function (c) { return texto(marca[c].estado) && texto(marca[c].reportadoPor) && marca[c].reportadoPor !== c; });
@@ -468,7 +473,7 @@ function crearNucleo(dep) {
       return {
         piso: n, esperados: en.length,
         porVerificar: codigos.filter(function (c) { return grupoDe[c] === 'sin' && !(marca[c] && marca[c].estado); }).length,
-        evacuados: cifras.evacuados, noUbicados: cifras.noUbicados, apoyo: cifras.apoyo, pendientes: pendientes,
+        evacuados: cifras.evacuados, noUbicados: cifras.noUbicados, apoyo: cifras.apoyo, noEstaban: noEstaban, pendientes: pendientes,
         asistencia: conMarca.filter(function (c) { return texto(marca[c].asistencia) === 'true'; }).length,
         llegaron: conMarca.filter(function (c) { return texto(marca[c].llegada); }).length,
         porConteo: !!conteo, completo: completo, reportado: reportado,
@@ -480,7 +485,7 @@ function crearNucleo(dep) {
 
     var suma = function (k) { return pisos.reduce(function (s, f) { return s + f[k]; }, 0); };
     return {
-      version: 1,
+      version: 2,
       duracionMs: Math.max(0, num(e.cierre) - inicio),
       hitos: {
         primeraSalida: vacioNulo(todasSalidas, Math.min), ultimaSalida: vacioNulo(todasSalidas, Math.max),
@@ -488,7 +493,7 @@ function crearNucleo(dep) {
       },
       total: {
         esperados: suma('esperados'), evacuados: suma('evacuados'), llegaron: suma('llegaron'), noUbicados: suma('noUbicados'),
-        apoyo: suma('apoyo'), asistencia: suma('asistencia'), pendientes: suma('pendientes'), porVerificar: suma('porVerificar')
+        apoyo: suma('apoyo'), noEstaban: suma('noEstaban'), asistencia: suma('asistencia'), pendientes: suma('pendientes'), porVerificar: suma('porVerificar')
       },
       pisos: pisos,
       observaciones: texto(observaciones).slice(0, 600)
@@ -605,7 +610,7 @@ function crearNucleo(dep) {
 
     activarEmergencia: function (d, p) {
       var simulacro = !!d.simulacro;
-      if (!puedeEditar(p, simulacro ? ROLES_SIMULACRO : ROLES_ACTIVAR)) {
+      if (!puedeEditar(p, simulacro ? ROLES_SIMULACRO_INICIAR : ROLES_ACTIVAR)) {
         return falla('PERMISO', simulacro ? 'Solo el coordinador o el administrador pueden iniciar un simulacro.' : 'No tiene permiso para activar una emergencia.');
       }
       if (TIPOS_EMERGENCIA.indexOf(d.tipo) < 0) return falla('DATOS', 'Tipo de emergencia no válido.');
@@ -661,7 +666,7 @@ function crearNucleo(dep) {
           var m = marcas.filter(function (x) { return x.emergencia === e.id && x.codigo === op.codigo; })[0];
           if (!m) { m = { emergencia: e.id, codigo: op.codigo, estado: '', asistencia: 'false', llegada: '', momentos: '{}' }; marcas.push(m); }
           cambio = aplicarCampos(m, op.campos, op.momento, ['estado', 'asistencia', 'llegada'], function (k, v) {
-            if (k === 'estado') return v === '' || (ESTADOS_EN_EMERGENCIA.indexOf(v) >= 0 && (reporta || v !== 'no_ubicado'));
+            if (k === 'estado') return v === '' || (ESTADOS_EN_EMERGENCIA.indexOf(v) >= 0 && (reporta || (v !== 'no_ubicado' && v !== 'no_estaba')));
             if (k === 'asistencia') return v === 'true' || v === 'false';
             return v === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
           });
@@ -684,8 +689,8 @@ function crearNucleo(dep) {
       var e = lista.filter(function (x) { return x.id === d.id && x.estado === 'activa'; })[0];
       if (!e) return falla('NO_ACTIVA', 'Esa emergencia ya fue cerrada.');
       var simulacro = texto(e.simulacro) === 'true';
-      if (!puedeEditar(p, simulacro ? ROLES_SIMULACRO : ROLES_CERRAR)) {
-        return falla('PERMISO', simulacro ? 'Solo el coordinador o el administrador pueden terminar un simulacro.' : 'Solo la coordinación o el administrador pueden cerrar la emergencia.');
+      if (!puedeEditar(p, ROLES_CERRAR)) {
+        return falla('PERMISO', 'Solo los brigadistas, la coordinación o el administrador pueden ' + (simulacro ? 'terminar un simulacro.' : 'cerrar la emergencia.'));
       }
       e.estado = 'cerrada';
       e.cierre = dep.ahora();

@@ -315,6 +315,7 @@ textarea { width: 100%; padding: .7rem .8rem; background: #fff; border: 1px soli
 .btn-estado.e-evacuado.activo { background: var(--exito); border-color: var(--exito); color: #fff; }
 .btn-estado.e-no.activo { background: var(--error); border-color: var(--error); color: #fff; }
 .btn-estado.e-apoyo.activo { background: var(--adv); border-color: var(--adv); color: var(--corp-dark); }
+.btn-estado.e-noestaba.activo { background: var(--texto-60); border-color: var(--texto-60); color: #fff; }
 .conteo { margin-top: 1rem; border: 1px solid var(--corp-light); border-radius: var(--radio); padding: .75rem 1rem; }
 .conteo summary { cursor: pointer; font-weight: 700; color: var(--corp-dark); }
 @keyframes latido { 50% { filter: brightness(1.15); } }
@@ -376,7 +377,7 @@ details.tarjeta[open] .resumen-plegable { margin-bottom: .5rem; }
 @media (max-width: 640px) {
   .resumen-grande { grid-template-columns: repeat(2, 1fr); }
   .fila-marca { grid-template-columns: 1fr; }
-  .marca-btns { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .marca-btns { display: grid; grid-template-columns: repeat(2, 1fr); }
   .btn-estado { justify-content: center; }
   .fila-dia { grid-template-columns: 3.2rem 1fr auto; }
   .fila-dia [data-novedad] { grid-column: 2 / -1; justify-self: start; min-height: 2rem; padding: .25rem .5rem; }

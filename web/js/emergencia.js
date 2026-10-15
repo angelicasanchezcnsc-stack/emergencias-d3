@@ -19,9 +19,11 @@ export const TIPOS = {
 export const PROTOCOLO = { sismo: 'sismo', incendio: 'incendio', estructural: 'estructural', 'riesgo-publico': 'riesgo-publico', atentado: 'atentado', otro: 'evacuacion' };
 
 export const ROLES_ACTIVAR = ['admin', 'coordinador', 'suplente', 'brigadista'];
-export const ROLES_SIMULACRO = ['admin', 'coordinador'];
-export const ROLES_CERRAR = ['admin', 'coordinador', 'suplente'];
-export const ROLES_REPORTAR = ['admin', 'coordinador', 'suplente', 'brigadista'];
+// Mismas listas que el servidor. Iniciar un simulacro sigue reservado a administración y coordinación;
+// cerrar (emergencia real o simulacro) lo hacen también los brigadistas.
+export const ROLES_SIMULACRO_INICIAR = ['admin', 'coordinador'];
+export const ROLES_CERRAR = ['admin', 'coordinador', 'suplente', 'brigadista'];
+export const ROLES_REPORTAR = ['admin', 'coordinador', 'suplente', 'brigadista', 'asesor'];
 export const tiene = roles => roles.some(r => sesion.tieneRol(r));
 
 const INTERVALO_NORMAL = 60000;
@@ -250,12 +252,12 @@ export function resumen(est = actual()) {
   if (!est || !est.emergencia) return null;
   // Quien no es brigadista ni coordinación recibe del servidor solo cifras por piso.
   if (est.cifras) {
-    const vacio = n => ({ piso: n, esperados: 0, porVerificar: 0, evacuados: 0, noUbicados: 0, apoyo: 0, pendientes: 0, llegaron: 0, porConteo: false, reportado: false });
+    const vacio = n => ({ piso: n, esperados: 0, porVerificar: 0, evacuados: 0, noUbicados: 0, apoyo: 0, noEstaban: 0, pendientes: 0, llegaron: 0, porConteo: false, reportado: false });
     const pisos = [...new Set([...CONFIG.PISOS, ...est.cifras.pisos.map(f => f.piso)])].sort((a, b) => a - b);
-    const filas = pisos.map(n => ({ ...(est.cifras.pisos.find(f => f.piso === n) || vacio(n)), miembros: [], porPersona: null, asistencia: 0, sinLlegar: 0, conteo: null }));
+    const filas = pisos.map(n => ({ ...vacio(n), ...(est.cifras.pisos.find(f => f.piso === n) || {}), miembros: [], porPersona: null, asistencia: 0, sinLlegar: 0, conteo: null }));
     return {
       filas,
-      total: { ...est.cifras.total, sinLlegar: 0 },
+      total: { noEstaban: 0, ...est.cifras.total, sinLlegar: 0 },
       sinReporte: filas.filter(f => (f.esperados || f.porVerificar) && !f.reportado).map(f => f.piso)
     };
   }
@@ -279,6 +281,8 @@ export function resumen(est = actual()) {
     const miembros = [...pisoDe.entries()].filter(([, v]) => v.piso === n).map(([codigo, v]) => ({ codigo, grupo: v.grupo, marca: marcas.get(codigo) || null }));
     const en = miembros.filter(x => x.grupo === 'en');
     const conEstado = s => miembros.filter(x => x.marca && x.marca.estado === s);
+    // «No estaba hoy»: previstas que ese día no estaban en la sede. No son pendientes ni evacuadas.
+    const noEstaban = en.filter(x => x.marca && x.marca.estado === 'no_estaba').length;
     const evacuados = miembros.filter(x => x.marca && (x.marca.estado === 'evacuado' || x.marca.llegada));
     const conteo = est.conteos.find(c => c.piso === n) || null;
     const porPersona = {
@@ -288,7 +292,7 @@ export function resumen(est = actual()) {
     // Si el brigadista reportó el piso por conteo, sus cifras mandan en el tablero.
     const cifras = conteo ? {
       evacuados: conteo.evacuados, noUbicados: conteo.noUbicados, apoyo: conteo.apoyo,
-      pendientes: Math.max(0, en.length - conteo.evacuados - conteo.noUbicados - conteo.apoyo)
+      pendientes: Math.max(0, en.length - noEstaban - conteo.evacuados - conteo.noUbicados - conteo.apoyo)
     } : porPersona;
     const pendientes = cifras.pendientes;
     // Un piso tiene reporte si hay conteo, si alguien reportó a otra persona o si
@@ -302,6 +306,7 @@ export function resumen(est = actual()) {
       evacuados: cifras.evacuados,
       noUbicados: cifras.noUbicados,
       apoyo: cifras.apoyo,
+      noEstaban,
       porPersona,
       asistencia: miembros.filter(x => x.marca && x.marca.asistencia).length,
       llegaron: miembros.filter(x => x.marca && x.marca.llegada).length,
@@ -316,7 +321,7 @@ export function resumen(est = actual()) {
   return {
     filas,
     total: {
-      esperados: suma('esperados'), evacuados: suma('evacuados'), noUbicados: suma('noUbicados'), apoyo: suma('apoyo'),
+      esperados: suma('esperados'), evacuados: suma('evacuados'), noUbicados: suma('noUbicados'), apoyo: suma('apoyo'), noEstaban: suma('noEstaban'),
       pendientes: suma('pendientes'), porVerificar: suma('porVerificar'), llegaron: suma('llegaron'), sinLlegar: suma('sinLlegar')
     },
     sinReporte: filas.filter(f => (f.esperados || f.porVerificar) && !f.reportado).map(f => f.piso)
@@ -338,6 +343,7 @@ export function ausentes(est = actual()) {
   for (const f of r.filas) {
     for (const x of f.miembros) {
       if (x.marca && x.marca.llegada) continue;
+      if (x.marca && x.marca.estado === 'no_estaba') continue;   // no estaba en la sede: no se le espera en el punto
       if (x.grupo === 'extra' && !(x.marca && x.marca.estado)) continue;
       lista.push({ codigo: x.codigo, piso: f.piso, puesto: puestoDe(x.codigo).puesto, grupo: x.grupo, marca: x.marca });
     }

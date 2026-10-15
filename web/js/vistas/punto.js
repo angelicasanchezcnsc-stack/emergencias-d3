@@ -8,7 +8,7 @@ import { esc, icono, aviso, insignia, modal, confirmar } from '../ui.js';
 import { horaLegible, horaBogota } from '../tiempo.js';
 
 const normalizar = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-const ESTADO_PISO = { evacuado: 'Evacuado según su piso', no_ubicado: 'NO UBICADO en el piso', apoyo: 'REQUIERE APOYO' };
+const ESTADO_PISO = { evacuado: 'Evacuado según su piso', no_ubicado: 'NO UBICADO en el piso', apoyo: 'REQUIERE APOYO', no_estaba: 'No estaba hoy en la sede' };
 
 function leerSol() { try { return localStorage.getItem('d3e-modo-sol') === '1'; } catch { return false; } }
 function guardarSol(v) { try { localStorage.setItem('d3e-modo-sol', v ? '1' : '0'); } catch { /* sin almacenamiento */ } }
@@ -20,7 +20,7 @@ function estadoUltimo(x) {
   if (!m || !m.estado) return 'Sin reporte del brigadista';
   const quien = m.reportadoPor && m.reportadoPor !== x.codigo ? ' (reportó ' + sesion.nombreDe(m.reportadoPor) + ')' : '';
   const cuando = m.actualizado ? ' a las ' + horaLegible(horaBogota(new Date(m.actualizado))) : '';
-  return ESTADO_PISO[m.estado] + cuando + quien;
+  return (ESTADO_PISO[m.estado] || m.estado) + cuando + quien;
 }
 
 // Última ubicación reportada y, si la persona registró que necesita apoyo, qué apoyo (para
@@ -79,7 +79,8 @@ export function vistaPunto(vista) {
     const llegaron = r.filas.flatMap(f => f.miembros.filter(x => x.marca && x.marca.llegada).map(x => ({ ...x, piso: f.piso, puesto: emergencia.puestoDe(x.codigo).puesto })))
       .filter(filtro).sort((x, y) => (y.marca.llegada > x.marca.llegada ? 1 : -1));
     // Quien no está en la lista del día también puede registrarse (buscándolo por nombre).
-    const listados = new Set(r.filas.flatMap(f => f.miembros.map(x => x.codigo)));
+    // Quien fue marcado «no estaba hoy» no figura en «Por llegar», pero se puede buscar por si sí llegó.
+    const listados = new Set(r.filas.flatMap(f => f.miembros.filter(x => !(x.marca && x.marca.estado === 'no_estaba')).map(x => x.codigo)));
     const otros = q ? (sesion.base().personas || []).filter(p => p.estado === 'activo' && !listados.has(p.codigo) && normalizar(sesion.nombreDe(p.codigo)).includes(q)) : [];
 
     vista.innerHTML = `

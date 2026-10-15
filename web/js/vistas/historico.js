@@ -49,9 +49,10 @@ function cuerpoInforme(e) {
     <table class="tabla-ficha"><tbody>
       <tr><th>Fecha</th><td>${esc(fecha(e.inicio))}</td><th>Hora de inicio</th><td>${esc(hora(e.inicio))}</td></tr>
       <tr><th>Evento</th><td>${esc(nombreEvento(e))} — ${esc(TIPOS[e.tipo] || e.tipo)}</td><th>Duración total</th><td>${esc(dur(r.duracionMs))}</td></tr>
-      <tr><th>Personas en la sede al activar</th><td>${t.esperados}${t.porVerificar ? ` (+${t.porVerificar} por verificar)` : ''}</td><th>Evacuadas</th><td>${t.evacuados} (${pct} %)</td></tr>
+      <tr><th>Personas previstas al activar</th><td>${t.esperados}${t.porVerificar ? ` (+${t.porVerificar} por verificar)` : ''}</td><th>Evacuadas</th><td>${t.evacuados} (${pct} %)</td></tr>
       <tr><th>Llegaron al punto de encuentro</th><td>${t.llegaron}</td><th>No ubicadas</th><td>${t.noUbicados}</td></tr>
       <tr><th>Requirieron apoyo</th><td>${t.apoyo}</td><th>Con asistencia por discapacidad</th><td>${t.asistencia}</td></tr>
+      <tr><th>No estaban</th><td colspan="3">${t.noEstaban || 0} <span class="sutil">(previstas que ese día no estaban en la sede)</span></td></tr>
       ${e.descripcion ? `<tr><th>Detalle</th><td colspan="3">${esc(e.descripcion)}</td></tr>` : ''}
     </tbody></table>
 

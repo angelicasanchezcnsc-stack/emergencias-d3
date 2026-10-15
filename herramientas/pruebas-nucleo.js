@@ -49,6 +49,7 @@ function crearEntorno() {
   const nucleo = N.crearNucleo(dep);
   const e = {
     // Hora de Bogotá (UTC-5, sin horario de verano).
+    ahora: () => reloj.ahora,
     fijarFecha(fecha, hora = '09:00') { reloj.hoy = fecha; reloj.ahora = Date.parse(`${fecha}T${hora}:00-05:00`); },
     sembrar(tabla, filas) { tablas[tabla] = filas.map(f => ({ ...f })); },
     tabla: t => copia(tablas[t] || []),
@@ -496,6 +497,168 @@ prueba(K, 'Los festivos conservan lo demás de la configuración (por ejemplo, l
   e.sembrar('Config', [{ clave: 'archivos', valor: JSON.stringify({ punto: { mime: 'image/png', version: 1, partes: 1, tam: 10 } }) }]);
   exito(e.llamar('guardarConfig', { festivos: ['2026-12-25'] }, e.token));
   afirmar(e.tabla('Config').some(c => c.clave === 'archivos'), 'Se perdió «archivos»');
+});
+
+// ---------- Fase 2: «No estaba hoy» y cierre por brigadistas ----------
+
+// Siete personas: cuatro previstas en el piso 2 (admin, brigadista y dos sin rol), la brigadista del
+// piso 6, una asesora y una persona sin rol en el piso 4.
+function escenarioEmergencia() {
+  const e = crearEntorno();
+  e.fijarFecha('2026-10-19');
+  e.sembrar('Puestos', PUESTOS);
+  e.sembrar('Personas', [
+    persona(1, 2, 1, { roles: 'admin' }),
+    persona(2, 2, 2, { roles: 'brigadista', pisoBrigada: 2 }),
+    persona(3, 2, 3),
+    persona(4, 2, 4),
+    persona(5, 6, 1, { roles: 'brigadista', pisoBrigada: 6 }),
+    persona(6, 4, 1, { roles: 'asesor' }),
+    persona(7, 4, 2),
+    persona(8, 2, 5, { roles: 'coordinador' })
+  ]);
+  // La persona 8 queda inactiva para que el piso 2 tenga exactamente cuatro previstas.
+  const ps = e.tabla('Personas'); ps[7].estado = 'inactivo'; e.sembrar('Personas', ps);
+  ['D3-001', 'D3-002', 'D3-003', 'D3-004', 'D3-005', 'D3-006', 'D3-007'].forEach(c => { e.t = e.t || {}; e.t[c] = e.entrar(c); });
+  e.reiniciarEscrituras();
+  return e;
+}
+const E = 'Fase 2: emergencia (servidor)';
+const activar = (e, quien = 'D3-001', simulacro = false) =>
+  exito(e.llamar('activarEmergencia', { tipo: 'sismo', descripcion: '', simulacro }, e.t[quien])).emergencia.id;
+const marcar = (e, quien, id, codigo, estado, extra = {}) => e.llamar('marcarEmergencia', {
+  ops: [{ id: 'op-' + Math.random(), emergencia: id, momento: e.ahora() + 1000, tipo: 'persona', codigo, campos: { estado, ...extra } }]
+}, e.t[quien]);
+const marcaDe = (e, id, codigo) => exito(e.llamar('emergencia', { id }, e.t['D3-001'])).marcas.find(m => m.codigo === codigo);
+const cerrar = (e, quien, id) => e.llamar('cerrarEmergencia', { id, observaciones: '' }, e.t[quien]);
+const informe = (e, id) => exito(e.llamar('historial', {}, e.t['D3-001'])).emergencias.find(x => x.id === id).resumen;
+const piso2 = r => r.pisos.find(p => p.piso === 2);
+
+prueba(E, 'Una persona sin rol no puede marcar «no estaba» a otra', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  igual(exito(marcar(e, 'D3-003', id, 'D3-004', 'no_estaba')).resultados[0].estado, 'permiso');
+  igual(!!marcaDe(e, id, 'D3-004'), false, 'No debía quedar ninguna marca');
+});
+prueba(E, 'Una persona sin rol no puede marcarse «no estaba» a sí misma', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  exito(marcar(e, 'D3-003', id, 'D3-003', 'no_estaba'));
+  afirmar(!(marcaDe(e, id, 'D3-003') || {}).estado, 'No debía quedar el estado no_estaba');
+});
+prueba(E, 'Una persona sin rol sí puede marcarse «evacuado» (sin cambio)', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  exito(marcar(e, 'D3-003', id, 'D3-003', 'evacuado'));
+  igual(marcaDe(e, id, 'D3-003').estado, 'evacuado');
+});
+prueba(E, 'Una brigadista puede marcar «no estaba»', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  igual(exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba')).resultados[0].estado, 'ok');
+  igual(marcaDe(e, id, 'D3-004').estado, 'no_estaba');
+});
+prueba(E, 'Una asesora puede marcar «no estaba»', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  igual(exito(marcar(e, 'D3-006', id, 'D3-004', 'no_estaba')).resultados[0].estado, 'ok');
+  igual(marcaDe(e, id, 'D3-004').estado, 'no_estaba');
+});
+prueba(E, 'La asesora ve el estado completo de la emergencia y el histórico', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba'));
+  const d = exito(e.llamar('emergencia', { id }, e.t['D3-006']));
+  afirmar(d.marcas.some(m => m.codigo === 'D3-004'), 'La asesora debía ver las marcas de otras personas');
+  exito(e.llamar('historial', {}, e.t['D3-006']));
+});
+prueba(E, 'Quien no reporta recibe cifras con «no estaban» y no ve marcas ajenas', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba'));
+  const d = exito(e.llamar('emergencia', { id }, e.t['D3-003']));
+  igual(d.marcas.length, 0);
+  igual(d.cifras.pisos.find(p => p.piso === 2).noEstaban, 1);
+  igual(d.cifras.total.noEstaban, 1);
+});
+prueba(E, 'Resumen: 4 previstas (2 evacuadas, 1 «no estaba», 1 sin marca) → pendientes 1, completo no', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  exito(marcar(e, 'D3-002', id, 'D3-002', 'evacuado'));
+  exito(marcar(e, 'D3-002', id, 'D3-003', 'evacuado'));
+  exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba'));
+  exito(cerrar(e, 'D3-001', id));
+  const r = informe(e, id), p = piso2(r);
+  igual([p.esperados, p.evacuados, p.noEstaban, p.pendientes, p.completo, p.tEvacuacionMs], [4, 2, 1, 1, false, null]);
+  igual([r.version, r.total.noEstaban, r.total.evacuados], [2, 1, 2]);
+});
+prueba(E, 'Resumen: al marcar la cuarta como evacuada, el piso queda completo', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  exito(marcar(e, 'D3-002', id, 'D3-002', 'evacuado'));
+  exito(marcar(e, 'D3-002', id, 'D3-003', 'evacuado'));
+  exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba'));
+  exito(marcar(e, 'D3-002', id, 'D3-001', 'evacuado'));
+  exito(cerrar(e, 'D3-001', id));
+  const p = piso2(informe(e, id));
+  igual([p.evacuados, p.noEstaban, p.pendientes, p.completo], [3, 1, 0, true]);
+  afirmar(typeof p.tEvacuacionMs === 'number', 'Debía traer el tiempo de evacuación');
+});
+prueba(E, 'Resumen: si todas las previstas son «no estaba», no se completa y no hay tiempo', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  ['D3-001', 'D3-002', 'D3-003', 'D3-004'].forEach(c => exito(marcar(e, 'D3-002', id, c, 'no_estaba')));
+  exito(cerrar(e, 'D3-001', id));
+  const p = piso2(informe(e, id));
+  igual([p.evacuados, p.noEstaban, p.pendientes, p.completo, p.tEvacuacionMs], [0, 4, 0, false, null]);
+});
+prueba(E, 'Resumen: «no estaba» nunca cuenta como evacuada', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba'));
+  exito(cerrar(e, 'D3-001', id));
+  igual(informe(e, id).total.evacuados, 0);
+});
+prueba(E, 'Con conteo: pendientes = previstas − no estaban − evacuados − no ubicados − apoyo', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba'));
+  exito(e.llamar('marcarEmergencia', { ops: [{ id: 'c1', emergencia: id, momento: e.ahora() + 1000, tipo: 'conteo', piso: 2, campos: { evacuados: 1, noUbicados: 1, apoyo: 0 } }] }, e.t['D3-002']));
+  const p = exito(e.llamar('emergencia', { id }, e.t['D3-003'])).cifras.pisos.find(x => x.piso === 2);
+  igual([p.esperados, p.noEstaban, p.evacuados, p.noUbicados, p.pendientes], [4, 1, 1, 1, 1]);   // 4 − 1 − 1 − 1 − 0
+});
+prueba(E, 'Con conteo: los pendientes no bajan de cero', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  exito(e.llamar('marcarEmergencia', { ops: [{ id: 'c1', emergencia: id, momento: e.ahora() + 1000, tipo: 'conteo', piso: 2, campos: { evacuados: 9, noUbicados: 0, apoyo: 0 } }] }, e.t['D3-002']));
+  igual(exito(e.llamar('emergencia', { id }, e.t['D3-003'])).cifras.pisos.find(x => x.piso === 2).pendientes, 0);
+});
+prueba(E, 'Con conteo: el piso se completa si los evacuados cubren a quienes sí estaban', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba'));
+  exito(e.llamar('marcarEmergencia', { ops: [{ id: 'c1', emergencia: id, momento: e.ahora() + 1000, tipo: 'conteo', piso: 2, campos: { evacuados: 3, noUbicados: 0, apoyo: 0 } }] }, e.t['D3-002']));
+  exito(cerrar(e, 'D3-001', id));
+  igual(piso2(informe(e, id)).completo, true);
+});
+prueba(E, 'Una brigadista cierra una emergencia real', () => {
+  const e = escenarioEmergencia(); const id = activar(e, 'D3-001', false);
+  exito(cerrar(e, 'D3-002', id), 'Una brigadista debía poder cerrar');
+  igual(e.tabla('Emergencias')[0].estado, 'cerrada');
+});
+prueba(E, 'Una brigadista cierra un simulacro', () => {
+  const e = escenarioEmergencia(); const id = activar(e, 'D3-001', true);
+  exito(cerrar(e, 'D3-005', id), 'Una brigadista debía poder terminar el simulacro');
+});
+prueba(E, 'Una asesora no puede cerrar ni una emergencia real ni un simulacro', () => {
+  const e = escenarioEmergencia();
+  const real = activar(e, 'D3-001', false);
+  rechazo(cerrar(e, 'D3-006', real), 'PERMISO');
+  exito(cerrar(e, 'D3-001', real));
+  const sim = activar(e, 'D3-001', true);
+  rechazo(cerrar(e, 'D3-006', sim), 'PERMISO');
+  igual(e.tabla('Emergencias').find(x => x.id === sim).estado, 'activa');
+});
+prueba(E, 'Una persona sin rol no puede cerrar', () => {
+  const e = escenarioEmergencia(); const id = activar(e);
+  rechazo(cerrar(e, 'D3-003', id), 'PERMISO');
+});
+prueba(E, 'Una brigadista no puede iniciar un simulacro, pero sí una emergencia real', () => {
+  const e = escenarioEmergencia();
+  rechazo(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: true }, e.t['D3-002']), 'PERMISO');
+  exito(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: false }, e.t['D3-002']));
+});
+prueba(E, 'El administrador inicia un simulacro; una asesora no activa nada', () => {
+  const e = escenarioEmergencia();
+  rechazo(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: false }, e.t['D3-006']), 'PERMISO');
+  rechazo(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: true }, e.t['D3-006']), 'PERMISO');
+  exito(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: true }, e.t['D3-001']));
 });
 
 // ---------- Ejecución y resultado ----------
