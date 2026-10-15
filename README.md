@@ -30,7 +30,7 @@ Etapa actual: **10, piloto**. La app está publicada en GitHub Pages y conectada
 
 - [x] Acceso con correo y contraseña, bloqueo tras 5 intentos fallidos
 - [x] Llave maestra cifrada y carga seudonimizada del Excel de puestos (con recarga y comparación de cambios)
-- [x] Roles: administrador, coordinador, suplente, brigadistas por piso (uno o dos) con celular
+- [x] Roles: administrador, coordinador, suplente, brigadistas por piso (uno o dos) con celular y asesor; solo ingresan las personas con un rol; días presenciales de cada persona
 - [x] Contraseñas temporales, credenciales imprimibles y reglas de contraseña configurables
 - [x] Planta física por piso, funcionamiento sin conexión de la interfaz
 - [x] Presencia por agenda: cada persona figura prevista en su puesto los días de su agenda; novedades por rango de fechas (no asiste, en otro lugar, asiste), sin horas ni motivo

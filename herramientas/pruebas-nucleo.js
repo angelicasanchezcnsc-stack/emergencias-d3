@@ -482,7 +482,7 @@ prueba(K, 'Rechaza más de 60 festivos', () => {
 prueba(K, 'Rechaza festivos que no son un arreglo', () => { const e = escenario(); rechazo(e.llamar('guardarConfig', { festivos: '2026-12-25' }, e.token), 'DATOS'); });
 prueba(K, 'Solo el administrador cambia los festivos', () => {
   const e = escenario();
-  const t = e.entrar('D3-003');
+  const t = e.entrar('D3-004');   // brigadista
   rechazo(e.llamar('guardarConfig', { festivos: ['2026-12-25'] }, t), 'PERMISO');
 });
 prueba(K, 'diasHistorico se ignora y se descarta si existía', () => {
@@ -519,7 +519,8 @@ function escenarioEmergencia() {
   ]);
   // La persona 8 queda inactiva para que el piso 2 tenga exactamente cuatro previstas.
   const ps = e.tabla('Personas'); ps[7].estado = 'inactivo'; e.sembrar('Personas', ps);
-  ['D3-001', 'D3-002', 'D3-003', 'D3-004', 'D3-005', 'D3-006', 'D3-007'].forEach(c => { e.t = e.t || {}; e.t[c] = e.entrar(c); });
+  // Solo ingresan quienes tienen rol (las personas 3, 4 y 7 no tienen: siguen en las listas pero no entran).
+  ['D3-001', 'D3-002', 'D3-005', 'D3-006'].forEach(c => { e.t = e.t || {}; e.t[c] = e.entrar(c); });
   e.reiniciarEscrituras();
   return e;
 }
@@ -534,21 +535,6 @@ const cerrar = (e, quien, id) => e.llamar('cerrarEmergencia', { id, observacione
 const informe = (e, id) => exito(e.llamar('historial', {}, e.t['D3-001'])).emergencias.find(x => x.id === id).resumen;
 const piso2 = r => r.pisos.find(p => p.piso === 2);
 
-prueba(E, 'Una persona sin rol no puede marcar «no estaba» a otra', () => {
-  const e = escenarioEmergencia(); const id = activar(e);
-  igual(exito(marcar(e, 'D3-003', id, 'D3-004', 'no_estaba')).resultados[0].estado, 'permiso');
-  igual(!!marcaDe(e, id, 'D3-004'), false, 'No debía quedar ninguna marca');
-});
-prueba(E, 'Una persona sin rol no puede marcarse «no estaba» a sí misma', () => {
-  const e = escenarioEmergencia(); const id = activar(e);
-  exito(marcar(e, 'D3-003', id, 'D3-003', 'no_estaba'));
-  afirmar(!(marcaDe(e, id, 'D3-003') || {}).estado, 'No debía quedar el estado no_estaba');
-});
-prueba(E, 'Una persona sin rol sí puede marcarse «evacuado» (sin cambio)', () => {
-  const e = escenarioEmergencia(); const id = activar(e);
-  exito(marcar(e, 'D3-003', id, 'D3-003', 'evacuado'));
-  igual(marcaDe(e, id, 'D3-003').estado, 'evacuado');
-});
 prueba(E, 'Una brigadista puede marcar «no estaba»', () => {
   const e = escenarioEmergencia(); const id = activar(e);
   igual(exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba')).resultados[0].estado, 'ok');
@@ -565,14 +551,6 @@ prueba(E, 'La asesora ve el estado completo de la emergencia y el histórico', (
   const d = exito(e.llamar('emergencia', { id }, e.t['D3-006']));
   afirmar(d.marcas.some(m => m.codigo === 'D3-004'), 'La asesora debía ver las marcas de otras personas');
   exito(e.llamar('historial', {}, e.t['D3-006']));
-});
-prueba(E, 'Quien no reporta recibe cifras con «no estaban» y no ve marcas ajenas', () => {
-  const e = escenarioEmergencia(); const id = activar(e);
-  exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba'));
-  const d = exito(e.llamar('emergencia', { id }, e.t['D3-003']));
-  igual(d.marcas.length, 0);
-  igual(d.cifras.pisos.find(p => p.piso === 2).noEstaban, 1);
-  igual(d.cifras.total.noEstaban, 1);
 });
 prueba(E, 'Resumen: 4 previstas (2 evacuadas, 1 «no estaba», 1 sin marca) → pendientes 1, completo no', () => {
   const e = escenarioEmergencia(); const id = activar(e);
@@ -612,13 +590,15 @@ prueba(E, 'Con conteo: pendientes = previstas − no estaban − evacuados − n
   const e = escenarioEmergencia(); const id = activar(e);
   exito(marcar(e, 'D3-002', id, 'D3-004', 'no_estaba'));
   exito(e.llamar('marcarEmergencia', { ops: [{ id: 'c1', emergencia: id, momento: e.ahora() + 1000, tipo: 'conteo', piso: 2, campos: { evacuados: 1, noUbicados: 1, apoyo: 0 } }] }, e.t['D3-002']));
-  const p = exito(e.llamar('emergencia', { id }, e.t['D3-003'])).cifras.pisos.find(x => x.piso === 2);
+  exito(cerrar(e, 'D3-001', id));
+  const p = piso2(informe(e, id));
   igual([p.esperados, p.noEstaban, p.evacuados, p.noUbicados, p.pendientes], [4, 1, 1, 1, 1]);   // 4 − 1 − 1 − 1 − 0
 });
 prueba(E, 'Con conteo: los pendientes no bajan de cero', () => {
   const e = escenarioEmergencia(); const id = activar(e);
   exito(e.llamar('marcarEmergencia', { ops: [{ id: 'c1', emergencia: id, momento: e.ahora() + 1000, tipo: 'conteo', piso: 2, campos: { evacuados: 9, noUbicados: 0, apoyo: 0 } }] }, e.t['D3-002']));
-  igual(exito(e.llamar('emergencia', { id }, e.t['D3-003'])).cifras.pisos.find(x => x.piso === 2).pendientes, 0);
+  exito(cerrar(e, 'D3-001', id));
+  igual(piso2(informe(e, id)).pendientes, 0);
 });
 prueba(E, 'Con conteo: el piso se completa si los evacuados cubren a quienes sí estaban', () => {
   const e = escenarioEmergencia(); const id = activar(e);
@@ -645,10 +625,6 @@ prueba(E, 'Una asesora no puede cerrar ni una emergencia real ni un simulacro', 
   rechazo(cerrar(e, 'D3-006', sim), 'PERMISO');
   igual(e.tabla('Emergencias').find(x => x.id === sim).estado, 'activa');
 });
-prueba(E, 'Una persona sin rol no puede cerrar', () => {
-  const e = escenarioEmergencia(); const id = activar(e);
-  rechazo(cerrar(e, 'D3-003', id), 'PERMISO');
-});
 prueba(E, 'Una brigadista no puede iniciar un simulacro, pero sí una emergencia real', () => {
   const e = escenarioEmergencia();
   rechazo(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: true }, e.t['D3-002']), 'PERMISO');
@@ -659,6 +635,188 @@ prueba(E, 'El administrador inicia un simulacro; una asesora no activa nada', ()
   rechazo(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: false }, e.t['D3-006']), 'PERMISO');
   rechazo(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: true }, e.t['D3-006']), 'PERMISO');
   exito(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: true }, e.t['D3-001']));
+});
+
+// ---------- Fase 3: acceso por roles y rol de asesor ----------
+
+const A = 'Fase 3: acceso por roles (servidor)';
+const ingreso = (e, codigo, clave = 'v-' + codigo) => e.llamar('ingresar', { hashCorreo: 'hc-' + codigo, verificador: clave });
+const roles = (e, cambios) => e.llamar('guardarRoles', { cambios }, e.token);
+const rolesDe = (e, codigo) => e.tabla('Personas').find(p => p.codigo === codigo);
+
+prueba(A, 'Sin roles y con la contraseña correcta: SIN_ACCESO y sin sesión', () => {
+  const e = escenario();
+  const antes = e.tabla('Sesiones').length;
+  const r = ingreso(e, 'D3-003');
+  rechazo(r, 'SIN_ACCESO');
+  afirmar(/no tiene acceso/i.test(r.error), 'Mensaje claro: ' + r.error);
+  igual(e.tabla('Sesiones').length, antes, 'No debía crear sesión');
+  afirmar(!r.datos, 'No debe devolver token');
+});
+prueba(A, 'Sin roles y con contraseña incorrecta: CREDENCIALES (no revela si el correo existe)', () => {
+  const e = escenario();
+  const r = ingreso(e, 'D3-003', 'otra-clave');
+  rechazo(r, 'CREDENCIALES');
+  igual(r.error, ingreso(e, 'D3-999').error, 'Debe ser el mismo mensaje que con un correo que no existe');
+});
+prueba(A, 'Sin acceso reinicia los intentos y deja bitácora', () => {
+  const e = escenario();
+  ingreso(e, 'D3-003', 'mala'); ingreso(e, 'D3-003', 'mala');
+  igual(Number(rolesDe(e, 'D3-003').intentos), 2);
+  rechazo(ingreso(e, 'D3-003'), 'SIN_ACCESO');
+  igual(Number(rolesDe(e, 'D3-003').intentos), 0);
+  igual(e.tabla('Bitacora').filter(b => b.accion === 'ingreso-sin-acceso').map(b => b.codigo), ['D3-003']);
+});
+prueba(A, 'Cinco intentos fallidos bloquean aunque no tenga roles', () => {
+  const e = escenario();
+  for (let i = 0; i < 5; i++) ingreso(e, 'D3-003', 'mala');
+  rechazo(ingreso(e, 'D3-003'), 'BLOQUEADO');
+});
+prueba(A, 'Cada rol válido da acceso (incluido asesor)', () => {
+  const e = escenario();
+  ['admin', 'coordinador', 'suplente', 'brigadista', 'asesor'].forEach(r => {
+    const ps = e.tabla('Personas'); ps[2].roles = r; if (r === 'brigadista') ps[2].pisoBrigada = 4; e.sembrar('Personas', ps);
+    exito(ingreso(e, 'D3-003'), 'Debía entrar con el rol ' + r);
+  });
+});
+prueba(A, 'Persona inactiva con rol: no ingresa', () => {
+  const e = escenario();
+  const ps = e.tabla('Personas'); ps[7].roles = 'asesor'; e.sembrar('Personas', ps);
+  rechazo(ingreso(e, 'D3-008'), 'CREDENCIALES');
+});
+prueba(A, 'Al quitarle todos los roles, la sesión abierta deja de servir (SESION)', () => {
+  const e = escenario();
+  const t4 = e.entrar('D3-004');
+  exito(e.llamar('base', {}, t4));
+  exito(roles(e, [{ codigo: 'D3-004', roles: [], pisoBrigada: null }]));
+  rechazo(e.llamar('base', {}, t4), 'SESION');
+  rechazo(e.llamar('marcarEmergencia', { ops: [] }, t4), 'SESION');
+});
+prueba(A, 'Al quitarle todos los roles se borran sus filas de Sesiones', () => {
+  const e = escenario();
+  e.entrar('D3-004'); e.entrar('D3-004');
+  afirmar(e.tabla('Sesiones').filter(s => s.codigo === 'D3-004').length === 2, 'Debía haber dos sesiones');
+  exito(roles(e, [{ codigo: 'D3-004', roles: [], pisoBrigada: null }]));
+  igual(e.tabla('Sesiones').filter(s => s.codigo === 'D3-004').length, 0);
+  afirmar(e.tabla('Sesiones').some(s => s.codigo === 'D3-001'), 'No debía tocar las sesiones de otras personas');
+});
+prueba(A, 'Si los roles se quitan directamente en la tabla, la siguiente petición también da SESION', () => {
+  const e = escenario();
+  const t4 = e.entrar('D3-004');
+  const ps = e.tabla('Personas'); ps[3].roles = ''; e.sembrar('Personas', ps);
+  rechazo(e.llamar('base', {}, t4), 'SESION');
+});
+prueba(A, 'Quien conserva algún rol conserva su sesión', () => {
+  const e = escenario();
+  const t4 = e.entrar('D3-004');
+  exito(roles(e, [{ codigo: 'D3-004', roles: ['asesor'], pisoBrigada: null }]));
+  exito(e.llamar('base', {}, t4));
+});
+prueba(A, 'La persona sin acceso sigue en la foto de esperados y en la lista de personas', () => {
+  const e = escenario();
+  igual(fotoDe(e)[4].en.includes('D3-003'), true);
+  igual(exito(e.llamar('base', {}, e.token)).personas.some(p => p.codigo === 'D3-003'), true);
+});
+
+const G3 = 'Fase 3: guardarRoles (servidor)';
+const rechazaSinEscribir = (e, cambios, texto) => {
+  const antes = e.snapshot();
+  const r = roles(e, cambios);
+  rechazo(r, 'DATOS');
+  if (texto) afirmar(r.error.includes(texto), 'Mensaje esperado «' + texto + '», obtenido «' + r.error + '»');
+  igual(e.snapshot(), antes, 'No debía escribir nada');
+};
+prueba(G3, 'Rechaza dos coordinadores (cuenta también a quien no cambia)', () => {
+  const e = escenario();   // la 2 ya es coordinadora
+  rechazaSinEscribir(e, [{ codigo: 'D3-003', roles: ['coordinador'], pisoBrigada: null }], 'un coordinador');
+});
+prueba(G3, 'Rechaza dos suplentes', () => {
+  const e = escenario();
+  rechazaSinEscribir(e, [{ codigo: 'D3-003', roles: ['suplente'] }, { codigo: 'D3-005', roles: ['suplente'] }], 'un suplente');
+});
+prueba(G3, 'Rechaza que una persona sea coordinador y suplente', () => {
+  const e = escenario();
+  rechazaSinEscribir(e, [{ codigo: 'D3-002', roles: ['coordinador', 'suplente'] }], 'coordinador y suplente');
+});
+prueba(G3, 'Rechaza tres brigadistas en un piso', () => {
+  const e = escenario();   // la 4 ya es brigadista del piso 4
+  rechazaSinEscribir(e, [{ codigo: 'D3-003', roles: ['brigadista'], pisoBrigada: 4 }, { codigo: 'D3-005', roles: ['brigadista'], pisoBrigada: 4 }], 'más de 2 brigadistas');
+});
+prueba(G3, 'Acepta dos brigadistas en un piso', () => {
+  const e = escenario();
+  exito(roles(e, [{ codigo: 'D3-003', roles: ['brigadista'], pisoBrigada: 4 }]));
+  igual(String(rolesDe(e, 'D3-003').pisoBrigada), '4');   // en Sheets todo se guarda como texto
+});
+prueba(G3, 'Rechaza un piso de brigada que no existe en la planta', () => {
+  const e = escenario();
+  rechazaSinEscribir(e, [{ codigo: 'D3-003', roles: ['brigadista'], pisoBrigada: 9 }], 'piso de la brigada');
+  rechazaSinEscribir(e, [{ codigo: 'D3-003', roles: ['brigadista'] }], 'piso de la brigada');
+});
+prueba(G3, 'Rechaza dejar al aplicativo sin administrador', () => {
+  const e = escenario();
+  rechazaSinEscribir(e, [{ codigo: 'D3-001', roles: ['coordinador'] }], 'administrador');
+});
+prueba(G3, 'Rechaza una persona que no existe y no escribe nada', () => {
+  const e = escenario();
+  rechazaSinEscribir(e, [{ codigo: 'D3-003', roles: ['asesor'] }, { codigo: 'D3-999', roles: ['asesor'] }], 'No existe');
+});
+prueba(G3, 'Un cambio rechazado en una persona no deja escrito el de otra', () => {
+  const e = escenario();
+  rechazaSinEscribir(e, [{ codigo: 'D3-003', roles: ['asesor'] }, { codigo: 'D3-005', roles: ['suplente', 'coordinador'] }]);
+  igual(rolesDe(e, 'D3-003').roles, '');
+});
+prueba(G3, 'Acepta el rol asesor y lo deja guardado', () => {
+  const e = escenario();
+  exito(roles(e, [{ codigo: 'D3-003', roles: ['asesor'] }]));
+  igual(rolesDe(e, 'D3-003').roles, 'asesor');
+  igual(exito(e.llamar('base', {}, e.token)).personas.find(p => p.codigo === 'D3-003').roles, ['asesor']);
+  exito(ingreso(e, 'D3-003'));
+});
+prueba(G3, 'Ignora roles desconocidos (no dan acceso)', () => {
+  const e = escenario();
+  exito(roles(e, [{ codigo: 'D3-003', roles: ['superadmin'] }]));
+  igual(rolesDe(e, 'D3-003').roles, '');
+  rechazo(ingreso(e, 'D3-003'), 'SIN_ACCESO');
+});
+prueba(G3, 'Solo el administrador cambia roles', () => {
+  const e = escenario();
+  const antes = e.snapshot();
+  rechazo(e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-003', roles: ['asesor'] }] }, e.entrar('D3-002')), 'PERMISO');
+  igual(JSON.parse(e.snapshot()).Personas, JSON.parse(antes).Personas);
+});
+[['5,1,3', '1,3,5'], ['ocasional', 'ocasional'], ['', ''], ['7,6', '6,7'], ['1', '1'], [' 2 , 4 ', '2,4']].forEach(([entrada, esperado]) => {
+  prueba(G3, 'Agenda «' + entrada + '» se guarda como «' + esperado + '»', () => {
+    const e = escenario();
+    exito(roles(e, [{ codigo: 'D3-003', roles: ['asesor'], agenda: entrada }]));
+    igual(rolesDe(e, 'D3-003').agenda, esperado);
+  });
+});
+['8', '0', '1,1', 'lunes', '1;2', ',', '1,,2', 'Ocasional'].forEach(mala => {
+  prueba(G3, 'Rechaza la agenda inválida «' + mala + '»', () => {
+    const e = escenario();
+    rechazaSinEscribir(e, [{ codigo: 'D3-003', roles: ['asesor'], agenda: mala }], 'agenda');
+  });
+});
+prueba(G3, 'Un cambio sin agenda (la v0.8.4) no toca la agenda guardada', () => {
+  const e = escenario();
+  exito(roles(e, [{ codigo: 'D3-007', roles: ['asesor'] }]));
+  igual(rolesDe(e, 'D3-007').agenda, '1,3,5');
+});
+prueba(G3, 'La agenda guardada manda en la presencia (ocasional deja de esperarse)', () => {
+  const e = escenario();
+  igual(fotoDe(e)[4].en.includes('D3-003'), true);
+  const e2 = escenario();
+  exito(roles(e2, [{ codigo: 'D3-003', roles: [], agenda: 'ocasional' }]));
+  igual((fotoDe(e2)[4] || { en: [] }).en.includes('D3-003'), false);
+});
+prueba(G3, 'La agenda llega a la app (base) y la regla de presencia del navegador la lee igual', () => {
+  const e = escenario();
+  exito(roles(e, [{ codigo: 'D3-003', roles: [], agenda: '2,4' }]));
+  const base = exito(e.llamar('base', {}, e.token));
+  const p = base.personas.find(x => x.codigo === 'D3-003');
+  igual(p.agenda, '2,4');
+  igual(nav.presenciaDe(p, '2026-10-20', [], []).presente, true);    // martes
+  igual(nav.presenciaDe(p, '2026-10-19', [], []).presente, false);   // lunes
 });
 
 // ---------- Ejecución y resultado ----------

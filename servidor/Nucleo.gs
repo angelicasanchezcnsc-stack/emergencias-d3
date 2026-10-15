@@ -45,7 +45,10 @@ var ESQUEMA = {
   Caracterizaciones: ['codigo', 'version', 'datos', 'claves', 'apoyo', 'clavesApoyo', 'consentimiento', 'actualizado']
 };
 
-var ROLES_VALIDOS = ['admin', 'coordinador', 'suplente', 'brigadista'];
+// Acceso = tener al menos un rol. Quien no tiene rol sigue en el padrón (cuenta en las listas de la
+// emergencia y su nombre está en el directorio) pero no puede ingresar.
+var ROLES_VALIDOS = ['admin', 'coordinador', 'suplente', 'brigadista', 'asesor'];
+var MAX_BRIGADISTAS_POR_PISO = 2;
 
 // Novedades de presencia
 var TIPOS_NOVEDAD = ['no_asiste', 'otro_lugar', 'asiste'];
@@ -146,6 +149,7 @@ function crearNucleo(dep) {
   function roles(p) { return texto(p.roles).split(',').map(function (r) { return r.trim(); }).filter(Boolean); }
   function tieneRol(p, r) { return roles(p).indexOf(r) >= 0; }
   function activa(p) { return texto(p.estado) === 'activo'; }
+  function tieneAcceso(p) { return activa(p) && roles(p).length > 0; }
 
   function hashVerificador(v) { return sha256(texto(dep.prop('PIMIENTA')) + '|' + texto(v)); }
 
@@ -231,7 +235,8 @@ function crearNucleo(dep) {
     var ahora = dep.ahora();
     var s = dep.leer('Sesiones').filter(function (x) { return x.tokenHash === th && num(x.expira) > ahora; })[0];
     if (!s) return null;
-    var p = dep.leer('Personas').filter(function (x) { return x.codigo === s.codigo && activa(x); })[0];
+    // Quitarle todos los roles a alguien invalida sus sesiones en la siguiente petición.
+    var p = dep.leer('Personas').filter(function (x) { return x.codigo === s.codigo && tieneAcceso(x); })[0];
     return p || null;
   }
 
@@ -281,6 +286,20 @@ function crearNucleo(dep) {
   }
 
   function soloAdmin(p) { return p && tieneRol(p, 'admin'); }
+
+  // Agenda de días presenciales: '' (lunes a viernes), 'ocasional' o días ISO 1 a 7 sin repetir.
+  // Devuelve el texto normalizado (días en orden ascendente) o null si no es válida.
+  function normalizarAgenda(a) {
+    var s = texto(a).trim();
+    if (s === '' || s === 'ocasional') return s;
+    var dias = s.split(',').map(function (x) { return x.trim(); });
+    var vistos = {};
+    for (var i = 0; i < dias.length; i++) {
+      if (!/^[1-7]$/.test(dias[i]) || vistos[dias[i]]) return null;
+      vistos[dias[i]] = true;
+    }
+    return dias.map(Number).sort(function (x, y) { return x - y; }).join(',');
+  }
 
   // ---------- Presencia y novedades ----------
 
@@ -566,6 +585,12 @@ function crearNucleo(dep) {
       }
       p.intentos = 0; p.bloqueadoHasta = 0;
       dep.escribir('Personas', personas);
+      // La contraseña es correcta, pero sin ningún rol no hay acceso. Se verifica primero la
+      // contraseña para no revelar a quien no la conoce si un correo existe.
+      if (!tieneAcceso(p)) {
+        bitacora(p.codigo, 'ingreso-sin-acceso', '');
+        return falla('SIN_ACCESO', 'Su usuario no tiene acceso al aplicativo. Si lo necesita, hable con la administración del aplicativo.');
+      }
       var token = (dep.uuid() + dep.uuid()).replace(/-/g, '');
       var cfg = leerConfig();
       var sesiones = dep.leer('Sesiones').filter(function (s) { return num(s.expira) > ahora; });
@@ -1027,21 +1052,58 @@ function crearNucleo(dep) {
       return ok({ versionDirectorio: version });
     },
 
+    // Roles, piso de brigada y agenda. Las reglas se validan aquí sobre el resultado final de TODAS
+    // las personas activas (no solo las que cambian); si algo falla no se escribe nada.
     guardarRoles: function (d, p) {
       if (!soloAdmin(p)) return falla('PERMISO', 'Solo el administrador puede hacer esto.');
       var personas = dep.leer('Personas');
-      (d.cambios || []).forEach(function (c) {
+      var pisosSede = dep.leer('Puestos').map(function (q) { return num(q.piso); });
+      var cambios = Array.isArray(d.cambios) ? d.cambios : [];
+      var ahora = new Date(dep.ahora()).toISOString();
+      var tocadas = {};
+      for (var i = 0; i < cambios.length; i++) {
+        var c = cambios[i] || {};
         var x = personas.filter(function (y) { return y.codigo === c.codigo; })[0];
-        if (!x) throw new Error('No existe la persona ' + c.codigo + '.');
+        if (!x) return falla('DATOS', 'No existe la persona ' + texto(c.codigo) + '.');
         x.roles = [].concat(c.roles || []).filter(function (r) { return ROLES_VALIDOS.indexOf(r) >= 0; }).join(',');
-        var pisoB = num(c.pisoBrigada);
-        var pisosSede = dep.leer('Puestos').map(function (q) { return num(q.piso); });
-        x.pisoBrigada = tieneRol(x, 'brigadista') && pisoB && pisosSede.indexOf(pisoB) >= 0 ? pisoB : '';
-      });
-      if (contarAdmins(personas) < 1) return falla('ADMIN', 'Debe quedar al menos un administrador activo.');
+        if (tieneRol(x, 'brigadista')) {
+          var pisoB = num(c.pisoBrigada);
+          if (!pisoB || pisosSede.indexOf(pisoB) < 0) return falla('DATOS', 'El piso de la brigada no existe en la planta (' + x.codigo + ').');
+          x.pisoBrigada = pisoB;
+        } else {
+          x.pisoBrigada = '';
+        }
+        if (c.agenda !== undefined) {   // la v0.8.4 de la app no la envía: en ese caso no se toca
+          var ag = normalizarAgenda(c.agenda);
+          if (ag === null) return falla('DATOS', 'La agenda de ' + x.codigo + ' no es válida. Use «ocasional» o los días 1 a 7 separados por coma.');
+          x.agenda = ag;
+        }
+        x.actualizado = ahora;
+        tocadas[x.codigo] = true;
+      }
+      var activas = personas.filter(activa);
+      var con = function (rol) { return activas.filter(function (y) { return tieneRol(y, rol); }); };
+      if (con('admin').length < 1) return falla('DATOS', 'Debe quedar al menos un administrador activo.');
+      if (con('coordinador').length > 1) return falla('DATOS', 'Solo puede haber un coordinador activo.');
+      if (con('suplente').length > 1) return falla('DATOS', 'Solo puede haber un suplente activo.');
+      if (activas.some(function (y) { return tieneRol(y, 'coordinador') && tieneRol(y, 'suplente'); })) {
+        return falla('DATOS', 'Una misma persona no puede ser coordinador y suplente.');
+      }
+      for (var k = 0; k < pisosSede.length; k++) {
+        var n = pisosSede[k];
+        if (con('brigadista').filter(function (y) { return num(y.pisoBrigada) === n; }).length > MAX_BRIGADISTAS_POR_PISO) {
+          return falla('DATOS', 'El piso ' + n + ' tiene más de ' + MAX_BRIGADISTAS_POR_PISO + ' brigadistas.');
+        }
+      }
       dep.escribir('Personas', personas);
+      // Quien queda sin roles pierde el acceso: se cierran sus sesiones.
+      var sinRol = {};
+      personas.forEach(function (y) { if (tocadas[y.codigo] && roles(y).length === 0) sinRol[y.codigo] = true; });
+      var sesiones = dep.leer('Sesiones');
+      var vigentes = sesiones.filter(function (s) { return !sinRol[s.codigo]; });
+      if (vigentes.length !== sesiones.length) dep.escribir('Sesiones', vigentes);
       var version = d.sobreDirectorio ? guardarSobre('directorio', d.sobreDirectorio) : null;
-      bitacora(p.codigo, 'roles', (d.cambios || []).map(function (c) { return c.codigo; }).join(' '));
+      bitacora(p.codigo, 'roles', cambios.map(function (c) { return c && c.codigo; }).join(' '));
       return ok({ versionDirectorio: version });
     },
 

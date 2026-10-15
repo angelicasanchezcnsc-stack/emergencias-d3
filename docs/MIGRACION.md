@@ -37,12 +37,12 @@ Respuesta: `{ "ok": true, "datos": {...} }` o `{ "ok": false, "codigo": "...", "
 |---|---|---|
 | `ping` | — | Estado del servidor e indicador de si ya fue inicializado |
 | `inicializar` | código de instalación | Primera carga del padrón |
-| `ingresar` | — | Huella del correo y verificador; devuelve sesión y perfil |
+| `ingresar` | — | Huella del correo y verificador; devuelve sesión y perfil. **El acceso exige al menos un rol** (`admin`, `coordinador`, `suplente`, `brigadista` o `asesor`): si la contraseña es correcta pero la persona no tiene rol, responde `SIN_ACCESO` y no crea sesión. Quitarle todos los roles a alguien invalida sus sesiones en la siguiente petición |
 | `salir` | sesión | Cierra la sesión |
 | `base` | sesión | Perfil, personas (solo códigos y agenda), puestos, directorio cifrado, configuración (incluye `festivos`) y novedades vigentes. No escribe nada |
 | `cambiarClave` | sesión | Nuevo verificador y sobres envueltos de nuevo. Cierra las demás sesiones de la persona |
 | `guardarPadron` | administrador | Altas, cambios y retiros desde el Excel |
-| `guardarRoles` | administrador | Roles, piso de brigada y directorio cifrado |
+| `guardarRoles` | administrador | Roles, piso de brigada, `agenda` (`''` = lunes a viernes, `'ocasional'` o días ISO `1` a `7` sin repetir; se guardan ordenados) y directorio cifrado. El servidor valida sobre el resultado final de todas las personas activas: un solo coordinador, un solo suplente, coordinador distinto de suplente, máximo 2 brigadistas por piso (con piso existente en la planta) y al menos un administrador. Si algo falla responde `DATOS` y no escribe nada. A quien queda sin roles se le borran las sesiones. Sin `agenda` en el cambio (app v0.8.4), la agenda no se toca |
 | `guardarConfig` | administrador | Reglas de contraseña, duración de la sesión, días de conservación de la bitácora (`diasBitacora`, 365) y `festivos` (hasta 60 fechas `AAAA-MM-DD` sin actividad presencial; se guardan ordenadas y sin repetir). `diasHistorico` ya no se usa y se descarta |
 | `restablecerClave` | administrador | Contraseña temporal nueva para una persona |
 | `novedades` | sesión | Solo lee: novedades vigentes (de hoy en adelante) y la fecha de hoy |

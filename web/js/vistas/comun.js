@@ -143,7 +143,8 @@ export const ETIQUETA_ROL = {
   admin: ['Administrador', 'amarillo'],
   coordinador: ['Coordinador', 'azul'],
   suplente: ['Suplente', 'azul'],
-  brigadista: ['Brigadista', 'rojo']
+  brigadista: ['Brigadista', 'rojo'],
+  asesor: ['Asesor', 'azul']
 };
 
 export function insigniasRol(p) {

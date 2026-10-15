@@ -189,6 +189,9 @@ async function iniciar() {
   // Descarga en segundo plano mapas y planos para que estén sin conexión.
   contenido.precargar();
   addEventListener('sesion-iniciada', () => { contenido.precargar(); novedades.actualizar(); });
+  // Si el servidor cierra la sesión (por ejemplo, porque le quitaron todos los roles a la persona),
+  // la pantalla vuelve sola al ingreso en vez de quedarse con datos que ya no le corresponden.
+  addEventListener('sesion-cerrada', enrutar);
   addEventListener('hashchange', enrutar);
   enrutar();
 }

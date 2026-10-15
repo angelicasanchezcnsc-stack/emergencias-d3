@@ -48,7 +48,8 @@ export function vistaAdmin(vista) {
 async function panelLlave(panel, abrir) {
   const dir = sesion.base() && sesion.base().directorio;
   const ok = llave.abierta() ? await llave.corresponde(dir) : true;
-  const pendientes = llave.personas().filter(p => p.claveTemporal && !p.entregada).length;
+  const conRol = new Set(((sesion.base() && sesion.base().personas) || []).filter(p => p.roles.length).map(p => p.codigo));
+  const pendientes = llave.personas().filter(p => conRol.has(p.codigo) && p.claveTemporal && !p.entregada).length;
   panel.innerHTML = tarjeta({
     icono: 'llave', tono: llave.abierta() ? 'verde' : 'ambar', titulo: 'Llave maestra',
     subtitulo: 'Relaciona cada código con nombre, correo y celular. Solo existe en su computador.',
@@ -137,45 +138,79 @@ function puestosCambiaron(filas) {
 }
 
 // ---------- Personas y roles ----------
+const DIAS_PRESENCIALES = [['1', 'L'], ['2', 'M'], ['3', 'X'], ['4', 'J'], ['5', 'V']];
+// '' y '1,2,3,4,5' significan lo mismo: lunes a viernes.
+const agendaNorm = a => (a === '1,2,3,4,5' ? '' : a || '');
+
 function panelPersonas(panel, abrir) {
   const servidor = sesion.base().personas.filter(p => p.estado === 'activo');
   const filas = servidor.map(s => ({ s, l: llave.persona(s.codigo) || { nombre: s.codigo, correo: '', celular: '' } }))
     .sort((a, b) => a.s.piso - b.s.piso || a.s.puesto - b.s.puesto);
   const marca = (r, s) => s.roles.includes(r) ? 'checked' : '';
+  // Días de la agenda guardada: '' = lunes a viernes; 'ocasional'; o una lista de días ISO.
+  const diasDe = a => (a === 'ocasional' ? [] : a ? a.split(',').map(Number) : [1, 2, 3, 4, 5]);
 
   panel.innerHTML = `
-    <div class="nota nota-info">${icono('info')}<span>Cada piso tiene uno o dos brigadistas. Hay un coordinador de emergencias y, si se quiere, un suplente. Siempre debe quedar al menos un administrador. El celular solo se pide a los brigadistas y viaja cifrado.</span></div>
+    <div class="nota nota-info">${icono('info')}<span>Solo ingresan al aplicativo las personas con un rol. Las demás siguen en las listas de emergencia y de Hoy en la sede.</span></div>
+    <div class="nota nota-info" style="margin-top:.5rem">${icono('info')}<span>El coordinador y el suplente ven todos los pisos y las caracterizaciones; asigne uno de esos roles a quien supervise el aplicativo. Cada piso tiene uno o dos brigadistas, hay un coordinador y, si se quiere, un suplente. El asesor reporta en las emergencias. Siempre debe quedar al menos un administrador. El celular solo se pide a los brigadistas, al coordinador y al suplente, y viaja cifrado.</span></div>
+    <div class="fila" id="filtro-acceso" style="margin:1rem 0">
+      <button class="pestana activa" data-f="todas">Todas</button>
+      <button class="pestana" data-f="con">Con acceso</button>
+      <button class="pestana" data-f="sin">Sin acceso</button>
+    </div>
     <div class="tabla-caja"><table>
-      <thead><tr><th>Persona</th><th>Ubicación</th><th>Roles</th><th>Brigada y celular</th><th></th></tr></thead>
-      <tbody>${filas.map(({ s, l }) => `
-        <tr data-codigo="${esc(s.codigo)}">
+      <thead><tr><th>Persona</th><th>Ubicación</th><th>Acceso</th><th>Roles</th><th>Días presenciales</th><th>Brigada y celular</th><th></th></tr></thead>
+      <tbody>${filas.map(({ s, l }) => {
+        const dias = diasDe(s.agenda);
+        const ocasional = s.agenda === 'ocasional';
+        return `
+        <tr data-codigo="${esc(s.codigo)}" data-acceso="${s.roles.length ? 'con' : 'sin'}" data-finde="${esc(dias.filter(d => d > 5).join(','))}">
           <td><strong>${esc(l.nombre)}</strong><div class="sutil"><span class="mono">${esc(s.codigo)}</span> · ${esc(l.correo)}</div></td>
           <td class="mono">P${s.piso}-${s.puesto}</td>
+          <td data-insignia-acceso></td>
           <td>
             <label class="casilla"><input type="checkbox" data-rol="admin" ${marca('admin', s)}>Administrador</label>
             <label class="casilla"><input type="checkbox" data-rol="coordinador" ${marca('coordinador', s)}>Coordinador</label>
             <label class="casilla"><input type="checkbox" data-rol="suplente" ${marca('suplente', s)}>Suplente</label>
             <label class="casilla"><input type="checkbox" data-rol="brigadista" ${marca('brigadista', s)}>Brigadista</label>
+            <label class="casilla"><input type="checkbox" data-rol="asesor" ${marca('asesor', s)}>Asesor</label>
+          </td>
+          <td style="min-width:9rem">
+            <div class="fila" style="gap:.5rem">${DIAS_PRESENCIALES.map(([v, t]) =>
+              `<label class="casilla" title="Día ${v} de la semana"><input type="checkbox" data-dia="${v}" ${dias.includes(Number(v)) ? 'checked' : ''}>${t}</label>`).join('')}</div>
+            <label class="casilla"><input type="checkbox" data-ocasional ${ocasional ? 'checked' : ''}>Ocasional</label>
           </td>
           <td style="min-width:11rem">
             <select data-campo="piso">${CONFIG.PISOS.map(n => `<option value="${n}" ${(s.pisoBrigada || s.piso) === n ? 'selected' : ''}>Piso ${n}</option>`).join('')}</select>
             <input data-campo="celular" type="tel" placeholder="Celular" value="${esc(l.celular || '')}" style="margin-top:.4rem">
           </td>
           <td><button class="btn btn-fantasma btn-chico" data-accion="clave" title="Generar contraseña temporal">${icono('recargar', 'ic-s')}Contraseña</button></td>
-        </tr>`).join('')}</tbody>
+        </tr>`;
+      }).join('')}</tbody>
     </table></div>
-    <div class="fila" style="margin-top:1rem"><button class="btn btn-oscuro" id="guardar">${icono('guardar', 'ic-s')}Guardar roles y celulares</button></div>`;
+    <div class="fila" style="margin-top:1rem"><button class="btn btn-oscuro" id="guardar">${icono('guardar', 'ic-s')}Guardar roles, días y celulares</button></div>`;
 
-  // El piso solo aplica a brigadistas; el celular también a coordinador y suplente.
+  // El piso solo aplica a brigadistas; el celular también a coordinador y suplente; «Ocasional»
+  // deshabilita los días; la insignia de acceso sigue a las casillas de roles.
   const sincronizar = tr => {
     const marcado = r => tr.querySelector(`[data-rol=${r}]`).checked;
     tr.querySelector('[data-campo=piso]').disabled = !marcado('brigadista');
     tr.querySelector('[data-campo=celular]').disabled = !(marcado('brigadista') || marcado('coordinador') || marcado('suplente'));
+    const ocasional = tr.querySelector('[data-ocasional]').checked;
+    tr.querySelectorAll('[data-dia]').forEach(c => { c.disabled = ocasional; });
+    const conAcceso = [...tr.querySelectorAll('[data-rol]')].some(c => c.checked);
+    tr.querySelector('[data-insignia-acceso]').innerHTML = conAcceso ? insignia('Con acceso', 'verde') : insignia('Sin acceso', 'gris');
   };
   panel.querySelectorAll('tbody tr').forEach(tr => {
     sincronizar(tr);
-    tr.querySelectorAll('[data-rol]').forEach(c => c.addEventListener('change', () => sincronizar(tr)));
+    tr.querySelectorAll('[data-rol], [data-ocasional]').forEach(c => c.addEventListener('change', () => sincronizar(tr)));
   });
+
+  // Filtro por el acceso guardado (no cambia mientras se editan las casillas).
+  panel.querySelectorAll('#filtro-acceso button').forEach(b => b.addEventListener('click', () => {
+    panel.querySelectorAll('#filtro-acceso button').forEach(x => x.classList.toggle('activa', x === b));
+    panel.querySelectorAll('tbody tr').forEach(tr => { tr.classList.toggle('oculto', b.dataset.f !== 'todas' && tr.dataset.acceso !== b.dataset.f); });
+  }));
 
   panel.querySelectorAll('[data-accion=clave]').forEach(b => b.addEventListener('click', async () => {
     const codigo = b.closest('tr').dataset.codigo;
@@ -193,13 +228,23 @@ function panelPersonas(panel, abrir) {
     } catch (e) { llave.restaurar(copia); capa.cerrar(); aviso(e.message, 'error'); }
   }));
 
+  // Agenda que se envía: 'ocasional', '' (lunes a viernes) o los días marcados (con los del fin de
+  // semana que ya tuviera guardados, que esta pantalla no edita). Sin ningún día = ocasional.
+  const agendaDe = tr => {
+    if (tr.querySelector('[data-ocasional]').checked) return 'ocasional';
+    const dias = [...tr.querySelectorAll('[data-dia]:checked')].map(c => Number(c.dataset.dia))
+      .concat((tr.dataset.finde || '').split(',').filter(Boolean).map(Number)).sort((a, b) => a - b);
+    if (!dias.length) return 'ocasional';
+    return dias.join(',') === '1,2,3,4,5' ? '' : dias.join(',');
+  };
+
   panel.querySelector('#guardar').addEventListener('click', async () => {
     const leidas = [...panel.querySelectorAll('tbody tr')].map(tr => {
       const roles = [...tr.querySelectorAll('[data-rol]:checked')].map(c => c.dataset.rol);
       const brig = roles.includes('brigadista');
       const conCelular = brig || roles.includes('coordinador') || roles.includes('suplente');
       return { codigo: tr.dataset.codigo, roles, pisoBrigada: brig ? Number(tr.querySelector('[data-campo=piso]').value) : null,
-        celular: conCelular ? tr.querySelector('[data-campo=celular]').value.trim() : '' };
+        celular: conCelular ? tr.querySelector('[data-campo=celular]').value.trim() : '', agenda: agendaDe(tr) };
     });
     const errores = [];
     if (!leidas.some(x => x.roles.includes('admin'))) errores.push('Debe quedar al menos un administrador.');
@@ -211,22 +256,31 @@ function panelPersonas(panel, abrir) {
     if (leidas.some(x => x.roles.includes('coordinador') && x.roles.includes('suplente'))) errores.push('Una misma persona no puede ser coordinador y suplente.');
     if (errores.length) return aviso(errores.join(' '), 'error');
 
+    // Cuenta como cambio: roles, piso de brigada, celular o agenda.
     const cambios = leidas.filter(x => {
       const s = servidor.find(y => y.codigo === x.codigo);
       const l = llave.persona(x.codigo) || {};
-      return s.roles.slice().sort().join() !== x.roles.slice().sort().join() || (s.pisoBrigada || null) !== x.pisoBrigada || (l.celular || '') !== x.celular;
+      return s.roles.slice().sort().join() !== x.roles.slice().sort().join() || (s.pisoBrigada || null) !== x.pisoBrigada
+        || (l.celular || '') !== x.celular || agendaNorm(s.agenda) !== x.agenda;
     });
     if (!cambios.length) return aviso('No hay cambios por guardar.', 'info');
+    // Quienes pasan de sin acceso a con acceso y no tienen una contraseña temporal pendiente en la llave.
+    const nuevosConAcceso = cambios.filter(x => {
+      const s = servidor.find(y => y.codigo === x.codigo);
+      const l = llave.persona(x.codigo);
+      return !s.roles.length && x.roles.length && !(l && l.claveTemporal);
+    }).length;
     const copia = llave.instantanea();
     try {
       cambios.forEach(x => llave.fijarCelular(x.codigo, x.celular));
       await llamar('guardarRoles', {
-        cambios: cambios.map(({ codigo, roles, pisoBrigada }) => ({ codigo, roles, pisoBrigada })),
+        cambios: cambios.map(({ codigo, roles, pisoBrigada, agenda }) => ({ codigo, roles, pisoBrigada, agenda })),
         sobreDirectorio: await llave.sobreDirectorio()
       });
       await guardarLlave();
       await sesion.refrescar();
       aviso(`Se guardaron ${cambios.length} cambio(s).`, 'exito');
+      if (nuevosConAcceso) aviso(`${nuevosConAcceso} persona(s) ahora tienen acceso. Genere y entregue su contraseña con el botón Contraseña.`, 'advertencia');
       if (!sesion.tieneRol('admin')) { location.hash = '#/inicio'; return; }
       abrir('personas');
     } catch (e) { llave.restaurar(copia); aviso(e.message, 'error'); }
@@ -235,7 +289,9 @@ function panelPersonas(panel, abrir) {
 
 // ---------- Credenciales ----------
 function panelCredenciales(panel, abrir) {
-  const pendientes = llave.personas().filter(p => p.estado === 'activo' && p.claveTemporal && !p.entregada)
+  // Solo se entregan credenciales a quienes tienen algún rol: sin rol no hay acceso.
+  const conRol = new Set(sesion.base().personas.filter(p => p.roles.length).map(p => p.codigo));
+  const pendientes = llave.personas().filter(p => p.estado === 'activo' && conRol.has(p.codigo) && p.claveTemporal && !p.entregada)
     .sort((a, b) => a.piso - b.piso || a.puesto - b.puesto);
   const direccion = location.href.split('#')[0];
   panel.innerHTML = `
