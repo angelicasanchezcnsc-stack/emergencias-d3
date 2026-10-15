@@ -2,15 +2,19 @@
 // Es el único archivo que se ajusta al publicar o al migrar a otro servidor.
 // No contiene datos personales ni claves secretas: este repositorio es público.
 
+// En el computador local (localhost) siempre se usa el servidor simulado, con datos
+// ficticios que quedan solo en ese navegador. En GitHub Pages siempre se usa el real.
+const ES_LOCAL = ['localhost', '127.0.0.1'].includes(location.hostname);
+
 export const CONFIG = {
   APP_NOMBRE: 'EMERGENCIAS D3',
-  VERSION: 'v0.8.4',
-  SUBTITULO: 'Despacho 3 — Sede Calle 96',
-  CREDITOS: 'Aplicativo de emergencias del Despacho 3 — Edwin Arturo Ruiz Moreno — 2026',
+  VERSION: 'v0.9.0',
+  SUBTITULO: 'Despacho 3, sede Calle 96',
+  CREDITOS: 'Aplicativo de emergencias del Despacho 3 (Edwin Arturo Ruiz Moreno), 2026',
 
   // 'simulado': servidor de prueba dentro del navegador (datos solo en este equipo).
   // 'apps-script': servidor real en Google Apps Script.
-  MODO_SERVIDOR: 'apps-script',
+  MODO_SERVIDOR: ES_LOCAL ? 'simulado' : 'apps-script',
   URL_SERVIDOR: 'https://script.google.com/macros/s/AKfycbyqisMGSSIudjZNzRAFYgPnYo2dPDIibM6gUTWRaGL2dqtqPYzJ_JWHTBC1rdSloxCx/exec', // URL de la aplicación web de Apps Script (termina en /exec)
 
   // Sal pública para la huella (hash) del correo. Si se cambia, todas las cuentas

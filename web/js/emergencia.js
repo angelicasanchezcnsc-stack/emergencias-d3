@@ -4,8 +4,8 @@ import { CONFIG } from '../config.js';
 import * as almacen from './almacen.js';
 import * as sesion from './sesion.js';
 import { llamar, ErrorApi } from './api.js';
-import * as registro from './registro.js';
-import { horaBogota } from './tiempo.js';
+import { fotoEsperadosDe, ubicacionHoy } from './presencia.js';
+import { fechaBogota, horaBogota } from './tiempo.js';
 
 export const TIPOS = {
   sismo: 'Sismo',
@@ -146,18 +146,11 @@ export async function activarLocal(tipo, descripcion, simulacro) {
   programar();
 }
 
-// Misma regla que el servidor: por piso, quienes están en la sede y quienes no reportaron su día.
+// Misma regla que el servidor (fotoEsperados): por piso, quienes están previstos hoy según su
+// agenda, las novedades y los festivos guardados en este celular.
 function fotoLocal() {
-  const foto = {};
-  const registros = registro.hoy().registros;
-  for (const p of ((sesion.base() && sesion.base().personas) || []).filter(x => x.estado === 'activo')) {
-    const r = registros.find(x => x.codigo === p.codigo);
-    const piso = r && r.excepcion ? r.piso : p.piso;
-    const grupo = !r || !r.estado ? 'sin' : r.estado === 'presencial' && !r.salida ? 'en' : null;
-    if (!grupo) continue;
-    (foto[piso] = foto[piso] || { en: [], sin: [] })[grupo].push(p.codigo);
-  }
-  return foto;
+  const b = sesion.base() || {};
+  return fotoEsperadosDe(b.personas || [], fechaBogota(), b.novedades || [], (b.config && b.config.festivos) || []);
 }
 
 async function sincronizarLocal() {
@@ -330,10 +323,10 @@ export function resumen(est = actual()) {
   };
 }
 
-// Puesto donde estaba la persona hoy (habitual u otro reportado).
+// Puesto donde se esperaba a la persona hoy (habitual u otro registrado en una novedad).
 export function puestoDe(codigo) {
   const p = ((sesion.base() && sesion.base().personas) || []).find(x => x.codigo === codigo);
-  return p ? registro.ubicacionHoy(p) : { piso: null, puesto: null, excepcion: false };
+  return p ? ubicacionHoy(p) : { piso: null, puesto: null, otroLugar: false };
 }
 
 // Quienes aún no llegan al punto de encuentro, con su última ubicación reportada.

@@ -17,7 +17,7 @@ Trabajan **dos personas** del mismo equipo sobre este código, cada una con su C
 5. **Toda pantalla nueva escapa los textos variables con `esc()`.** Revisa los permisos en el servidor, no solo en la interfaz.
 6. **Versión:** con cada publicación, sube `VERSION` en `web/sw.js` y `CONFIG.VERSION` en `web/config.js`.
 7. **Servidor:** si cambias `servidor/`, el cambio debe funcionar también con la versión anterior de la app. Solo una persona a la vez actualiza el código en el editor de Apps Script y publica la versión nueva (**Deploy → Manage deployments → ✏️ → New version**), y avisa a la otra.
-8. **Pruebas:** con el servidor real se tocan datos reales. Para probar con datos ficticios usa el modo prueba (ver `docs/ARQUITECTURA.md`, sección 6) y no hagas commit de ese cambio.
+8. **Pruebas:** con el servidor real se tocan datos reales. En `localhost` la app usa sola el servidor simulado con datos ficticios (ver `docs/ARQUITECTURA.md`, sección 6): no hay que editar `config.js` ni la política de contenido. Antes de cada commit corre el banco de pruebas (`herramientas/pruebas-nucleo.html`) y confirma que está al 100 %.
 9. **Diseño:** sistema EARM en `web/css/earm.css` (tokens en `:root`). Textos con tildes, títulos en capitalización de oración y botones en mayúsculas por CSS.
 10. **Documenta:** si cambias una acción del servidor, actualiza la tabla de `docs/MIGRACION.md`. Lo técnico queda en los mensajes de commit, que comparten las dos personas. La bitácora del proyecto (`../CLAUDE.md`) la lleva el responsable: si trabajas con una copia de ella, no la uses como fuente de verdad del estado; al terminar, deja un resumen de la sesión para que el responsable lo agregue.
 

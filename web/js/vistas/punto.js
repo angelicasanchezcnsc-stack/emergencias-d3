@@ -16,7 +16,7 @@ function guardarSol(v) { try { localStorage.setItem('d3e-modo-sol', v ? '1' : '0
 const ubicacionTexto = x => `Piso ${x.piso}${x.puesto ? ', puesto ' + x.puesto : ''}`;
 function estadoUltimo(x) {
   const m = x.marca;
-  if (x.grupo === 'sin' && !(m && m.estado)) return 'No reportó su día: verificar si vino a la sede';
+  if (x.grupo === 'sin' && !(m && m.estado)) return 'Prevista hoy en la sede: verificar';
   if (!m || !m.estado) return 'Sin reporte del brigadista';
   const quien = m.reportadoPor && m.reportadoPor !== x.codigo ? ' (reportó ' + sesion.nombreDe(m.reportadoPor) + ')' : '';
   const cuando = m.actualizado ? ' a las ' + horaLegible(horaBogota(new Date(m.actualizado))) : '';

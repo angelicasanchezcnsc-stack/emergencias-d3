@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Banco de pruebas del núcleo — EMERGENCIAS D3</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1.5rem; color: #333; background: #fafafa; }
+    h1 { font-size: 1.3rem; margin: 0 0 .3rem; }
+    .sutil { color: #666; margin: 0 0 1rem; font-size: .9rem; }
+    #resumen { font-size: 1.1rem; font-weight: 700; padding: .6rem .9rem; border-radius: 8px; margin: 0 0 1rem; display: inline-block; }
+    #resumen.ok { background: #c8e6c9; color: #1b5e20; }
+    #resumen.mal { background: #ffcdd2; color: #b71c1c; }
+    table { border-collapse: collapse; width: 100%; background: #fff; font-size: .88rem; }
+    th, td { border: 1px solid #ddd; padding: .35rem .5rem; text-align: left; vertical-align: top; }
+    th { background: #ffee58; }
+    td.OK { color: #1b5e20; font-weight: 700; }
+    td.FALLA { color: #b71c1c; font-weight: 700; background: #ffebee; }
+    tr.grupo td { background: #eceff1; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Banco de pruebas del núcleo del servidor</h1>
+  <p class="sutil">Ejecuta <code>servidor/Nucleo.gs</code> contra un adaptador en memoria con datos ficticios y compara la regla de presencia del servidor con la del navegador. No toca el servidor real. Solo corre en el computador local.</p>
+  <div id="salida">Ejecutando pruebas…</div>
+  <script type="module" src="pruebas-nucleo.js"></script>
+</body>
+</html>

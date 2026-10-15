@@ -6,7 +6,7 @@ Hay tres momentos: **A** probar en su computador (modo prueba), **B** crear el s
 
 ## A. Probar en su computador (modo prueba)
 
-En modo prueba, el "servidor" funciona dentro del propio navegador. Nada sale del computador.
+En modo prueba, el "servidor" funciona dentro del propio navegador. Nada sale del computador. El modo prueba se activa solo cuando la dirección es `localhost`: no hay que cambiar ningún archivo. **Pruebe solo con datos ficticios** (un Excel inventado, no el real).
 
 1. Abra una terminal de PowerShell en la carpeta `APP` y ejecute:
    ```
@@ -55,12 +55,12 @@ En modo prueba, el "servidor" funciona dentro del propio navegador. Nada sale de
    - Ejecutar como: **Yo**.
    - Quién tiene acceso: **Cualquier persona**. Esto es necesario para que los celulares lleguen al servidor. Cada acción exige una sesión válida, y la hoja solo tiene códigos y sobres cifrados.
    - Oprima *Implementar* y copie la **URL de la aplicación web**, que termina en `/exec`.
-6. En `web/config.js`, cambie:
+6. En `web/config.js`, cambie solo la dirección del servidor:
    ```js
-   MODO_SERVIDOR: 'apps-script',
    URL_SERVIDOR: 'https://script.google.com/macros/s/…/exec',
    ```
-7. En `web/index.html`, dentro de la línea `Content-Security-Policy`, quite `'unsafe-eval'` (solo lo necesita el modo prueba). Así el navegador no ejecuta código armado a partir de texto.
+   El modo se elige solo: simulado en `localhost` y servidor real en GitHub Pages.
+7. La política de contenido de `web/index.html` ya no incluye `'unsafe-eval'`: solo el servidor local de pruebas lo agrega al entregar el archivo. No hay nada que quitar.
 
 **Al actualizar el código del servidor más adelante:**
 1. Pegue los archivos nuevos.

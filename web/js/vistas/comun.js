@@ -3,104 +3,87 @@ import { CONFIG } from '../../config.js';
 import { esc, insignia, modal, aviso } from '../ui.js';
 import * as llave from '../llave.js';
 import * as sesion from '../sesion.js';
-import * as registro from '../registro.js';
-import { horaBogota, horaLegible } from '../tiempo.js';
+import { fechaBogota } from '../tiempo.js';
 
-// ---------- Registro diario ----------
+// ---------- Presencia y novedades ----------
 
-export const SITUACION = {
-  'en-sede': ['En la sede', 'verde'],
-  salio: ['Salió', 'gris'],
-  remoto: ['Remoto', 'azul'],
-  comision: ['Comisión', 'azul'],
-  vacaciones: ['Vacaciones', 'gris'],
-  incapacidad: ['Incapacidad', 'gris'],
-  'sin-reporte': ['Sin reporte', 'ambar']
-};
-
-export const ESTADOS_AUSENCIA = [['remoto', 'Remoto'], ['comision', 'Comisión'], ['vacaciones', 'Vacaciones'], ['incapacidad', 'Incapacidad']];
-
-export function insigniaSituacion(r) {
-  const [t, tono] = SITUACION[registro.situacion(r)];
-  return insignia(t, tono);
+// Insignia de la presencia de hoy (resultado de presenciaDe).
+export function insigniaPresencia(r) {
+  switch (r.motivo) {
+    case 'novedad-otro-lugar': return insignia('En otro lugar', 'azul');
+    case 'novedad-no-asiste': return insignia('No asiste hoy', 'gris');
+    case 'fuera-de-agenda':
+    case 'festivo': return insignia('Sin agenda hoy', 'gris');
+    default: return insignia('Prevista', 'verde');
+  }
 }
 
-export const textoUbicacion = u => `Piso ${u.piso} · ${u.puesto ? 'Puesto ' + u.puesto : 'otro lugar del piso'}`;
+export const TIPOS_NOVEDAD = { no_asiste: 'No asiste', otro_lugar: 'En otro lugar', asiste: 'Asiste (fuera de su agenda)' };
 
-export function horario(r) {
-  if (!r || r.estado !== 'presencial') return '';
-  return [r.ingreso && 'Ingreso ' + horaLegible(r.ingreso), r.salida && 'Salida ' + horaLegible(r.salida)].filter(Boolean).join(' · ');
+// Texto corto de una novedad: «En otro lugar: piso 6, puesto 3».
+export function textoNovedad(n) {
+  if (n.tipo !== 'otro_lugar') return TIPOS_NOVEDAD[n.tipo] || n.tipo;
+  return `En otro lugar: piso ${n.piso}, ${n.puesto ? 'puesto ' + n.puesto : 'sala o área común del piso'}`;
 }
 
-// Formulario para cambiar el puesto de hoy. Devuelve {piso, puesto} o null.
-export async function elegirPuestoHoy(persona) {
-  const puestos = (sesion.base().puestos || []);
-  const opciones = piso => ['<option value="0">Otro lugar del piso (sala, oficina…)</option>']
+// Formulario para registrar o editar una novedad de presencia de una persona.
+// Devuelve el objeto para novedades.guardar o null si se cancela. No pide el motivo.
+export async function formularioNovedad(persona, existente = null) {
+  const hoy = fechaBogota();
+  const puestos = sesion.base().puestos || [];
+  const opcionesPuesto = (piso, elegido) => ['<option value="0">Sala o área común del piso</option>']
     .concat(puestos.filter(x => x.piso === piso).sort((a, b) => a.puesto - b.puesto)
-      .map(x => `<option value="${x.puesto}">Puesto ${x.puesto}${x.estado === 'vacante' ? ' (vacante)' : ''}</option>`)).join('');
+      .map(x => `<option value="${x.puesto}" ${x.puesto === elegido ? 'selected' : ''}>Puesto ${x.puesto}${x.estado === 'vacante' ? ' (vacante)' : ''}</option>`)).join('');
+  const tipo0 = existente ? existente.tipo : 'no_asiste';
+  const piso0 = existente && existente.tipo === 'otro_lugar' ? existente.piso : persona.piso;
+  const puesto0 = existente && existente.tipo === 'otro_lugar' ? existente.puesto : 0;
   const respuesta = modal({
-    titulo: 'Ubicación de hoy',
-    cuerpo: `<p class="sutil">Su puesto habitual es piso ${persona.piso}, puesto ${persona.puesto}.</p>
-      <div class="campo"><label class="etiqueta" for="u-piso">Piso</label>
-        <select id="u-piso">${CONFIG.PISOS.map(n => `<option value="${n}" ${n === persona.piso ? 'selected' : ''}>Piso ${n}</option>`).join('')}</select></div>
-      <div class="campo"><label class="etiqueta" for="u-puesto">Puesto</label><select id="u-puesto">${opciones(persona.piso)}</select></div>`,
+    titulo: (existente ? 'Editar novedad de ' : 'Novedad de ') + sesion.nombreDe(persona.codigo),
+    cuerpo: `
+      <p class="sutil">Puesto habitual: piso ${persona.piso}, puesto ${persona.puesto}.</p>
+      <div class="campo"><label class="etiqueta" for="n-tipo">Situación</label>
+        <select id="n-tipo">${Object.entries(TIPOS_NOVEDAD).map(([v, t]) => `<option value="${v}" ${v === tipo0 ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+      <div class="fila">
+        <div class="campo" style="flex:1"><label class="etiqueta" for="n-desde">Desde</label>
+          <input id="n-desde" type="date" value="${esc(existente ? existente.desde : hoy)}" ${existente ? '' : `min="${hoy}"`}></div>
+        <div class="campo" style="flex:1"><label class="etiqueta" for="n-hasta">Hasta</label>
+          <input id="n-hasta" type="date" value="${esc(existente ? existente.hasta : hoy)}" min="${hoy}"></div>
+      </div>
+      <div id="n-lugar" class="${tipo0 === 'otro_lugar' ? '' : 'oculto'}">
+        <div class="campo"><label class="etiqueta" for="n-piso">Piso</label>
+          <select id="n-piso">${CONFIG.PISOS.map(n => `<option value="${n}" ${n === piso0 ? 'selected' : ''}>Piso ${n}</option>`).join('')}</select></div>
+        <div class="campo"><label class="etiqueta" for="n-puesto">Puesto</label><select id="n-puesto">${opcionesPuesto(piso0, puesto0)}</select></div>
+      </div>
+      <p class="ayuda">No escriba el motivo. Solo se registra si la persona estará o no en la sede.</p>`,
     acciones: [
       { texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
-      { texto: 'Usar esta ubicación', clase: 'btn-oscuro', valor: f => ({ piso: Number(f.querySelector('#u-piso').value), puesto: Number(f.querySelector('#u-puesto').value) }) }
+      {
+        texto: existente ? 'Guardar cambios' : 'Guardar novedad', clase: 'btn-oscuro',
+        antes: f => {
+          const desde = f.querySelector('#n-desde').value, hasta = f.querySelector('#n-hasta').value;
+          const error = !desde || !hasta ? 'Indique las fechas desde y hasta.'
+            : hasta < desde ? 'La fecha final no puede ser anterior a la inicial.'
+            : hasta < hoy ? 'La fecha final debe ser hoy o posterior.'
+            : !existente && desde < hoy ? 'La novedad debe empezar hoy o después.'
+            : (Date.parse(hasta) - Date.parse(desde)) / 86400000 + 1 > 92 ? 'El rango no puede superar 92 días.' : '';
+          if (error) { aviso(error, 'error'); return false; }
+        },
+        valor: f => {
+          const t = f.querySelector('#n-tipo').value;
+          const n = { codigo: persona.codigo, tipo: t, desde: f.querySelector('#n-desde').value, hasta: f.querySelector('#n-hasta').value };
+          if (existente) n.id = existente.id;
+          if (t === 'otro_lugar') { n.piso = Number(f.querySelector('#n-piso').value); n.puesto = Number(f.querySelector('#n-puesto').value); }
+          return n;
+        }
+      }
     ]
   });
-  // El modal ya está en pantalla: al cambiar de piso se actualizan los puestos.
-  const selPiso = document.querySelector('#u-piso');
-  selPiso.addEventListener('change', () => { document.querySelector('#u-puesto').innerHTML = opciones(Number(selPiso.value)); });
+  // El modal ya está en pantalla: se muestran u ocultan el piso y el puesto según la situación.
+  const selTipo = document.querySelector('#n-tipo');
+  const selPiso = document.querySelector('#n-piso');
+  selTipo.addEventListener('change', () => document.querySelector('#n-lugar').classList.toggle('oculto', selTipo.value !== 'otro_lugar'));
+  selPiso.addEventListener('change', () => { document.querySelector('#n-puesto').innerHTML = opcionesPuesto(Number(selPiso.value), 0); });
   return respuesta;
-}
-
-// Pide una hora (HH:MM). Devuelve la hora o null.
-export function pedirHora(titulo, actual) {
-  return modal({
-    titulo,
-    cuerpo: `<label class="etiqueta" for="hora">Hora</label><input id="hora" type="time" value="${esc(actual || horaBogota())}">`,
-    acciones: [{ texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
-      { texto: 'Guardar', clase: 'btn-oscuro', valor: f => f.querySelector('#hora').value || null }]
-  });
-}
-
-// Reporte del estado de un compañero (o propio) en un solo formulario.
-export async function reportarPersona(persona) {
-  const r = registro.registroDe(persona.codigo) || {};
-  const nombre = sesion.nombreDe(persona.codigo);
-  const estadoActual = r.estado || '';
-  const valores = await modal({
-    titulo: 'Reportar a ' + nombre,
-    cuerpo: `
-      <p class="sutil">Puesto habitual: piso ${persona.piso}, puesto ${persona.puesto}. El reporte queda a su nombre como "reportado por".</p>
-      <div class="campo"><label class="etiqueta" for="r-estado">Estado de hoy</label>
-        <select id="r-estado">
-          <option value="presencial" ${estadoActual === 'presencial' || !estadoActual ? 'selected' : ''}>Presencial (en la sede)</option>
-          ${ESTADOS_AUSENCIA.map(([v, t]) => `<option value="${v}" ${estadoActual === v ? 'selected' : ''}>${t}</option>`).join('')}
-          <option value="borrar">Quitar el reporte de hoy (sin reporte)</option>
-        </select></div>
-      <div class="fila">
-        <div class="campo" style="flex:1"><label class="etiqueta" for="r-ingreso">Hora de ingreso</label><input id="r-ingreso" type="time" value="${esc(r.ingreso || horaBogota())}"></div>
-        <div class="campo" style="flex:1"><label class="etiqueta" for="r-salida">Hora de salida</label><input id="r-salida" type="time" value="${esc(r.salida || '')}"></div>
-      </div>
-      <p class="ayuda">Deje la hora de salida vacía si la persona sigue en la sede.</p>`,
-    acciones: [{ texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
-      { texto: 'Guardar reporte', clase: 'btn-oscuro', valor: f => ({
-        estado: f.querySelector('#r-estado').value, ingreso: f.querySelector('#r-ingreso').value, salida: f.querySelector('#r-salida').value }) }]
-  });
-  if (!valores) return false;
-  if (valores.estado === 'borrar') {
-    await registro.marcar(persona.codigo, { estado: '', ingreso: '', salida: '', excepcion: 'false', piso: persona.piso, puesto: persona.puesto });
-    aviso(`Se quitó el reporte de hoy de ${nombre}.`, 'info');
-    return true;
-  }
-  const campos = { estado: valores.estado };
-  if (valores.estado === 'presencial') { campos.ingreso = valores.ingreso || horaBogota(); campos.salida = valores.salida || ''; }
-  else { campos.ingreso = ''; campos.salida = ''; }
-  await registro.marcar(persona.codigo, campos);
-  aviso(`Reporte de ${nombre} guardado.`, 'exito');
-  return true;
 }
 
 // Guarda la llave. El navegador exige un clic para escribir archivos: si el

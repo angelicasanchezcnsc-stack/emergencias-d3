@@ -1,9 +1,8 @@
 import * as sesion from '../sesion.js';
-import * as registro from '../registro.js';
+import { ubicacionHoy } from '../presencia.js';
 import * as emergencia from '../emergencia.js';
 import { esc, icono, tarjeta, insignia } from '../ui.js';
-import { horaLegible } from '../tiempo.js';
-import { insigniasRol, insigniaSituacion } from './comun.js';
+import { insigniasRol } from './comun.js';
 
 export function vistaInicio(vista) {
   const p = sesion.perfil();
@@ -12,12 +11,12 @@ export function vistaInicio(vista) {
   const base = sesion.base();
   const sinDirectorio = !base || !base.directorio;
 
-  const r = registro.registroDe(p.codigo);
-  const sit = registro.situacion(r);
-  const enSede = registro.hoy().registros.filter(x => registro.situacion(x) === 'en-sede').length;
-  const textoDia = sit === 'sin-reporte' ? 'Aún no ha reportado su estado de hoy.'
-    : sit === 'en-sede' ? `En la sede desde las ${horaLegible(r.ingreso)}.`
-    : sit === 'salio' ? `Salió a las ${horaLegible(r.salida)}.` : 'Hoy no está en la sede.';
+  const personas = (base && base.personas) || [];
+  const previstas = personas.filter(x => x.estado === 'activo' && ubicacionHoy(x).presente).length;
+  const yo = personas.find(x => x.codigo === p.codigo);
+  const mia = yo ? ubicacionHoy(yo) : null;
+  const textoDia = !mia ? '' : mia.otroLugar ? `Hoy figura en otro lugar: piso ${mia.piso}.`
+    : mia.presente ? 'Hoy está prevista en su puesto.' : 'Hoy figura sin asistencia.';
 
   const proximas = [];
   const em = emergencia.actual();
@@ -41,14 +40,9 @@ export function vistaInicio(vista) {
     <div class="rejilla">
       ${tarjetaEmergencia}
       ${tarjeta({
-        icono: 'reloj', tono: 'verde', titulo: 'Mi día', subtitulo: 'Reporte su presencia, ingreso y salida',
-        cuerpo: `<p>${insigniaSituacion(r)} ${esc(textoDia)}</p>
-          <a class="btn ${sit === 'sin-reporte' ? 'btn-primario' : 'btn-secundario'}" href="#/dia">${sit === 'sin-reporte' ? 'Reportar mi día' : 'Ver o cambiar'}</a>`
-      })}
-      ${tarjeta({
-        icono: 'personas', tono: 'azul', titulo: 'Hoy en la sede', subtitulo: 'Listado por piso y censo del día',
-        cuerpo: `<p style="font-size:1.6rem;font-weight:800;color:var(--corp-dark);margin:0">${enSede} ${enSede === 1 ? 'persona' : 'personas'}</p>
-          <p class="sutil">en la sede según los reportes</p><a class="btn btn-secundario" href="#/hoy">Ver listado</a>`
+        icono: 'personas', tono: 'azul', titulo: 'Hoy en la sede', subtitulo: 'Listado por piso, novedades y censo del día',
+        cuerpo: `<p style="font-size:1.6rem;font-weight:800;color:var(--corp-dark);margin:0">${previstas} ${previstas === 1 ? 'persona prevista' : 'personas previstas'}</p>
+          <p class="sutil">hoy en la sede${textoDia ? ' · ' + esc(textoDia) : ''}</p><a class="btn btn-secundario" href="#/hoy">Ver listado</a>`
       })}
       ${tarjeta({
         icono: 'telefono', tono: 'azul', titulo: 'Contactos de emergencia', subtitulo: 'Líneas, brigada y coordinación',

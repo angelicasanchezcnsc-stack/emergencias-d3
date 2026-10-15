@@ -12,15 +12,22 @@
 
 var ESQUEMA = {
   // "pub": llave pública de la persona (para que otros le envuelvan datos sensibles).
+  // "agenda": días presenciales. '' = lunes a viernes; 'ocasional' = sin días fijos;
+  // '1,3,5' = días ISO (1 = lunes ... 7 = domingo), separados por coma y ordenados.
   Personas: ['codigo', 'piso', 'puesto', 'estado', 'roles', 'pisoBrigada', 'hashCorreo', 'verificador',
-    'sobres', 'debeCambiar', 'intentos', 'bloqueadoHasta', 'actualizado', 'pub'],
+    'sobres', 'debeCambiar', 'intentos', 'bloqueadoHasta', 'actualizado', 'pub', 'agenda'],
   Puestos: ['piso', 'puesto', 'estado'],
   Sesiones: ['tokenHash', 'codigo', 'creada', 'expira'],
   Sobres: ['nombre', 'version', 'datos', 'actualizado'],
   Config: ['clave', 'valor'],
   Bitacora: ['fecha', 'codigo', 'accion', 'detalle'],
-  // Registro diario de ubicación: RegistroHoy tiene solo el día en curso; al
-  // cambiar el día, sus filas pasan a RegistroHistorico (solo se agrega).
+  // Novedades de presencia (planeación, sin motivo): quién no asiste, está en otro lugar o
+  // asiste fuera de su agenda, por rango de fechas. Se borran solas al vencer.
+  // "tipo": no_asiste | otro_lugar | asiste. "desde" y "hasta": AAAA-MM-DD (hora de Bogotá).
+  // "piso" y "puesto" solo para otro_lugar (puesto 0 = sala o área común del piso).
+  Novedades: ['id', 'codigo', 'tipo', 'desde', 'hasta', 'piso', 'puesto', 'registradoPor', 'actualizado'],
+  // Obsoletas desde la v0.9: el registro horario ya no se usa. Siguen en el esquema para no
+  // romper instalar(); ningún código las lee ni las escribe.
   RegistroHoy: ['fecha', 'codigo', 'estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida', 'reportadoPor', 'actualizado', 'momentos'],
   RegistroHistorico: ['fecha', 'codigo', 'estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida', 'reportadoPor', 'actualizado', 'momentos'],
   // Archivos cifrados (mapas, rutas, planos) partidos en trozos que caben en una celda.
@@ -39,8 +46,11 @@ var ESQUEMA = {
 };
 
 var ROLES_VALIDOS = ['admin', 'coordinador', 'suplente', 'brigadista'];
-var ESTADOS_DIA = ['presencial', 'remoto', 'comision', 'vacaciones', 'incapacidad'];
-var CAMPOS_REGISTRO = ['estado', 'piso', 'puesto', 'excepcion', 'ingreso', 'salida'];
+
+// Novedades de presencia
+var TIPOS_NOVEDAD = ['no_asiste', 'otro_lugar', 'asiste'];
+var MAX_DIAS_NOVEDAD = 92;   // días del rango, contando el primero y el último
+var MAX_FESTIVOS = 60;
 
 // Contenido institucional (siempre cifrado en el navegador). Cada sobre indica
 // quién puede modificarlo.
@@ -73,10 +83,46 @@ var CONFIG_INICIAL = {
   reglasClave: { minimo: 0, mayuscula: false, numero: false, simbolo: false },
   exigirCambioInicial: false,
   diasSesion: 30,
-  // Días que se conservan el registro diario archivado y la bitácora (lo mínimo necesario).
-  diasHistorico: 90,
-  diasBitacora: 365
+  // Días que se conserva la bitácora (lo mínimo necesario).
+  diasBitacora: 365,
+  // Fechas AAAA-MM-DD sin actividad presencial (festivos).
+  festivos: []
 };
+
+// Día de la semana ISO de una fecha 'AAAA-MM-DD' (1 = lunes ... 7 = domingo). Usa UTC para no
+// depender de la zona del servidor ni del dispositivo.
+function diaISO(fecha) {
+  var p = String(fecha).split('-');
+  var d = new Date(Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]))).getUTCDay();
+  return d === 0 ? 7 : d;
+}
+
+// Regla de presencia: ¿dónde se considera que está una persona en una fecha?
+// Es la MISMA regla en el servidor y en el navegador (web/js/presencia.js). Si cambia aquí,
+// debe cambiar allá igual; el banco de pruebas compara ambas copias caso por caso.
+//   persona:    { codigo, piso, puesto, agenda }
+//   fecha:      'AAAA-MM-DD'
+//   novedades:  todas las novedades (se filtran aquí por código y fecha)
+//   festivos:   arreglo de 'AAAA-MM-DD' sin actividad presencial
+//   devuelve:   { presente, piso, puesto, otroLugar, motivo }
+//   motivo:     agenda | novedad-asiste | novedad-otro-lugar | novedad-no-asiste | fuera-de-agenda | festivo
+function presenciaDe(persona, fecha, novedades, festivos) {
+  var piso = Number(persona.piso) || 0;
+  var puesto = Number(persona.puesto) || 0;
+  var n = null;
+  (novedades || []).forEach(function (x) {
+    if (x.codigo !== persona.codigo || !(x.desde <= fecha && fecha <= x.hasta)) return;
+    if (!n || String(x.actualizado) > String(n.actualizado)) n = x;
+  });
+  if (n && n.tipo === 'no_asiste') return { presente: false, piso: piso, puesto: puesto, otroLugar: false, motivo: 'novedad-no-asiste' };
+  if (n && n.tipo === 'otro_lugar') return { presente: true, piso: Number(n.piso) || 0, puesto: Number(n.puesto) || 0, otroLugar: true, motivo: 'novedad-otro-lugar' };
+  if (n && n.tipo === 'asiste') return { presente: true, piso: piso, puesto: puesto, otroLugar: false, motivo: 'novedad-asiste' };
+  if ((festivos || []).indexOf(fecha) >= 0) return { presente: false, piso: piso, puesto: puesto, otroLugar: false, motivo: 'festivo' };
+  var agenda = String(persona.agenda === undefined || persona.agenda === null ? '' : persona.agenda).trim();
+  var dias = agenda === '' ? [1, 2, 3, 4, 5] : agenda === 'ocasional' ? [] : agenda.split(',').map(Number);
+  if (dias.indexOf(diaISO(fecha)) >= 0) return { presente: true, piso: piso, puesto: puesto, otroLugar: false, motivo: 'agenda' };
+  return { presente: false, piso: piso, puesto: puesto, otroLugar: false, motivo: 'fuera-de-agenda' };
+}
 
 /**
  * dep = {
@@ -126,7 +172,8 @@ function crearNucleo(dep) {
   function publica(p) {
     return {
       codigo: p.codigo, piso: num(p.piso), puesto: num(p.puesto), estado: texto(p.estado),
-      roles: roles(p), pisoBrigada: p.pisoBrigada ? num(p.pisoBrigada) : null, pub: texto(p.pub)
+      roles: roles(p), pisoBrigada: p.pisoBrigada ? num(p.pisoBrigada) : null, pub: texto(p.pub),
+      agenda: texto(p.agenda)
     };
   }
 
@@ -233,56 +280,51 @@ function crearNucleo(dep) {
 
   function soloAdmin(p) { return p && tieneRol(p, 'admin'); }
 
-  // ---------- Registro diario ----------
+  // ---------- Presencia y novedades ----------
 
-  // Devuelve las filas del día y, si cambió la fecha, archiva las anteriores.
-  function registrosDelDia() {
-    var hoy = dep.hoy();
-    var filas = dep.leer('RegistroHoy');
-    var viejas = filas.filter(function (f) { return f.fecha !== hoy; });
-    if (viejas.length) {
-      dep.agregarVarias('RegistroHistorico', viejas);
-      filas = filas.filter(function (f) { return f.fecha === hoy; });
-      dep.escribir('RegistroHoy', filas);
-      purgarAntiguos();
-    }
-    return filas;
-  }
-
-  // Una vez al día (al cambiar la fecha) se borra lo que superó el plazo de conservación.
+  // Una vez al día se borra la bitácora que superó el plazo de conservación.
+  // Se llama solo desde acciones que escriben (guardarNovedad), nunca desde una lectura.
   function purgarAntiguos() {
     var cfg = leerConfig();
-    var limite = function (dias) { return new Date(dep.ahora() - Math.max(1, num(dias)) * 86400000).toISOString().slice(0, 10); };
-    var lh = limite(cfg.diasHistorico || 90);
-    var hist = dep.leer('RegistroHistorico');
-    var hist2 = hist.filter(function (f) { return texto(f.fecha) >= lh; });
-    if (hist2.length < hist.length) dep.escribir('RegistroHistorico', hist2);
-    var lb = limite(cfg.diasBitacora || 365);
+    var hoy = dep.hoy();
+    if (cfg.ultimaPurga === hoy) return;
+    var lb = new Date(dep.ahora() - Math.max(1, num(cfg.diasBitacora || 365)) * 86400000).toISOString().slice(0, 10);
     var bit = dep.leer('Bitacora');
     var bit2 = bit.filter(function (f) { return texto(f.fecha).slice(0, 10) >= lb; });
     if (bit2.length < bit.length) dep.escribir('Bitacora', bit2);
+    cfg.ultimaPurga = hoy;
+    escribirConfig(cfg);
   }
 
-  function registroPublico(f) {
+  function fechaValida(s) {
+    if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    var f = new Date(s + 'T00:00:00Z');
+    return !isNaN(f.getTime()) && f.toISOString().slice(0, 10) === s;
+  }
+
+  function diasEntre(desde, hasta) {
+    return Math.round((new Date(hasta + 'T00:00:00Z').getTime() - new Date(desde + 'T00:00:00Z').getTime()) / 86400000) + 1;
+  }
+
+  function novedadPublica(n) {
     return {
-      codigo: f.codigo, estado: texto(f.estado), piso: num(f.piso), puesto: num(f.puesto),
-      excepcion: texto(f.excepcion) === 'true', ingreso: texto(f.ingreso), salida: texto(f.salida),
-      reportadoPor: texto(f.reportadoPor)
+      id: texto(n.id), codigo: texto(n.codigo), tipo: texto(n.tipo), desde: texto(n.desde), hasta: texto(n.hasta),
+      piso: num(n.piso), puesto: num(n.puesto), registradoPor: texto(n.registradoPor), actualizado: texto(n.actualizado)
     };
   }
 
-  function valorValido(campo, v) {
-    v = texto(v);
-    if (campo === 'estado') return v === '' || ESTADOS_DIA.indexOf(v) >= 0;
-    if (campo === 'ingreso' || campo === 'salida') return v === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
-    if (campo === 'piso') return /^\d{1,2}$/.test(v);
-    if (campo === 'puesto') return /^\d{1,3}$/.test(v);
-    if (campo === 'excepcion') return v === 'true' || v === 'false';
-    return false;
+  // Novedades que aún no vencen (hasta >= hoy): las de hoy y las futuras.
+  function novedadesVigentes() {
+    var hoy = dep.hoy();
+    return dep.leer('Novedades').filter(function (n) { return texto(n.hasta) >= hoy; }).map(novedadPublica);
   }
 
-  function hoyPublico(filas) {
-    return { fecha: dep.hoy(), registros: filas.map(registroPublico) };
+  // Las novedades vencidas no sirven para nada: se borran al escribir.
+  function purgarNovedades() {
+    var hoy = dep.hoy();
+    var filas = dep.leer('Novedades');
+    var quedan = filas.filter(function (n) { return texto(n.hasta) >= hoy; });
+    if (quedan.length < filas.length) dep.escribir('Novedades', quedan);
   }
 
   // Sobres de contenido y lista de archivos disponibles (sin su contenido).
@@ -346,18 +388,17 @@ function crearNucleo(dep) {
     };
   }
 
-  // Foto de quién está en la sede al activar: por piso, quienes reportaron estar
-  // ("en") y quienes no han reportado su día ("sin", para verificar).
+  // Foto de quién se espera en la sede al activar: por piso, las personas activas que según la
+  // regla de presencia (agenda, novedades y festivos) están presentes hoy ("en"). Incluye a
+  // todas las personas activas, con o sin acceso. "sin" queda vacío por compatibilidad.
   function fotoEsperados() {
-    var hoy = registrosDelDia();
+    var hoy = dep.hoy(), nov = novedadesVigentes(), fest = leerConfig().festivos || [];
     var foto = {};
     dep.leer('Personas').filter(activa).forEach(function (p) {
-      var r = hoy.filter(function (x) { return x.codigo === p.codigo; })[0];
-      var piso = r && texto(r.excepcion) === 'true' ? num(r.piso) : num(p.piso);
-      var grupo = !r || !texto(r.estado) ? 'sin' : (r.estado === 'presencial' && !texto(r.salida) ? 'en' : null);
-      if (!grupo) return;
-      foto[piso] = foto[piso] || { en: [], sin: [] };
-      foto[piso][grupo].push(p.codigo);
+      var r = presenciaDe(p, hoy, nov, fest);
+      if (!r.presente) return;
+      foto[r.piso] = foto[r.piso] || { en: [], sin: [] };
+      foto[r.piso].en.push(p.codigo);
     });
     return foto;
   }
@@ -543,8 +584,10 @@ function crearNucleo(dep) {
         personas: dep.leer('Personas').map(publica),
         puestos: dep.leer('Puestos').map(function (x) { return { piso: num(x.piso), puesto: num(x.puesto), estado: texto(x.estado) }; }),
         directorio: dir ? { version: num(dir.version), datos: dir.datos } : null,
-        config: { reglasClave: cfg.reglasClave, exigirCambioInicial: !!cfg.exigirCambioInicial, diasSesion: num(cfg.diasSesion), diasHistorico: num(cfg.diasHistorico), diasBitacora: num(cfg.diasBitacora) },
-        hoy: hoyPublico(registrosDelDia()),
+        config: { reglasClave: cfg.reglasClave, exigirCambioInicial: !!cfg.exigirCambioInicial, diasSesion: num(cfg.diasSesion), diasBitacora: num(cfg.diasBitacora), festivos: cfg.festivos || [] },
+        novedades: novedadesVigentes(),
+        // Compatibilidad con la v0.8.4: sin registros, para que esa versión no se rompa.
+        hoy: { fecha: dep.hoy(), registros: [] },
         contenido: contenidoPublico(cfg),
         emergencia: estadoEmergencia(null, p)
       });
@@ -871,49 +914,79 @@ function crearNucleo(dep) {
       return ok();
     },
 
-    hoy: function () {
-      return ok(hoyPublico(registrosDelDia()));
+    // ---------- Presencia y novedades ----------
+
+    // Novedades vigentes (de hoy en adelante). Solo lee.
+    novedades: function () {
+      return ok({ fecha: dep.hoy(), novedades: novedadesVigentes() });
     },
 
-    // Aplica marcas del registro diario. Cada marca trae su propio momento y,
-    // campo por campo, gana la más reciente: así se pueden reenviar marcas
-    // guardadas sin conexión sin duplicar ni pisar cambios posteriores.
-    // op = { id, fecha, codigo, momento, campos: { estado?, piso?, puesto?, excepcion?, ingreso?, salida? } }
-    registrar: function (d, p) {
+    // Crea una novedad o, si trae "id", la edita. Cualquier persona con acceso puede registrarla
+    // para cualquier persona activa. No guarda el motivo: solo si estará o no en la sede.
+    guardarNovedad: function (d, p) {
       var hoy = dep.hoy();
-      var filas = registrosDelDia();
-      var personas = dep.leer('Personas').filter(activa);
+      var persona = dep.leer('Personas').filter(function (x) { return x.codigo === d.codigo && activa(x); })[0];
+      if (!persona) return falla('DATOS', 'La persona no existe o ya no está activa.');
+      if (TIPOS_NOVEDAD.indexOf(d.tipo) < 0) return falla('DATOS', 'Tipo de novedad no válido.');
+      if (!fechaValida(d.desde) || !fechaValida(d.hasta)) return falla('DATOS', 'Las fechas no son válidas.');
+      if (d.desde > d.hasta) return falla('DATOS', 'La fecha final no puede ser anterior a la inicial.');
+      if (d.hasta < hoy) return falla('DATOS', 'La novedad ya venció: la fecha final debe ser hoy o posterior.');
+      if (!d.id && d.desde < hoy) return falla('DATOS', 'Una novedad nueva debe empezar hoy o después.');
+      if (diasEntre(d.desde, d.hasta) > MAX_DIAS_NOVEDAD) return falla('DATOS', 'El rango no puede superar ' + MAX_DIAS_NOVEDAD + ' días.');
+      var piso = '', puesto = '';
+      if (d.tipo === 'otro_lugar') {
+        var puestos = dep.leer('Puestos');
+        piso = num(d.piso);
+        puesto = num(d.puesto);
+        if (!piso || !puestos.some(function (x) { return num(x.piso) === piso; })) return falla('DATOS', 'El piso no existe.');
+        if (puesto !== 0 && !puestos.some(function (x) { return num(x.piso) === piso && num(x.puesto) === puesto; })) {
+          return falla('DATOS', 'Ese puesto no es de ese piso.');
+        }
+      }
+      var filas = dep.leer('Novedades');
+      var fila;
+      if (d.id) {
+        fila = filas.filter(function (x) { return x.id === d.id; })[0];
+        if (!fila) return falla('NO_EXISTE', 'Esa novedad ya no existe.');
+      } else {
+        fila = { id: dep.uuid() };
+        filas.push(fila);
+      }
+      fila.codigo = d.codigo; fila.tipo = d.tipo; fila.desde = d.desde; fila.hasta = d.hasta;
+      fila.piso = piso; fila.puesto = puesto;
+      fila.registradoPor = p.codigo;
+      fila.actualizado = new Date(dep.ahora()).toISOString();
+      dep.escribir('Novedades', filas);
+      purgarNovedades();
+      purgarAntiguos();
+      bitacora(p.codigo, 'novedad', fila.id);
+      return ok({ novedad: novedadPublica(fila), novedades: novedadesVigentes() });
+    },
+
+    quitarNovedad: function (d, p) {
+      var filas = dep.leer('Novedades');
+      var quedan = filas.filter(function (x) { return x.id !== d.id; });
+      if (quedan.length !== filas.length) {
+        dep.escribir('Novedades', quedan);
+        bitacora(p.codigo, 'novedad-quitada', texto(d.id));
+      }
+      return ok({ novedades: novedadesVigentes() });
+    },
+
+    // Obsoletas desde la v0.9 (ya no hay registro de llegada y salida). Se conservan para que
+    // la v0.8.4 de la app no se rompa mientras cada celular se actualiza.
+    hoy: function () {
+      return ok({ fecha: dep.hoy(), registros: [] });
+    },
+
+    // No escribe nada. Responde "obsoleta" a cada operación para que la cola de los celulares
+    // con la v0.8.4 se vacíe sola.
+    registrar: function (d) {
       if (!Array.isArray(d.ops) || d.ops.length > MAX_OPS) return falla('DATOS', 'Demasiadas operaciones en un solo envío.');
-      var resultados = d.ops.map(function (op) {
-        if (!op || op.fecha !== hoy) return { id: op && op.id, estado: 'fecha' };
-        var persona = personas.filter(function (x) { return x.codigo === op.codigo; })[0];
-        if (!persona) return { id: op.id, estado: 'persona' };
-        var f = filas.filter(function (x) { return x.codigo === op.codigo; })[0];
-        if (!f) {
-          f = { fecha: hoy, codigo: op.codigo, estado: '', piso: persona.piso, puesto: persona.puesto, excepcion: 'false',
-            ingreso: '', salida: '', momentos: '{}' };
-          filas.push(f);
-        }
-        var momentos = json(f.momentos, {});
-        var momento = momentoCliente(op.momento);
-        var cambio = false;
-        CAMPOS_REGISTRO.forEach(function (c) {
-          if (!op.campos || op.campos[c] === undefined) return;
-          if (!valorValido(c, op.campos[c])) return;
-          if (momento < num(momentos[c])) return;
-          f[c] = texto(op.campos[c]);
-          momentos[c] = momento;
-          cambio = true;
-        });
-        if (cambio) {
-          f.momentos = JSON.stringify(momentos);
-          f.reportadoPor = p.codigo;
-          f.actualizado = new Date(dep.ahora()).toISOString();
-        }
-        return { id: op.id, estado: 'ok' };
+      return ok({
+        resultados: d.ops.map(function (op) { return { id: op && op.id, estado: 'obsoleta' }; }),
+        hoy: { fecha: dep.hoy(), registros: [] }
       });
-      dep.escribir('RegistroHoy', filas);
-      return ok({ resultados: resultados, hoy: hoyPublico(filas) });
     },
 
     cambiarClave: function (d, p) {
@@ -973,8 +1046,14 @@ function crearNucleo(dep) {
       if (d.reglasClave) cfg.reglasClave = d.reglasClave;
       if (d.exigirCambioInicial !== undefined) cfg.exigirCambioInicial = !!d.exigirCambioInicial;
       if (d.diasSesion) cfg.diasSesion = Math.max(1, Math.min(90, num(d.diasSesion)));
-      if (d.diasHistorico) cfg.diasHistorico = Math.max(7, Math.min(730, num(d.diasHistorico)));
       if (d.diasBitacora) cfg.diasBitacora = Math.max(30, Math.min(1825, num(d.diasBitacora)));
+      if (d.festivos !== undefined) {
+        if (!Array.isArray(d.festivos) || d.festivos.length > MAX_FESTIVOS || !d.festivos.every(fechaValida)) {
+          return falla('DATOS', 'Los festivos deben ser hasta ' + MAX_FESTIVOS + ' fechas válidas con el formato AAAA-MM-DD.');
+        }
+        cfg.festivos = d.festivos.filter(function (f, i) { return d.festivos.indexOf(f) === i; }).sort();
+      }
+      delete cfg.diasHistorico;   // ya no se usa (no hay registro archivado)
       escribirConfig(cfg);
       bitacora(p.codigo, 'config', '');
       return ok({ config: cfg });
@@ -1002,10 +1081,10 @@ function crearNucleo(dep) {
 
   var PUBLICAS = { ping: true, inicializar: true, ingresar: true };
   // Solo leen: no toman el candado, para que muchos celulares consulten a la vez.
-  var SIN_BLOQUEO = { pulso: true, emergencia: true, bajarArchivo: true, historial: true };
+  var SIN_BLOQUEO = { pulso: true, emergencia: true, bajarArchivo: true, historial: true, novedades: true };
   // Lecturas: repetirlas no cambia nada, no hace falta recordar su respuesta.
   var LECTURAS = { ping: true, base: true, pulso: true, emergencia: true, hoy: true, bajarArchivo: true, historial: true,
-    caracterizaciones: true, apoyos: true, miCaracterizacion: true };
+    caracterizaciones: true, apoyos: true, miCaracterizacion: true, novedades: true };
 
   // Google a veces pierde la respuesta después de ejecutar la acción. El celular reintenta
   // con el mismo idPeticion y el servidor devuelve la respuesta guardada en vez de repetirla

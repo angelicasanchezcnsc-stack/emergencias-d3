@@ -5,7 +5,6 @@ import { llamar, servidorDisponible } from './api.js';
 import { esc, icono, aviso } from './ui.js';
 import { vistaIngreso } from './vistas/ingreso.js';
 import { vistaInicio } from './vistas/inicio.js';
-import { vistaDia } from './vistas/dia.js';
 import { vistaHoy } from './vistas/hoy.js';
 import { vistaPlanta } from './vistas/planta.js';
 import { vistaContactos } from './vistas/contactos.js';
@@ -18,7 +17,7 @@ import { vistaCaracterizacion } from './vistas/caracterizacion.js';
 import { vistaCaracterizaciones } from './vistas/caracterizaciones.js';
 import * as carac from './caracterizacion.js';
 import * as contenido from './contenido.js';
-import * as registro from './registro.js';
+import * as novedades from './novedades.js';
 import * as emergencia from './emergencia.js';
 import { horaLegible, horaBogota } from './tiempo.js';
 import { confirmar } from './ui.js';
@@ -33,7 +32,6 @@ const RUTAS = {
   historico: { titulo: 'Histórico', icono: 'reloj', vista: vistaHistorico, roles: emergencia.ROLES_REPORTAR },
   caracterizaciones: { titulo: 'Caracterizaciones', icono: 'escudo', vista: vistaCaracterizaciones, roles: ['admin', 'coordinador', 'suplente'] },
   caracterizacion: { titulo: 'Mi caracterización', icono: 'candado', vista: vistaCaracterizacion, nav: false },
-  dia: { titulo: 'Mi día', icono: 'reloj', vista: vistaDia },
   hoy: { titulo: 'Hoy en la sede', icono: 'personas', vista: vistaHoy },
   planta: { titulo: 'Planta física', icono: 'edificio', vista: vistaPlanta },
   contactos: { titulo: 'Contactos', icono: 'telefono', vista: vistaContactos },
@@ -68,7 +66,7 @@ function armazon() {
     <main id="vista"></main>
     <footer class="pie">${esc(CONFIG.APP_NOMBRE)} ${esc(CONFIG.VERSION)} — ${esc(CONFIG.CREDITOS)}</footer>`);
   document.getElementById('btn-salir').addEventListener('click', async () => {
-    const n = registro.pendientes() + emergencia.pendientes();
+    const n = emergencia.pendientes();
     if (n && !await confirmar('Reportes sin enviar', `Hay ${n} reporte(s) guardado(s) en este celular que aún no llegan al servidor. Si cierra la sesión se perderán.`, 'Cerrar de todos modos', true)) return;
     await sesion.salir();
     aviso('Sesión cerrada. Se borraron los datos de este celular.', 'info');
@@ -77,7 +75,11 @@ function armazon() {
   addEventListener('online', pintarRed);
   addEventListener('offline', pintarRed);
   addEventListener('estado-servidor', pintarRed);
-  addEventListener('online', () => sesion.activa() && sesion.refrescar().then(() => contenido.precargar()).catch(() => {}));
+  addEventListener('online', () => {
+    if (!sesion.activa()) return;
+    sesion.refrescar().then(() => contenido.precargar()).catch(() => {});
+    novedades.actualizar();
+  });
   pintarRed();
 }
 
@@ -148,6 +150,8 @@ async function enrutar() {
   const p = sesion.perfil();
   const cfg = sesion.base() && sesion.base().config;
   if (p && p.debeCambiar && cfg && cfg.exigirCambioInicial && ruta !== 'cuenta') { ctx.navegar('cuenta'); return; }
+  // «Mi día» ya no existe: los enlaces viejos guardados en los celulares llevan a «Hoy en la sede».
+  if (ruta === 'dia') { ctx.navegar('hoy'); return; }
   if (ruta === 'ingreso' || !RUTAS[ruta] || !permitida(RUTAS[ruta])) { ctx.navegar('inicio'); return; }
 
   pintarNav(ruta);
@@ -170,8 +174,8 @@ async function iniciar() {
   }
   if (await sesion.restaurar()) {
     try { await sesion.refrescar(); } catch { /* sesión vencida: refrescar ya la cerró */ }
+    if (sesion.activa()) novedades.actualizar();
   }
-  await registro.iniciar();
   await emergencia.iniciar();
   await carac.iniciar();
   addEventListener('emergencia-cambio', pintarBanner);
@@ -184,8 +188,7 @@ async function iniciar() {
   addEventListener('emergencia-marcas-tarde', e => aviso(`${e.detail} reporte(s) llegaron después del cierre y no se tuvieron en cuenta.`, 'advertencia'));
   // Descarga en segundo plano mapas y planos para que estén sin conexión.
   contenido.precargar();
-  addEventListener('sesion-iniciada', () => contenido.precargar());
-  addEventListener('registro-vencido', e => aviso(`${e.detail} reporte(s) de un día anterior no se enviaron porque ya cambió la fecha.`, 'advertencia'));
+  addEventListener('sesion-iniciada', () => { contenido.precargar(); novedades.actualizar(); });
   addEventListener('hashchange', enrutar);
   enrutar();
 }

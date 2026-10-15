@@ -2,6 +2,7 @@
 # Uso: clic derecho -> "Ejecutar con PowerShell", o en una terminal:
 #   powershell -ExecutionPolicy Bypass -File herramientas\servidor-local.ps1
 # Luego abra http://localhost:8080/web/ en Edge o Chrome. Ctrl+C para detenerlo.
+# En localhost la app usa siempre el servidor simulado (datos ficticios, solo en este navegador).
 param(
   [int]$Puerto = 8080,
   [string]$Raiz = (Split-Path -Parent $PSScriptRoot)
@@ -34,6 +35,13 @@ try {
         $ext = [IO.Path]::GetExtension($completo).ToLower()
         $resp.ContentType = if ($tipos[$ext]) { $tipos[$ext] } else { 'application/octet-stream' }
         $bytes = [IO.File]::ReadAllBytes($completo)
+        # Solo en este servidor local: el modo simulado necesita 'unsafe-eval' para ejecutar
+        # el núcleo del servidor. El archivo publicado no se toca.
+        if ($completo -eq [IO.Path]::GetFullPath((Join-Path $Raiz 'web\index.html'))) {
+          $texto = [IO.File]::ReadAllText($completo, [Text.Encoding]::UTF8)
+          $texto = $texto.Replace("script-src 'self'", "script-src 'self' 'unsafe-eval'")
+          $bytes = (New-Object Text.UTF8Encoding($false)).GetBytes($texto)
+        }
         if ($ctx.Request.HttpMethod -eq 'HEAD') { $resp.ContentLength64 = $bytes.Length }
         else { $resp.OutputStream.Write($bytes, 0, $bytes.Length) }
       } else {

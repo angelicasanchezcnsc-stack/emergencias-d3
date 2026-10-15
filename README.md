@@ -33,7 +33,7 @@ Etapa actual: **10, piloto**. La app está publicada en GitHub Pages y conectada
 - [x] Roles: administrador, coordinador, suplente, brigadistas por piso (uno o dos) con celular
 - [x] Contraseñas temporales, credenciales imprimibles y reglas de contraseña configurables
 - [x] Planta física por piso, funcionamiento sin conexión de la interfaz
-- [x] Mi día: llegada, salida, regreso, otro puesto, ausencias y corrección de horas
+- [x] Presencia por agenda: cada persona figura prevista en su puesto los días de su agenda; novedades por rango de fechas (no asiste, en otro lugar, asiste), sin horas ni motivo
 - [x] Reporte de compañeros, listado por piso "Hoy en la sede" y censo del día imprimible en PDF
 - [x] Cola de reportes sin conexión, que se envían solos al volver la señal
 - [x] Contactos de emergencia editables (con «Pendiente» y «Por verificar»), brigada y coordinación del Despacho

@@ -39,19 +39,22 @@ Respuesta: `{ "ok": true, "datos": {...} }` o `{ "ok": false, "codigo": "...", "
 | `inicializar` | código de instalación | Primera carga del padrón |
 | `ingresar` | — | Huella del correo y verificador; devuelve sesión y perfil |
 | `salir` | sesión | Cierra la sesión |
-| `base` | sesión | Perfil, personas (solo códigos), puestos, directorio cifrado y configuración |
+| `base` | sesión | Perfil, personas (solo códigos y agenda), puestos, directorio cifrado, configuración (incluye `festivos`) y novedades vigentes. No escribe nada |
 | `cambiarClave` | sesión | Nuevo verificador y sobres envueltos de nuevo. Cierra las demás sesiones de la persona |
 | `guardarPadron` | administrador | Altas, cambios y retiros desde el Excel |
 | `guardarRoles` | administrador | Roles, piso de brigada y directorio cifrado |
-| `guardarConfig` | administrador | Reglas de contraseña, duración de la sesión y días de conservación del registro archivado (`diasHistorico`, 90 por defecto) y de la bitácora (`diasBitacora`, 365) |
+| `guardarConfig` | administrador | Reglas de contraseña, duración de la sesión, días de conservación de la bitácora (`diasBitacora`, 365) y `festivos` (hasta 60 fechas `AAAA-MM-DD` sin actividad presencial; se guardan ordenadas y sin repetir). `diasHistorico` ya no se usa y se descarta |
 | `restablecerClave` | administrador | Contraseña temporal nueva para una persona |
-| `hoy` / `registrar` | sesión | Registro diario de ubicación (marcas con momento; gana la más reciente) |
+| `novedades` | sesión | Solo lee: novedades vigentes (de hoy en adelante) y la fecha de hoy |
+| `guardarNovedad` | sesión | Crea una novedad de presencia (`no_asiste`, `otro_lugar` o `asiste`) por rango de fechas (máximo 92 días, sin motivo) o, con `id`, la edita. `otro_lugar` lleva piso y puesto (0 = sala o área común). Borra las novedades vencidas. Una vez al día purga la bitácora vieja |
+| `quitarNovedad` | sesión | Borra una novedad por `id` |
+| `hoy` / `registrar` | sesión | **Obsoletas desde la v0.9** (ya no hay registro de llegada y salida). `hoy` devuelve una lista vacía; `registrar` no escribe nada y responde `obsoleta` por cada operación, para que la cola de los celulares con la v0.8.4 se vacíe sola |
 | `guardarContenido` | administrador (contactos: también coordinador y suplente) | Sobres de contactos, recomendaciones y rutas, con control de versión |
 | `subirArchivo` / `quitarArchivo` | administrador | Mapas, rutas y planos cifrados, en trozos de hasta 45.000 caracteres |
 | `bajarArchivo` | sesión | Trozos cifrados de un archivo |
 | `pulso` | sesión | Consulta liviana (sin candado): emergencia activa y su versión |
 | `emergencia` | sesión | Brigadistas, coordinación y administración: estado completo (foto de esperados por piso, marcas y conteos). Las demás personas: solo su propia marca y `cifras` por piso, sin el detalle de nadie más |
-| `activarEmergencia` | real: administrador, coordinador, suplente o brigadista; simulacro: administrador o coordinador | Abre la emergencia y toma la foto de quién está en la sede. Con `unirse: true` (emergencia activada sin conexión), se une a la que esté en curso o la crea con su hora de inicio real |
+| `activarEmergencia` | real: administrador, coordinador, suplente o brigadista; simulacro: administrador o coordinador | Abre la emergencia y toma la foto de quién se espera en la sede hoy (regla de presencia: agenda, novedades y festivos). Con `unirse: true` (emergencia activada sin conexión), se une a la que esté en curso o la crea con su hora de inicio real |
 | `marcarEmergencia` | cada persona sobre sí misma; brigadistas, coordinación y administración sobre cualquiera | Marcas por persona o por conteo (gana la más reciente) |
 | `cerrarEmergencia` | real: administrador, coordinador o suplente; simulacro: administrador o coordinador | Cierra la emergencia, calcula el informe (totales y tiempos por piso, con observaciones) y **borra el detalle por persona** de esa emergencia |
 | `historial` | administrador, coordinador, suplente o brigadista | Últimos 100 eventos cerrados con su informe; sin nombres, códigos ni quién activó o cerró |
@@ -76,7 +79,8 @@ Los puntos donde se ajusta:
 
 ## Reglas de seguridad que cualquier servidor nuevo debe conservar
 
-- Las marcas con `momento` (registro diario y emergencia) se limitan a, como mucho, 5 minutos en el futuro, y cada envío acepta hasta 500 operaciones.
+- La regla de presencia (`presenciaDe` en `servidor/Nucleo.gs`) tiene una copia idéntica en `web/js/presencia.js`. Un servidor nuevo debe reproducirla igual; `herramientas/pruebas-nucleo.html` compara ambas.
+- Las marcas con `momento` (emergencia) se limitan a, como mucho, 5 minutos en el futuro, y cada envío acepta hasta 500 operaciones.
 - `escribir` no debe dejar la tabla vacía a mitad de la escritura: hay lecturas sin candado (`pulso`, `emergencia`). En Sheets se escribe encima y se limpia solo lo que sobra.
 - Repeticiones de PBKDF2 (en el navegador): huella del correo 100.000; verificador y llave de los sobres 600.000 (`ITERACIONES_CLAVE`); archivo de la llave 600.000 (versión 2; la versión 1, de 250.000, se sigue abriendo).
 - Política de contenido (CSP) en `web/index.html`: solo código del propio sitio y conexión solo con el servidor de Google. Si cambia el servidor, se agrega su dirección en `connect-src`.
