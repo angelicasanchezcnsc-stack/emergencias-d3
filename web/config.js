@@ -15,7 +15,7 @@ export const CONFIG = {
   // 'simulado': servidor de prueba dentro del navegador (datos solo en este equipo).
   // 'apps-script': servidor real en Google Apps Script.
   MODO_SERVIDOR: ES_LOCAL ? 'simulado' : 'apps-script',
-  URL_SERVIDOR: 'https://script.google.com/macros/s/AKfycbyqisMGSSIudjZNzRAFYgPnYo2dPDIibM6gUTWRaGL2dqtqPYzJ_JWHTBC1rdSloxCx/exec', // URL de la aplicación web de Apps Script (termina en /exec)
+  URL_SERVIDOR: 'https://script.google.com/macros/s/AKfycbwBfQegdLhwvuJ616854yJoBTjbLDIBpj1vUE13pUcTMOkt1j6pJoU9eyti0QiAyLob/exec', // URL de la aplicación web de Apps Script (termina en /exec)
 
   // Sal pública para la huella (hash) del correo. Si se cambia, todas las cuentas
   // deben crearse de nuevo. No es secreta.
