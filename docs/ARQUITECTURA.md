@@ -42,6 +42,7 @@ Celular / computador (navegador)                     Google (cuenta personal del
 | `js/caracterizacion.js` | Caracterización cifrada por persona (propia o asistida por la coordinación con un formato firmado, para quien no tiene acceso) y apoyos para brigadistas. |
 | `js/contenido.js`, `js/contenido-inicial.js` | Contactos, recomendaciones, rutas y consentimiento (semillas iniciales y lectura y escritura de sus sobres cifrados), archivos (planos y mapas). |
 | `js/mapa-piso.js` | Mapa esquemático de un piso, tipo sala de cine: un botón por puesto sobre una cuadrícula de hasta 24 × 20 casillas, con referencias (escalera, sala...) y una vista de lista equivalente. Solo dibuja: no llama al servidor. Modos `ver`, `elegir` y `editar`. Se prueba con `herramientas/prueba-mapa.html`. |
+| `js/vistas/distribucion.js` | Administración → Distribución de pisos: el mapa en modo `editar` con las herramientas Mover, Agregar puesto, Agregar referencia, Quitar y Asignable o no, «Ordenar automáticamente», «Deshacer» (20 pasos, solo en pantalla) y «Guardar distribución del piso N» (`guardarDistribucion`). Avisa antes de abandonar un piso con cambios sin guardar. No lleva datos personales: no hace falta guardar la llave. |
 | `js/vistas/*.js` | Una pantalla por archivo. `comun.js` tiene piezas compartidas (llave, credenciales, Excel). |
 | `js/ui.js` | `esc` (escape HTML), íconos, avisos, modales, confirmaciones, tarjetas. **Todo texto variable se pasa por `esc`.** `confirmar(titulo, texto)` inserta `texto` como HTML: quien llama debe escapar. |
 

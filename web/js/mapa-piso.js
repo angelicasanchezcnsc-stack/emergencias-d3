@@ -112,6 +112,7 @@ function hayPlano(piso) {
  *   idBase        prefijo de los ids (único en la página)
  *   pisos         pisos para las pestañas (si no viene, no hay pestañas)
  *   vistaPorDefecto 'mapa' | 'lista' mientras no haya una elección guardada
+ *   refElegida    id de la referencia elegida (solo en modo editar)
  *   plano         (piso) → ¿hay plano? Por defecto mira los archivos guardados (plano-N)
  *   abrirPlano    (piso) → abre el plano. Por defecto lo abre en una ventana
  */
@@ -190,8 +191,9 @@ export function mapaPiso(opciones) {
     const estilo = `grid-column:${r.col} / span ${r.ancho};grid-row:${r.fila} / span ${r.alto}`;
     const contenidoRef = `${icono(t.icono)}<span class="mp-ref-txt">${esc(etiqueta || t.nombre)}</span>`;
     if (modo() === 'editar') {
-      return `<button type="button" class="mp-ref" style="${estilo}" data-mp-ref="${esc(r.id)}" data-col="${r.col}" data-fila="${r.fila}"
-        aria-label="${esc('Referencia ' + nombre + ', ' + r.ancho + ' por ' + r.alto + ' casillas')}"${tab}>${contenidoRef}</button>`;
+      const elegida = estado.refElegida !== undefined && estado.refElegida !== null && String(estado.refElegida) === String(r.id);
+      return `<button type="button" class="mp-ref${elegida ? ' mp-ref-elegida' : ''}" style="${estilo}" data-mp-ref="${esc(r.id)}" data-col="${r.col}" data-fila="${r.fila}"
+        aria-pressed="${elegida}" aria-label="${esc('Referencia ' + nombre + ', ' + r.ancho + ' por ' + r.alto + ' casillas' + (elegida ? ', elegida' : ''))}"${tab}>${contenidoRef}</button>`;
     }
     return `<div class="mp-ref" style="${estilo}" role="img" aria-label="${esc(nombre)}">${contenidoRef}</div>`;
   }

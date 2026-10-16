@@ -254,6 +254,7 @@ tr:hover td { background: rgba(255, 238, 88, .05); }
   background: #ECEFF1; color: #37474F; border: 2px solid #90A4AE; font-size: .68rem; font-weight: 600;
 }
 button.mp-ref { cursor: pointer; }
+.mp-ref-elegida { outline: 3px solid #1B5E20; outline-offset: 1px; background: #E8F5E9; }
 .mp-casilla { border: 1px solid #E0E0E0; background: transparent; color: #757575; font-size: 1rem; cursor: pointer; }
 .mp-casilla:hover { background: rgba(255, 238, 88, .25); }
 .mp-puesto:focus-visible, .mp-ref:focus-visible, .mp-casilla:focus-visible, .mp-barra .btn:focus-visible, .mp-barra .pestana:focus-visible {

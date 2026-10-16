@@ -6,7 +6,7 @@ const ARCHIVOS = [
   './', 'index.html', 'config.js', 'manifest.webmanifest', 'css/earm.css',
   'img/icono.svg', 'img/icono-192.png', 'img/icono-512.png',
   'js/app.js', 'js/api.js', 'js/almacen.js', 'js/cripto.js', 'js/sesion.js', 'js/ui.js', 'js/llave.js', 'js/xlsx.js',
-  'js/mapa-piso.js', 'js/personal.js', 'js/vistas/ventanas-personal.js', 'js/presencia.js', 'js/novedades.js', 'js/tiempo.js', 'js/contenido.js', 'js/contenido-inicial.js',
+  'js/mapa-piso.js', 'js/personal.js', 'js/vistas/ventanas-personal.js', 'js/vistas/distribucion.js', 'js/presencia.js', 'js/novedades.js', 'js/tiempo.js', 'js/contenido.js', 'js/contenido-inicial.js',
   'js/vistas/admin.js', 'js/vistas/comun.js', 'js/vistas/cuenta.js', 'js/vistas/ingreso.js',
   'js/vistas/inicio.js', 'js/vistas/instalacion.js', 'js/vistas/planta.js', 'js/vistas/hoy.js',
   'js/vistas/contactos.js', 'js/vistas/rutas.js', 'js/vistas/recomendaciones.js',
