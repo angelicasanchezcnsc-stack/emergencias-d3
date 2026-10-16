@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Prueba del mapa de piso — EMERGENCIAS D3</title>
+  <link rel="stylesheet" href="../web/css/earm.css">
+  <style>
+    body { display: block; padding: 1.5rem; }
+    h1 { font-size: 1.3rem; margin: 0 0 .3rem; }
+    #resumen { font-size: 1.1rem; font-weight: 700; padding: .6rem .9rem; border-radius: 8px; margin: 0 0 1rem; display: inline-block; }
+    #resumen.ok { background: #c8e6c9; color: #1b5e20; }
+    #resumen.mal { background: #ffcdd2; color: #b71c1c; }
+    table.resultados td.OK { color: #1b5e20; font-weight: 700; }
+    table.resultados td.FALLA { color: #b71c1c; font-weight: 700; background: #ffebee; }
+    table.resultados tr.grupo td { background: #eceff1; font-weight: 700; }
+    #lienzo { border: 1px dashed #999; padding: .5rem; margin: 1rem 0; max-width: 100%; }
+    .ver-mapas h2 { font-size: 1rem; margin: 1.5rem 0 .5rem; }
+  </style>
+</head>
+<body>
+  <h1>Prueba del componente de mapa de piso</h1>
+  <p class="sutil">Dibuja <code>web/js/mapa-piso.js</code> con datos ficticios en los tres modos (ver, elegir y editar) y verifica botones, textos para lectores de pantalla, posiciones automáticas, lista equivalente, teclado, tamaño de los objetivos y contraste. Solo corre en el computador local.</p>
+  <div id="salida">Ejecutando pruebas…</div>
+  <div id="lienzo"></div>
+  <script type="module" src="prueba-mapa.js"></script>
+</body>
+</html>

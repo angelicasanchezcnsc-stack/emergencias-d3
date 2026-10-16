@@ -231,6 +231,52 @@ tr:hover td { background: rgba(255, 238, 88, .05); }
 .puesto.mio { border-color: var(--corp-accent-hover); box-shadow: 0 0 0 2px rgba(255, 238, 88, .6); }
 .puesto.vacante { background: rgba(240, 240, 240, .5); color: var(--texto-60); font-style: italic; }
 .puesto.resaltado { border: 2px solid var(--corp-dark); box-shadow: 0 0 0 3px rgba(255, 238, 88, .9); }
+/* Mapa esquemático de un piso (js/mapa-piso.js). Cada casilla mide 44 px como mínimo y el mapa se desplaza
+   dentro de su caja: la página nunca se desplaza de lado. El color nunca es la única señal: hay texto o símbolo. */
+.mapa-piso { min-width: 0; }
+.mp-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem .75rem; margin-bottom: .75rem; }
+.mp-solo-lector { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.mapa-caja { overflow-x: auto; border: 1px solid var(--corp-light); border-radius: var(--radio-g); background: var(--vidrio); padding: .75rem; -webkit-overflow-scrolling: touch; }
+.mp-rejilla { display: grid; grid-template-columns: repeat(var(--mp-cols), minmax(44px, 1fr)); grid-auto-rows: minmax(44px, auto); gap: 4px; min-width: calc(var(--mp-cols) * 48px); }
+.mp-puesto, .mp-ref, .mp-casilla {
+  min-width: 44px; min-height: 44px; border-radius: 8px; font: inherit; line-height: 1.1; text-align: center; overflow: hidden; overflow-wrap: anywhere;
+}
+.mp-puesto {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: .2rem;
+  border: 2px solid #BDBDBD; background: #fff; color: #424242; cursor: pointer;
+}
+.mp-puesto:disabled { cursor: not-allowed; }
+.mp-num { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; font-size: .62rem; font-weight: 700; }
+.mp-txt { font-size: .68rem; font-weight: 700; }
+.mp-sim { margin-right: .15rem; }
+.mp-ref {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .15rem; padding: .2rem;
+  background: #ECEFF1; color: #37474F; border: 2px solid #90A4AE; font-size: .68rem; font-weight: 600;
+}
+button.mp-ref { cursor: pointer; }
+.mp-casilla { border: 1px solid #E0E0E0; background: transparent; color: #757575; font-size: 1rem; cursor: pointer; }
+.mp-casilla:hover { background: rgba(255, 238, 88, .25); }
+.mp-puesto:focus-visible, .mp-ref:focus-visible, .mp-casilla:focus-visible, .mp-barra .btn:focus-visible, .mp-barra .pestana:focus-visible {
+  outline: 3px solid #2C2C2C; outline-offset: 2px; box-shadow: 0 0 0 5px #FFEE58; position: relative; z-index: 2;
+}
+.mp-libre { background: #fff; color: #424242; border-color: #BDBDBD; }
+.mp-ocupado { background: #E3F2FD; color: #0D3C61; border-color: #1E88E5; }
+.mp-compartido { background: #FFF3E0; color: #5D3200; border: 4px double #E65100; }
+.mp-actual { background: #FFF9C4; color: #2C2C2C; border: 4px solid #2C2C2C; }
+.mp-elegido { background: #E8F5E9; color: #1B5E20; border-color: #1B5E20; outline: 3px solid #1B5E20; outline-offset: 1px; }
+.mp-prevista, .mp-evacuado { background: #E8F5E9; color: #1B5E20; border-color: #2E7D32; }
+.mp-no-asiste, .mp-no-estaba { background: #EEEEEE; color: #424242; border-color: #757575; }
+.mp-otro-lugar { background: #F3E5F5; color: #4A148C; border-color: #8E24AA; }
+.mp-no-ubicado { background: #FFEBEE; color: #B71C1C; border: 3px solid #C62828; }
+.mp-apoyo { background: #FFF3E0; color: #7A3B00; border-color: #EF6C00; }
+.mp-sin-marcar { background: #fff; color: #424242; border-color: #9E9E9E; }
+.mp-no-asignable { background: #F5F5F5; color: #616161; border: 2px dotted #757575; }
+.mp-resaltado { box-shadow: 0 0 0 3px #FDD835, 0 0 0 5px #2C2C2C; position: relative; z-index: 1; }
+.mp-leyenda { list-style: none; margin: .75rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .4rem .75rem; font-size: .75rem; }
+.mp-leyenda li { display: flex; align-items: center; gap: .5rem; }
+.mp-muestra { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1.75rem; height: 1.75rem; border: 2px solid #BDBDBD; border-radius: 6px; background: #fff; font-size: .8rem; font-weight: 700; }
+.mp-fila-resaltada td { background: rgba(255, 238, 88, .3); }
+.mp-vacio { margin-bottom: .5rem; }
 /* Barra de búsqueda de personas */
 .busqueda { margin: 0 0 1rem; }
 .busqueda-caja { position: relative; display: flex; align-items: center; gap: .25rem; }

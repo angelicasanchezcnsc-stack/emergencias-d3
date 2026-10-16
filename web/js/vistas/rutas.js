@@ -27,6 +27,23 @@ async function piezaArchivo(id, titulo, textoVacio) {
     <p class="ayuda">Toque la imagen para ampliarla.</p>`;
 }
 
+// Abre un archivo guardado (por ejemplo el plano de un piso) en una ventana, desde cualquier pantalla.
+export async function abrirArchivoEnVentana(id, titulo) {
+  const blob = contenido.archivosMeta()[id] ? await contenido.obtenerArchivo(id) : null;
+  if (!blob) {
+    return modal({ titulo, cuerpo: `<div class="vacio">${icono('sinWifi')}<div><strong>No está guardado en este celular.</strong>
+      <span class="sutil">Conéctese a internet una vez para descargarlo; después quedará disponible sin conexión.</span></div></div>` });
+  }
+  const url = URL.createObjectURL(blob);
+  const cuerpo = blob.type === 'application/pdf'
+    ? `<div class="pdf-caja"><embed src="${url}" type="application/pdf" class="pdf-visor">
+        <a class="btn btn-secundario btn-chico" href="${url}" target="_blank" rel="noopener">Abrir el PDF en pantalla completa</a></div>`
+    : `<div class="zoom"><img src="${url}" alt="${esc(titulo)}"></div><p class="ayuda">Use dos dedos para acercar la imagen o deslícela para moverla.</p>`;
+  const resultado = await modal({ titulo, ancho: 'ancho', cuerpo });
+  URL.revokeObjectURL(url);
+  return resultado;
+}
+
 function editarTextos(r) {
   return modal({
     titulo: 'Editar punto de encuentro y ruta',
