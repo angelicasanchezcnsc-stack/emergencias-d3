@@ -26,11 +26,14 @@ export function vistaAdmin(vista) {
     <div class="navegacion no-imprimir" style="padding:0 0 1rem" id="sub">${PESTANAS.map(([id, ic, t]) =>
       `<button class="pestana" data-id="${id}">${icono(ic, 'ic-s')}${t}</button>`).join('')}</div>
     <div id="panel"></div>`;
-  const panel = vista.querySelector('#panel');
+  const contenedor = vista.querySelector('#panel');
   const abrir = id => {
     actual = id;
     vista.querySelectorAll('#sub .pestana').forEach(b => b.classList.toggle('activa', b.dataset.id === id));
-    panel.innerHTML = '';
+    // Cada pestaña se dibuja en su propio panel: si una pestaña anterior termina de cargar tarde,
+    // lo hace en un panel que ya no está en la página y no tapa la pestaña abierta.
+    const panel = document.createElement('div');
+    contenedor.replaceChildren(panel);
     const necesitaLlave = ['excel', 'personas', 'credenciales'].includes(id);
     if (necesitaLlave && !llave.abierta()) {
       panel.innerHTML = `<div class="nota nota-adv">${icono('llave')}<span>Para esta sección abra primero la llave maestra.</span></div>

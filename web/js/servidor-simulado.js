@@ -64,7 +64,13 @@ async function cargarNucleo() {
 let caido = false;
 export const simularCaida = valor => { caido = !!valor; };
 
+// Solo para pruebas: simula la demora de Google (milisegundos por petición). El servidor real
+// tarda de 1 a 4 segundos; con 0 el simulado responde al instante.
+let demora = 0;
+export const simularDemora = ms => { demora = Math.max(0, Number(ms) || 0); };
+
 export default async function llamarSimulado(accion, datos) {
+  if (demora) await new Promise(r => setTimeout(r, demora));
   // El servidor real no responde sin internet; el simulado debe hacer lo mismo.
   if (caido || !navigator.onLine) throw new ErrorApi('Sin conexión con el servidor.', 'RED');
   const n = await cargarNucleo();

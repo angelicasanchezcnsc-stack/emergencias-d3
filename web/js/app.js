@@ -40,7 +40,6 @@ const RUTAS = {
   emergencia: { titulo: 'Emergencia', icono: 'alerta', vista: vistaEmergencia, grupo: 'emergencia' },
   punto: { titulo: 'Punto de encuentro', icono: 'ubicacion', vista: vistaPunto, roles: emergencia.ROLES_REPORTAR, grupo: 'emergencia' },
   historico: { titulo: 'Histórico', icono: 'reloj', vista: vistaHistorico, roles: emergencia.ROLES_REPORTAR, grupo: 'emergencia' },
-  caracterizaciones: { titulo: 'Caracterizaciones', icono: 'escudo', vista: vistaCaracterizaciones, roles: ['admin', 'coordinador', 'suplente'], grupo: 'gestion' },
   caracterizacion: { titulo: 'Mi caracterización', icono: 'candado', vista: vistaCaracterizacion, nav: false },
   hoy: { titulo: 'Hoy en la sede', icono: 'personas', vista: vistaHoy, grupo: 'sede' },
   planta: { titulo: 'Planta física', icono: 'edificio', vista: vistaPlanta, grupo: 'sede' },
@@ -48,7 +47,10 @@ const RUTAS = {
   rutas: { titulo: 'Rutas', icono: 'ubicacion', vista: vistaRutas, grupo: 'info' },
   recomendaciones: { titulo: 'Recomendaciones', icono: 'libro', vista: vistaRecomendaciones, grupo: 'info' },
   cuenta: { titulo: 'Mi cuenta', icono: 'persona', vista: vistaCuenta, nav: false },
-  admin: { titulo: 'Administración', icono: 'ajustes', vista: vistaAdmin, rol: 'admin', grupo: 'gestion' }
+  // En «Gestión», Administración va primero: la pestaña abre ahí para el administrador. El coordinador
+  // y el suplente, que no tienen Administración, entran directo a Caracterizaciones.
+  admin: { titulo: 'Administración', icono: 'ajustes', vista: vistaAdmin, rol: 'admin', grupo: 'gestion' },
+  caracterizaciones: { titulo: 'Caracterizaciones', icono: 'escudo', vista: vistaCaracterizaciones, roles: ['admin', 'coordinador', 'suplente'], grupo: 'gestion' }
 };
 
 const ctx = { navegar: ruta => { location.hash = '#/' + ruta; }, recargar: () => enrutar() };
@@ -149,8 +151,19 @@ function pintarNav(actual) {
 
 let servidorListo = null; // ¿el servidor ya fue inicializado?
 
+// Cada pantalla se dibuja en su propio lienzo dentro de <main>. Si la persona cambia de pantalla
+// mientras otra todavía carga (por ejemplo, Caracterizaciones espera la respuesta del servidor),
+// lo que esa pantalla dibuje tarde cae en un lienzo que ya no está en la página y no tapa la nueva.
+let lienzoActual = null;
+function lienzoNuevo() {
+  if (lienzoActual) lienzoActual.dispatchEvent(new Event('vista-salida'));
+  lienzoActual = document.createElement('div');
+  lienzoActual.className = 'lienzo';
+  document.getElementById('vista').replaceChildren(lienzoActual);
+  return lienzoActual;
+}
+
 async function enrutar() {
-  const vista = document.getElementById('vista');
   let ruta = (location.hash.replace(/^#\/?/, '') || 'inicio').split('?')[0];
 
   if (!sesion.activa()) {
@@ -163,6 +176,7 @@ async function enrutar() {
       } catch (e) {
         // Sin respuesta no se sabe si el servidor ya está configurado: se avisa y se ofrece
         // reintentar, en vez de suponer y mostrar una pantalla que no corresponde.
+        const vista = lienzoNuevo();
         vista.innerHTML = `
           <div class="titulo-vista"><h2>Sin conexión con el servidor</h2>
             <p class="sutil">Para ingresar por primera vez en este dispositivo se necesita internet.</p></div>
@@ -172,9 +186,9 @@ async function enrutar() {
         return;
       }
     }
-    if (!servidorListo) return vistaInstalacion(vista, { ...ctx, alTerminar: () => { servidorListo = true; ctx.navegar('ingreso'); } });
+    if (!servidorListo) return vistaInstalacion(lienzoNuevo(), { ...ctx, alTerminar: () => { servidorListo = true; ctx.navegar('ingreso'); } });
     if (ruta !== 'ingreso') { ctx.navegar('ingreso'); return; }
-    return vistaIngreso(vista, ctx);
+    return vistaIngreso(lienzoNuevo(), ctx);
   }
 
   const p = sesion.perfil();
@@ -186,15 +200,15 @@ async function enrutar() {
 
   pintarNav(ruta);
   pintarBanner();
-  vista.dispatchEvent(new Event('vista-salida'));
-  vista.innerHTML = '';
+  const vista = lienzoNuevo();
   try {
     await RUTAS[ruta].vista(vista, ctx);
   } catch (e) {
     console.error(e);
-    vista.innerHTML = `<div class="nota nota-error">${icono('alerta')}<span>${esc(e.message || e)}</span></div>`;
+    // Solo se muestra si la persona sigue en esta pantalla.
+    if (vista === lienzoActual) vista.innerHTML = `<div class="nota nota-error">${icono('alerta')}<span>${esc(e.message || e)}</span></div>`;
   }
-  scrollTo(0, 0);
+  if (vista === lienzoActual) scrollTo(0, 0);
 }
 
 async function iniciar() {
