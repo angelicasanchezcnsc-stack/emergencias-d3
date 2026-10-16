@@ -6,9 +6,11 @@ import { esc, icono, aviso, insignia, modal } from '../ui.js';
 
 const esAdmin = () => sesion.tieneRol('admin');
 
-// Un PDF se muestra dentro de la página solo si el navegador tiene visor de PDF (los de computador). Los
-// celulares, sobre todo con Android, no lo tienen: allí se ofrecen los botones para abrirlo o descargarlo.
-const puedeIncrustarPdf = () => navigator.pdfViewerEnabled !== false;
+// Un PDF se muestra dentro de la página solo en computador, donde el navegador tiene visor de PDF. En los
+// celulares y tabletas (puntero táctil) no se ve bien: Android no tiene visor y el iPhone dibuja el cuadro en
+// blanco. Allí se ofrecen los botones para abrirlo o descargarlo.
+const esTactil = () => { try { return matchMedia('(pointer: coarse)').matches; } catch (e) { return false; } };
+const puedeIncrustarPdf = () => navigator.pdfViewerEnabled !== false && !esTactil();
 
 export function htmlPdf(url, titulo, incrustar = puedeIncrustarPdf()) {
   const nombre = String(titulo || 'archivo').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() + '.pdf';
