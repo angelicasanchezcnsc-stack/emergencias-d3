@@ -1296,6 +1296,378 @@ prueba(V, 'Bajar un archivo con lectura filtrada da lo mismo y no lee la hoja co
   afirmar(filtrado.lecturas().includes('Archivos (filtrada)'), 'Debía usar la lectura filtrada');
 });
 
+// ---------- Puestos y distribución (v0.11, fase 1) ----------
+
+const P = 'Puestos y distribución';
+
+// Escenario: el piso 2 tiene posición en el esquema (puestos 1 a 10, en dos filas de cinco) y los demás no.
+// D3-001 (admin) está en P2-1, D3-002 (coordinadora) en P2-2, D3-003 en P4-1, D3-004 (brigadista) en P4-2,
+// D3-005 en P6-1, D3-006 en P6-2, D3-007 en P7-1 y D3-008 (inactiva) en P7-2. Los estados sembrados son los correctos,
+// salvo P7-2, que se deja «ocupado» a propósito: es un dato viejo que el servidor debe corregir.
+function escenarioPuestos() {
+  const e = escenario();
+  const ocupados = ['2-1', '2-2', '4-1', '4-2', '6-1', '6-2', '7-1', '7-2'];
+  e.sembrar('Puestos', PUESTOS.map(x => ({
+    piso: x.piso, puesto: x.puesto, estado: ocupados.includes(x.piso + '-' + x.puesto) ? 'ocupado' : 'vacante',
+    ...(x.piso === 2
+      ? { col: String(((x.puesto - 1) % 5) + 1), fila: String(Math.floor((x.puesto - 1) / 5) + 1), asignable: 'true' }
+      : { col: '', fila: '', asignable: '' })
+  })));
+  e.reiniciarEscrituras();
+  return e;
+}
+const estadosDe = (e, piso) => Object.fromEntries(e.tabla('Puestos').filter(x => Number(x.piso) === piso).map(x => [x.puesto, x.estado]));
+const filaPuesto = (e, piso, puesto) => e.tabla('Puestos').find(x => Number(x.piso) === piso && Number(x.puesto) === puesto);
+const mover = (e, codigo, piso, puesto) => exito(e.llamar('guardarPadron', { personas: [{ codigo, piso, puesto }] }, e.token));
+// Entrada válida para guardarDistribucion: los puestos que ya tiene el piso, con su posición actual.
+const puestosDelPiso = (e, piso) => e.tabla('Puestos').filter(x => Number(x.piso) === piso).map(x => ({
+  puesto: Number(x.puesto), col: x.col === '' ? null : Number(x.col), fila: x.fila === '' ? null : Number(x.fila), asignable: x.asignable !== 'false'
+}));
+const distribuir = (e, piso, puestos, referencias, token) => e.llamar('guardarDistribucion', { piso, puestos, ...(referencias ? { referencias } : {}) }, token || e.token);
+const ref = (extra = {}) => ({ tipo: 'escalera', etiqueta: 'Escalera norte', col: 8, fila: 1, ancho: 1, alto: 2, ...extra });
+const fotoDistribucion = e => JSON.stringify([e.tabla('Puestos'), e.tabla('Referencias'), e.tabla('Bitacora').filter(x => x.accion === 'distribucion')]);
+
+prueba(P, 'Con 0, 1 y 2 personas activas el puesto queda vacante, ocupado y compartido', () => {
+  const e = escenarioPuestos();
+  mover(e, 'D3-005', 4, 1);   // D3-003 ya está en P4-1: queda compartido; P6-1 queda sin nadie
+  const piso4 = estadosDe(e, 4), piso6 = estadosDe(e, 6);
+  igual(piso4[1], 'compartido');
+  igual(piso4[2], 'ocupado');
+  igual(piso4[3], 'vacante');
+  igual(piso6[1], 'vacante');
+});
+prueba(P, 'Una persona inactiva no cuenta: su puesto queda vacante', () => {
+  const e = escenarioPuestos();
+  igual(estadosDe(e, 7)[2], 'ocupado', 'Dato viejo sembrado');
+  mover(e, 'D3-003', 4, 1);   // cualquier guardado del padrón recalcula; D3-008 (inactiva) está en P7-2
+  igual(estadosDe(e, 7)[2], 'vacante');
+  igual(estadosDe(e, 7)[1], 'ocupado');
+});
+prueba(P, 'Cambiar de puesto deja libre el viejo y ocupado el nuevo', () => {
+  const e = escenarioPuestos();
+  mover(e, 'D3-003', 4, 5);
+  igual(estadosDe(e, 4)[1], 'vacante');
+  igual(estadosDe(e, 4)[5], 'ocupado');
+});
+prueba(P, 'Intercambiar dos personas (dos ítems) deja ambos puestos ocupados', () => {
+  const e = escenarioPuestos();
+  exito(e.llamar('guardarPadron', { personas: [{ codigo: 'D3-003', piso: 6, puesto: 1 }, { codigo: 'D3-005', piso: 4, puesto: 1 }] }, e.token));
+  igual(estadosDe(e, 4)[1], 'ocupado');
+  igual(estadosDe(e, 6)[1], 'ocupado');
+  const a = e.tabla('Personas').find(x => x.codigo === 'D3-003');
+  igual([a.piso, a.puesto], [6, 1]);
+});
+prueba(P, 'Retirar a una persona libera su puesto y reactivarla lo vuelve a ocupar', () => {
+  const e = escenarioPuestos();
+  exito(e.llamar('guardarPadron', { personas: [{ codigo: 'D3-003', estado: 'inactivo' }] }, e.token));
+  igual(estadosDe(e, 4)[1], 'vacante');
+  exito(e.llamar('guardarPadron', { personas: [{ codigo: 'D3-003', estado: 'activo' }] }, e.token));
+  igual(estadosDe(e, 4)[1], 'ocupado');
+});
+prueba(P, 'Un guardado del padrón que no cambia estados no vuelve a escribir los puestos', () => {
+  const e = escenarioPuestos();
+  mover(e, 'D3-003', 4, 1);   // primera vez: corrige el dato viejo de P7-2
+  e.reiniciarEscrituras();
+  mover(e, 'D3-003', 4, 1);
+  afirmar(!e.escrituras().includes('Puestos'), 'No debía escribir Puestos: ' + e.escrituras());
+});
+prueba(P, 'Cargar puestos del Excel conserva la posición y lo asignable de los que ya existían', () => {
+  const e = escenarioPuestos();
+  const antes = filaPuesto(e, 2, 3);
+  exito(e.llamar('guardarPadron', {
+    personas: [], puestos: [{ piso: 2, puesto: 3, estado: 'ocupado' }, { piso: 2, puesto: 1, estado: 'vacante' }, { piso: 2, puesto: 40, estado: 'vacante' }, { piso: 4, puesto: 1, estado: 'vacante' }]
+  }, e.token));
+  igual(e.tabla('Puestos').length, 4, 'Se reemplaza la lista por la del Excel');
+  const p3 = filaPuesto(e, 2, 3);
+  igual([p3.col, p3.fila, p3.asignable], [antes.col, antes.fila, antes.asignable]);
+  igual([filaPuesto(e, 2, 40).col, filaPuesto(e, 2, 40).fila], ['', ''], 'El puesto nuevo queda sin posición');
+  igual(filaPuesto(e, 2, 3).estado, 'vacante', 'El estado lo calcula el servidor, no el Excel');
+  igual(filaPuesto(e, 2, 1).estado, 'ocupado');
+  igual(filaPuesto(e, 4, 1).estado, 'ocupado');
+});
+prueba(P, 'Cargar un padrón sin puestos no toca la posición de ninguno', () => {
+  const e = escenarioPuestos();
+  const posiciones = () => e.tabla('Puestos').map(x => [x.piso, x.puesto, x.col, x.fila, x.asignable]);
+  const antes = posiciones();
+  mover(e, 'D3-003', 4, 5);
+  igual(posiciones(), antes);
+});
+
+prueba(P, 'guardarDistribucion: solo el administrador (los demás roles reciben PERMISO)', () => {
+  const e = escenarioPuestos();
+  const coordinadora = e.entrar('D3-002'), brigadista = e.entrar('D3-004');
+  const antes = fotoDistribucion(e);
+  rechazo(distribuir(e, 2, puestosDelPiso(e, 2), null, coordinadora), 'PERMISO', 'coordinadora');
+  rechazo(distribuir(e, 4, puestosDelPiso(e, 4), null, brigadista), 'PERMISO', 'brigadista');
+  rechazo(e.llamar('guardarDistribucion', { piso: 2, puestos: puestosDelPiso(e, 2) }), 'SESION', 'sin sesión');
+  igual(fotoDistribucion(e), antes, 'No debía escribir nada');
+  exito(distribuir(e, 2, puestosDelPiso(e, 2)), 'La administradora sí puede');
+});
+prueba(P, 'guardarDistribucion rechaza un número de puesto repetido', () => {
+  const e = escenarioPuestos();
+  const antes = e.snapshot();
+  const p = puestosDelPiso(e, 2); p[3].puesto = p[2].puesto;
+  const r = distribuir(e, 2, p);
+  rechazo(r, 'DATOS'); afirmar(/repetido/.test(r.error), r.error);
+  igual(e.snapshot(), antes, 'No debía escribir nada');
+});
+prueba(P, 'guardarDistribucion rechaza un número de puesto fuera de 1 a 999 o que no es entero', () => {
+  const e = escenarioPuestos();
+  [0, 1000, -3, 2.5, 'x', null].forEach(n => {
+    const p = puestosDelPiso(e, 2); p[9].puesto = n;
+    rechazo(distribuir(e, 2, p), 'DATOS', 'número ' + n);
+  });
+});
+prueba(P, 'guardarDistribucion rechaza dos puestos en la misma casilla', () => {
+  const e = escenarioPuestos();
+  const antes = e.snapshot();
+  const p = puestosDelPiso(e, 2); p[4].col = p[0].col; p[4].fila = p[0].fila;
+  const r = distribuir(e, 2, p);
+  rechazo(r, 'DATOS'); afirmar(/ocupada dos veces/.test(r.error) && r.error.includes('P2-1') && r.error.includes('P2-5'), r.error);
+  igual(e.snapshot(), antes);
+});
+prueba(P, 'guardarDistribucion rechaza una casilla fuera de rango y una posición a medias', () => {
+  const e = escenarioPuestos();
+  const antes = e.snapshot();
+  [[25, 1], [0, 1], [1, 21], [1, 0], [1.5, 1], ['a', 1]].forEach(([col, fila]) => {
+    const p = puestosDelPiso(e, 2); p[0].col = col; p[0].fila = fila;
+    rechazo(distribuir(e, 2, p), 'DATOS', `casilla ${col},${fila}`);
+  });
+  const p = puestosDelPiso(e, 2); p[0].col = 3; p[0].fila = null;
+  rechazo(distribuir(e, 2, p), 'DATOS', 'columna sin fila');
+  igual(e.snapshot(), antes, 'No debía escribir nada');
+  const q = puestosDelPiso(e, 2); q[0].col = 24; q[0].fila = 20;
+  exito(distribuir(e, 2, q), 'La esquina (24, 20) es válida');
+});
+prueba(P, 'guardarDistribucion rechaza quitar un puesto con personas activas y dice quiénes', () => {
+  const e = escenarioPuestos();
+  const antes = e.snapshot();
+  const r = distribuir(e, 2, puestosDelPiso(e, 2).filter(x => x.puesto !== 2));
+  rechazo(r, 'DATOS');
+  igual(r.error, 'El puesto P2-2 tiene asignada a D3-002: muévala antes de quitarlo.');
+  igual(e.snapshot(), antes);
+});
+prueba(P, 'guardarDistribucion rechaza marcar como no asignable un puesto con personas activas', () => {
+  const e = escenarioPuestos();
+  const antes = e.snapshot();
+  const p = puestosDelPiso(e, 2); p[0].asignable = false;
+  const r = distribuir(e, 2, p);
+  rechazo(r, 'DATOS');
+  igual(r.error, 'El puesto P2-1 tiene asignada a D3-001: muévala antes de marcarlo como no asignable.');
+  igual(e.snapshot(), antes);
+});
+prueba(P, 'En un puesto compartido el mensaje nombra a todas las personas activas', () => {
+  const e = escenarioPuestos();
+  mover(e, 'D3-005', 4, 1);   // P4-1: D3-003 y D3-005
+  const r = distribuir(e, 4, puestosDelPiso(e, 4).filter(x => x.puesto !== 1));
+  rechazo(r, 'DATOS');
+  igual(r.error, 'El puesto P4-1 tiene asignadas a D3-003 y D3-005: muévalas antes de quitarlo.');
+});
+prueba(P, 'Una persona inactiva no impide quitar su puesto', () => {
+  const e = escenarioPuestos();
+  exito(distribuir(e, 7, puestosDelPiso(e, 7).filter(x => x.puesto !== 2)));   // P7-2 solo tiene a D3-008, inactiva
+  afirmar(!filaPuesto(e, 7, 2), 'El puesto debía quitarse');
+});
+prueba(P, 'guardarDistribucion rechaza un piso sin puestos, una lista vacía o más de 200 puestos', () => {
+  const e = escenarioPuestos();
+  rechazo(distribuir(e, 5, [{ puesto: 1, col: 1, fila: 1 }]), 'DATOS', 'piso 5');
+  rechazo(distribuir(e, 'x', [{ puesto: 1, col: 1, fila: 1 }]), 'DATOS', 'piso x');
+  rechazo(distribuir(e, 7, []), 'DATOS', 'sin puestos');
+  rechazo(e.llamar('guardarDistribucion', { piso: 7 }, e.token), 'DATOS', 'sin lista');
+  rechazo(distribuir(e, 7, Array.from({ length: 201 }, (_, i) => ({ puesto: i + 1 }))), 'DATOS', '201 puestos');
+});
+prueba(P, 'guardarDistribucion acepta 200 puestos sin ubicar', () => {
+  const e = escenarioPuestos();
+  exito(distribuir(e, 7, Array.from({ length: 200 }, (_, i) => ({ puesto: i + 1 }))));
+  igual(e.tabla('Puestos').filter(x => Number(x.piso) === 7).length, 200);
+});
+prueba(P, 'guardarDistribucion acepta mover, agregar y quitar puestos libres, y devuelve todos los pisos', () => {
+  const e = escenarioPuestos();
+  mover(e, 'D3-003', 4, 1);   // deja todos los estados al día
+  const antesOtros = e.tabla('Puestos').filter(x => Number(x.piso) !== 2);
+  const p = puestosDelPiso(e, 2)
+    .filter(x => x.puesto !== 10)                                   // quita un puesto libre
+    .map(x => (x.puesto === 5 ? { ...x, col: 9, fila: 3 } : x))      // mueve uno libre
+    .concat([{ puesto: 11, col: 6, fila: 2, asignable: false }]);   // agrega uno, no asignable
+  const d = exito(distribuir(e, 2, p));
+  const t = e.tabla('Puestos');
+  igual(t.filter(x => Number(x.piso) !== 2), antesOtros, 'Los demás pisos quedan intactos');
+  igual(t.filter(x => Number(x.piso) === 2).map(x => Number(x.puesto)), [1, 2, 3, 4, 5, 6, 7, 8, 9, 11]);
+  igual([filaPuesto(e, 2, 5).col, filaPuesto(e, 2, 5).fila].map(String), ['9', '3']);
+  igual([filaPuesto(e, 2, 11).col, filaPuesto(e, 2, 11).fila, filaPuesto(e, 2, 11).asignable, filaPuesto(e, 2, 11).estado].map(String), ['6', '2', 'false', 'vacante']);
+  igual(d.puestos.length, t.length, 'Devuelve los puestos de todos los pisos');
+  igual(d.puestos.filter(x => x.piso === 4).length, 8);
+  igual(d.puestos.find(x => x.piso === 2 && x.puesto === 11), { piso: 2, puesto: 11, estado: 'vacante', col: 6, fila: 2, asignable: false });
+  igual(d.puestos.find(x => x.piso === 2 && x.puesto === 1).estado, 'ocupado');
+  igual(d.referencias, []);
+});
+prueba(P, 'guardarDistribucion reemplaza solo el piso editado y lo deja en su lugar de la hoja', () => {
+  const e = escenarioPuestos();
+  exito(distribuir(e, 4, puestosDelPiso(e, 4).slice(0, 5)));   // quita tres puestos libres del piso 4
+  igual(e.tabla('Puestos').map(x => Number(x.piso)), [...Array(10).fill(2), ...Array(5).fill(4), ...Array(8).fill(6), ...Array(12).fill(7)]);
+});
+prueba(P, 'guardarDistribucion acepta puestos sin posición y los valores de texto de la hoja', () => {
+  const e = escenarioPuestos();
+  exito(distribuir(e, 6, [{ puesto: '1', col: '2', fila: '3', asignable: 'true' }, { puesto: 2, col: '', fila: '' }, { puesto: 3, asignable: 'false' }]));
+  igual(String(filaPuesto(e, 6, 1).col), '2');
+  igual(filaPuesto(e, 6, 2).col, '');
+  igual(filaPuesto(e, 6, 3).asignable, 'false');
+  igual(filaPuesto(e, 6, 1).estado, 'ocupado');
+});
+prueba(P, 'guardarDistribucion calcula el estado de los puestos que conserva', () => {
+  const e = escenarioPuestos();
+  mover(e, 'D3-005', 4, 1);
+  const d = exito(distribuir(e, 4, puestosDelPiso(e, 4)));
+  igual(d.puestos.find(x => x.piso === 4 && x.puesto === 1).estado, 'compartido');
+  igual(filaPuesto(e, 4, 1).estado, 'compartido');
+});
+
+prueba(P, 'guardarDistribucion crea el id de las referencias nuevas y conserva el de las que ya lo traen', () => {
+  const e = escenarioPuestos();
+  const d = exito(distribuir(e, 2, puestosDelPiso(e, 2), [ref(), ref({ id: 'esc-sur', etiqueta: 'Escalera sur', col: 12, fila: 1 })]));
+  igual(d.referencias.length, 2);
+  const nueva = d.referencias.find(r => r.etiqueta === 'Escalera norte');
+  afirmar(/^[0-9a-f-]{36}$/.test(nueva.id), 'Debía crear un id: ' + nueva.id);
+  igual(d.referencias.find(r => r.etiqueta === 'Escalera sur').id, 'esc-sur');
+  igual(nueva, { piso: 2, id: nueva.id, tipo: 'escalera', etiqueta: 'Escalera norte', col: 8, fila: 1, ancho: 1, alto: 2 });
+  igual(e.tabla('Referencias').length, 2);
+  const d2 = exito(distribuir(e, 2, puestosDelPiso(e, 2), d.referencias.map(r => ({ ...r }))));
+  igual(d2.referencias, d.referencias, 'Al guardar otra vez con el id no se duplica ni cambia');
+});
+prueba(P, 'guardarDistribucion reemplaza las referencias del piso y no toca las de los demás', () => {
+  const e = escenarioPuestos();
+  exito(distribuir(e, 2, puestosDelPiso(e, 2), [ref()]));
+  exito(distribuir(e, 4, puestosDelPiso(e, 4), [ref({ tipo: 'sala', etiqueta: 'Sala de juntas', col: 5, fila: 1, ancho: 3, alto: 2 })]));
+  const piso4 = e.tabla('Referencias').find(r => Number(r.piso) === 4);
+  const d = exito(distribuir(e, 2, puestosDelPiso(e, 2), []));   // quita las del piso 2
+  igual(d.referencias.length, 1);
+  igual(d.referencias[0].id, piso4.id);
+  igual(e.tabla('Referencias').length, 1);
+});
+prueba(P, 'Una referencia ocupa ancho × alto casillas: choca con un puesto o con otra referencia', () => {
+  const e = escenarioPuestos();
+  const antes = e.snapshot();
+  // P2-1 está en (1,1) y P2-6 en (1,2): una sala de 2 × 2 desde (1,1) los cubre.
+  let r = distribuir(e, 2, puestosDelPiso(e, 2), [ref({ tipo: 'sala', etiqueta: 'Sala', col: 1, fila: 1, ancho: 2, alto: 2 })]);
+  rechazo(r, 'DATOS'); afirmar(/ocupada dos veces/.test(r.error), r.error);
+  r = distribuir(e, 2, puestosDelPiso(e, 2), [ref({ col: 10, fila: 5, ancho: 3, alto: 1 }), ref({ col: 12, fila: 4, ancho: 1, alto: 3 })]);
+  rechazo(r, 'DATOS'); afirmar(/ocupada dos veces/.test(r.error), r.error);
+  igual(e.snapshot(), antes);
+  exito(distribuir(e, 2, puestosDelPiso(e, 2), [ref({ col: 10, fila: 5, ancho: 3, alto: 1 }), ref({ col: 13, fila: 5, ancho: 1, alto: 3 })]), 'Dos referencias contiguas sí caben');
+});
+prueba(P, 'Una referencia no puede salirse del esquema ni tener medidas no válidas', () => {
+  const e = escenarioPuestos();
+  [
+    ref({ col: 24, fila: 1, ancho: 2, alto: 1 }), ref({ col: 1, fila: 20, ancho: 1, alto: 2 }), ref({ ancho: 0 }), ref({ alto: 7 }), ref({ ancho: 1.5 }),
+    ref({ col: 0 }), ref({ fila: 0 }), ref({ col: undefined }), ref({ fila: null })
+  ].forEach((r, i) => rechazo(distribuir(e, 2, puestosDelPiso(e, 2), [r]), 'DATOS', 'referencia ' + i));
+  exito(distribuir(e, 2, puestosDelPiso(e, 2), [ref({ col: 19, fila: 15, ancho: 6, alto: 6 })]), 'Un bloque de 6 × 6 que termina en (24, 20) cabe');
+});
+prueba(P, 'Una referencia exige un tipo válido, una etiqueta de hasta 30 caracteres y un id sin repetir', () => {
+  const e = escenarioPuestos();
+  rechazo(distribuir(e, 2, puestosDelPiso(e, 2), [ref({ tipo: 'bodega' })]), 'DATOS', 'tipo');
+  rechazo(distribuir(e, 2, puestosDelPiso(e, 2), [ref({ tipo: undefined })]), 'DATOS', 'sin tipo');
+  rechazo(distribuir(e, 2, puestosDelPiso(e, 2), [ref({ etiqueta: 'x'.repeat(31) })]), 'DATOS', 'etiqueta larga');
+  exito(distribuir(e, 2, puestosDelPiso(e, 2), [ref({ etiqueta: 'x'.repeat(30) })]), 'Treinta caracteres sí');
+  ['escalera', 'sala', 'bano', 'ascensor', 'pasillo', 'otro'].forEach((tipo, i) =>
+    exito(distribuir(e, 2, puestosDelPiso(e, 2), [ref({ tipo, col: 10 + i })]), 'tipo ' + tipo));
+  rechazo(distribuir(e, 2, puestosDelPiso(e, 2), [ref({ id: 'igual' }), ref({ id: 'igual', col: 12 })]), 'DATOS', 'id repetido');
+  rechazo(distribuir(e, 2, puestosDelPiso(e, 2), [ref({ id: 'con espacios y <b>' })]), 'DATOS', 'id con caracteres raros');
+  exito(distribuir(e, 4, puestosDelPiso(e, 4), [ref({ id: 'solo-piso-4' })]));
+  rechazo(distribuir(e, 2, puestosDelPiso(e, 2), [ref({ id: 'solo-piso-4' })]), 'DATOS', 'id de otro piso');
+});
+prueba(P, 'Máximo 40 referencias por piso', () => {
+  const e = escenarioPuestos();
+  const una = i => ref({ col: 10 + (i % 14), fila: 1 + Math.floor(i / 14), ancho: 1, alto: 1 });
+  exito(distribuir(e, 2, puestosDelPiso(e, 2), Array.from({ length: 40 }, (_, i) => una(i))), '40 sí');
+  rechazo(distribuir(e, 2, puestosDelPiso(e, 2), Array.from({ length: 41 }, (_, i) => una(i))), 'DATOS', '41 no');
+});
+prueba(P, 'La etiqueta se guarda sin espacios sobrantes ni caracteres de control, y una referencia puede no tenerla', () => {
+  const e = escenarioPuestos();
+  const d = exito(distribuir(e, 2, puestosDelPiso(e, 2), [ref({ etiqueta: '  Sala\tde juntas \n' }), ref({ etiqueta: '', col: 12 })]));
+  igual(d.referencias.map(r => r.etiqueta), ['Sala de juntas', '']);
+});
+prueba(P, 'guardarDistribucion deja constancia en la bitácora, sin datos personales', () => {
+  const e = escenarioPuestos();
+  exito(distribuir(e, 6, puestosDelPiso(e, 6)));
+  const b = e.tabla('Bitacora').filter(x => x.accion === 'distribucion');
+  igual(b.length, 1);
+  igual([b[0].codigo, b[0].detalle], ['D3-001', 'piso 6']);
+});
+prueba(P, 'guardarDistribucion toma el candado y lee cada hoja una sola vez; base no toma el candado', () => {
+  const e = escenarioPuestos();
+  igual(e.usaBloqueo('guardarDistribucion'), true);
+  igual(e.usaBloqueo('base'), false);
+  e.reiniciarLecturas();
+  exito(distribuir(e, 2, puestosDelPiso(e, 2), [ref()]));
+  const repetidas = Object.entries(cuantas(e.lecturas())).filter(([, n]) => n > 1);
+  igual(repetidas, [], 'Hojas leídas más de una vez');
+});
+prueba(P, 'Un reintento de guardarDistribucion con el mismo idPeticion no repite la acción', () => {
+  const e = escenarioPuestos();
+  const una = () => e.llamar('guardarDistribucion', { piso: 2, puestos: puestosDelPiso(e, 2), referencias: [ref()], idPeticion: 'reintento-1' }, e.token);
+  const a = exito(una());
+  const b = exito(una());
+  igual(b, a, 'Misma respuesta recordada (mismo id de la referencia)');
+  igual(e.tabla('Referencias').length, 1);
+});
+
+prueba(P, 'base trae col, fila, asignable y las referencias; los puestos sin posición vienen con null', () => {
+  const e = escenarioPuestos();
+  exito(distribuir(e, 4, [{ puesto: 1, col: 3, fila: 2 }, { puesto: 2 }, { puesto: 3, asignable: false }], [ref({ tipo: 'bano', etiqueta: 'Baños' })]));
+  const b = exito(e.llamar('base', {}, e.token));
+  igual(b.puestos.find(x => x.piso === 2 && x.puesto === 4), { piso: 2, puesto: 4, estado: 'vacante', col: 4, fila: 1, asignable: true });
+  igual(b.puestos.find(x => x.piso === 4 && x.puesto === 1), { piso: 4, puesto: 1, estado: 'ocupado', col: 3, fila: 2, asignable: true });
+  igual(b.puestos.find(x => x.piso === 4 && x.puesto === 3).asignable, false);
+  igual(b.puestos.find(x => x.piso === 6 && x.puesto === 1), { piso: 6, puesto: 1, estado: 'ocupado', col: null, fila: null, asignable: true });
+  igual(b.referencias.length, 1);
+  igual(Object.keys(b.referencias[0]).sort(), ['alto', 'ancho', 'col', 'etiqueta', 'fila', 'id', 'piso', 'tipo']);
+  igual(b.referencias[0].tipo, 'bano');
+});
+prueba(P, 'base sigue trayendo piso, puesto y estado para la v0.9.4, y no escribe nada', () => {
+  const e = escenarioPuestos();
+  e.reiniciarEscrituras();
+  const b = exito(e.llamar('base', {}, e.token));
+  b.puestos.forEach(x => afirmar('piso' in x && 'puesto' in x && 'estado' in x, 'Faltan campos en ' + JSON.stringify(x)));
+  igual(b.referencias, []);
+  igual(e.escrituras(), []);
+});
+prueba(P, 'base funciona aunque la hoja Referencias aún no exista (antes de ejecutar «instalar»)', () => {
+  const e = escenarioPuestos();
+  const guardado = {};
+  // Un adaptador como el de Sheets falla al leer una hoja que no existe.
+  const dep = {
+    leer: t => { if (t === 'Referencias') throw new Error('Falta la hoja'); return copia(guardado[t] || e.tabla(t)); },
+    escribir: (t, f) => { guardado[t] = copia(f); },
+    agregar: (t, f) => { guardado[t] = (guardado[t] || e.tabla(t)).concat([copia(f)]); },
+    agregarVarias: (t, f) => { guardado[t] = (guardado[t] || e.tabla(t)).concat(copia(f)); },
+    prop: n => (n === 'PIMIENTA' ? 'pimienta-de-prueba' : ''), uuid: () => crypto.randomUUID(), ahora: () => e.ahora(), hoy: () => '2026-10-19', bloqueo: fn => fn()
+  };
+  const n = N.crearNucleo(dep);
+  const ing = n.procesar({ accion: 'ingresar', hashCorreo: 'hc-D3-001', verificador: 'v-D3-001' });
+  afirmar(ing.ok, 'No se pudo ingresar: ' + ing.error);
+  const r = n.procesar({ accion: 'base', token: ing.datos.token });
+  afirmar(r.ok, 'base debía responder: ' + r.error);
+  igual(r.datos.referencias, []);
+});
+prueba(P, 'guardarRoles sigue validando los pisos de la brigada con los pisos únicos de la planta', () => {
+  const e = escenarioPuestos();
+  exito(e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-005', roles: ['brigadista'], pisoBrigada: 6 }] }, e.token));
+  rechazo(e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-006', roles: ['brigadista'], pisoBrigada: 5 }] }, e.token), 'DATOS', 'piso 5 no existe');
+  exito(e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-006', roles: ['brigadista'], pisoBrigada: 6 }] }, e.token), 'dos en el piso 6');
+  const r = e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-007', roles: ['brigadista'], pisoBrigada: 6 }] }, e.token);
+  rechazo(r, 'DATOS'); afirmar(/piso 6 tiene más de 2/.test(r.error), r.error);
+});
+prueba(P, 'inicializar calcula el estado de los puestos y deja sin posición los que trae el Excel', () => {
+  const e = crearEntorno();
+  e.fijarFecha('2026-10-19');
+  const items = [persona(1, 2, 1), persona(2, 2, 1)].map(p => ({
+    codigo: p.codigo, piso: p.piso, puesto: p.puesto, hashCorreo: p.hashCorreo, verificador: 'v-' + p.codigo, roles: p.codigo === 'D3-001' ? ['admin'] : []
+  }));
+  exito(e.llamar('inicializar', { codigoInstalacion: 'CODIGO01', personas: items, puestos: [{ piso: 2, puesto: 1, estado: 'vacante' }, { piso: 2, puesto: 2, estado: 'ocupado' }] }));
+  igual(e.tabla('Puestos').map(x => [x.puesto, x.estado, x.col, x.fila]), [[1, 'compartido', '', ''], [2, 'vacante', '', '']]);
+});
+
 // ---------- Ejecución y resultado ----------
 
 const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

@@ -16,7 +16,12 @@ var ESQUEMA = {
   // '1,3,5' = días ISO (1 = lunes ... 7 = domingo), separados por coma y ordenados.
   Personas: ['codigo', 'piso', 'puesto', 'estado', 'roles', 'pisoBrigada', 'hashCorreo', 'verificador',
     'sobres', 'debeCambiar', 'intentos', 'bloqueadoHasta', 'actualizado', 'pub', 'agenda'],
-  Puestos: ['piso', 'puesto', 'estado'],
+  // "estado" lo calcula el servidor según las personas activas del puesto: vacante, ocupado o compartido.
+  // "col" (1 a 24) y "fila" (1 a 20) ubican el puesto en el esquema del piso; vacíos = sin ubicar.
+  // "asignable": 'true' o 'false' (vacío = 'true'). Las columnas nuevas van al final por compatibilidad.
+  Puestos: ['piso', 'puesto', 'estado', 'col', 'fila', 'asignable'],
+  // Puntos de referencia del esquema de cada piso (escalera, sala...). "ancho" y "alto" en casillas (1 a 6).
+  Referencias: ['piso', 'id', 'tipo', 'etiqueta', 'col', 'fila', 'ancho', 'alto'],
   Sesiones: ['tokenHash', 'codigo', 'creada', 'expira'],
   Sobres: ['nombre', 'version', 'datos', 'actualizado'],
   Config: ['clave', 'valor'],
@@ -51,6 +56,15 @@ var ESQUEMA = {
 // emergencia y su nombre está en el directorio) pero no puede ingresar.
 var ROLES_VALIDOS = ['admin', 'coordinador', 'suplente', 'brigadista', 'asesor'];
 var MAX_BRIGADISTAS_POR_PISO = 2;
+
+// Distribución de pisos (esquema tipo sala de cine)
+var TIPOS_REFERENCIA = ['escalera', 'sala', 'bano', 'ascensor', 'pasillo', 'otro'];
+var MAX_COLUMNAS = 24;
+var MAX_FILAS = 20;
+var MAX_PUESTOS_PISO = 200;
+var MAX_REFERENCIAS_PISO = 40;
+var MAX_LADO_REFERENCIA = 6;   // ancho y alto máximos, en casillas
+var MAX_ETIQUETA = 30;
 
 // Novedades de presencia
 var TIPOS_NOVEDAD = ['no_asiste', 'otro_lugar', 'asiste'];
@@ -307,6 +321,87 @@ function crearNucleo(dep) {
   }
 
   function soloAdmin(p) { return p && tieneRol(p, 'admin'); }
+
+  // ---------- Puestos y distribución de pisos ----------
+
+  function clavePuesto(piso, puesto) { return num(piso) + '-' + num(puesto); }
+
+  // Regla del estado de un puesto: 0 personas activas = vacante, 1 = ocupado, 2 o más = compartido.
+  function estadoPuesto(cuantas) { return cuantas === 0 ? 'vacante' : cuantas === 1 ? 'ocupado' : 'compartido'; }
+
+  // { 'piso-puesto': [códigos de las personas activas] }
+  function ocupantesPorPuesto(personas) {
+    var o = {};
+    personas.filter(activa).forEach(function (x) {
+      var k = clavePuesto(x.piso, x.puesto);
+      (o[k] = o[k] || []).push(x.codigo);
+    });
+    return o;
+  }
+
+  // Pone el estado calculado en cada puesto. Escribe la hoja solo si algo cambió (o si "forzar").
+  // "puestos" permite entregar las filas ya leídas o preparadas por quien llama.
+  function recalcularPuestos(personas, puestos, forzar) {
+    var ocupantes = ocupantesPorPuesto(personas || leer('Personas'));
+    var filas = puestos || leer('Puestos');
+    var cambio = false;
+    filas.forEach(function (f) {
+      var e = estadoPuesto((ocupantes[clavePuesto(f.piso, f.puesto)] || []).length);
+      if (texto(f.estado) !== e) { f.estado = e; cambio = true; }
+    });
+    if (cambio || forzar) escribir('Puestos', filas);
+    return filas;
+  }
+
+  // La carga del Excel trae solo piso, puesto y estado: los puestos que ya existían conservan su
+  // posición en el esquema (col, fila) y su condición de asignable. Los nuevos quedan sin ubicar.
+  function conservarDistribucion(nuevos) {
+    var previos = {};
+    leer('Puestos').forEach(function (f) { previos[clavePuesto(f.piso, f.puesto)] = f; });
+    return nuevos.map(function (n) {
+      var v = previos[clavePuesto(n.piso, n.puesto)];
+      return {
+        piso: n.piso, puesto: n.puesto, estado: texto(n.estado),
+        col: v ? texto(v.col) : '', fila: v ? texto(v.fila) : '', asignable: v ? texto(v.asignable) : ''
+      };
+    });
+  }
+
+  function puestoPublico(x) {
+    var ubicado = texto(x.col) !== '' && texto(x.fila) !== '';
+    return {
+      piso: num(x.piso), puesto: num(x.puesto), estado: texto(x.estado),
+      col: ubicado ? num(x.col) : null, fila: ubicado ? num(x.fila) : null, asignable: texto(x.asignable) !== 'false'
+    };
+  }
+
+  function referenciaPublica(x) {
+    return {
+      piso: num(x.piso), id: texto(x.id), tipo: texto(x.tipo), etiqueta: texto(x.etiqueta),
+      col: num(x.col), fila: num(x.fila), ancho: num(x.ancho), alto: num(x.alto)
+    };
+  }
+
+  // Antes de ejecutar "instalar" en una instalación vieja la hoja Referencias no existe: la v0.9.4 de la
+  // app no la necesita y no debe romperse por eso.
+  function leerReferencias() {
+    try { return leer('Referencias'); } catch (e) { return []; }
+  }
+
+  // Entero escrito como número o como texto de dígitos (null si no lo es).
+  function entero(v) {
+    if (typeof v === 'number') return isFinite(v) && Math.floor(v) === v ? v : null;
+    if (typeof v === 'string' && /^\s*\d{1,9}\s*$/.test(v)) return Number(v);
+    return null;
+  }
+
+  function vacio(v) { return v === undefined || v === null || (typeof v === 'string' && v.trim() === ''); }
+
+  function corto(v) { return texto(v).slice(0, 20); }
+
+  function listaDeCodigos(codigos) {
+    return codigos.length === 1 ? codigos[0] : codigos.slice(0, -1).join(', ') + ' y ' + codigos[codigos.length - 1];
+  }
 
   // Agenda de días presenciales: '' (lunes a viernes), 'ocasional' o días ISO 1 a 7 sin repetir.
   // Devuelve el texto normalizado (días en orden ascendente) o null si no es válida.
@@ -577,7 +672,7 @@ function crearNucleo(dep) {
       var personas = [];
       aplicarPadron(d.personas || [], personas);
       escribir('Personas', personas);
-      escribir('Puestos', d.puestos || []);
+      recalcularPuestos(personas, conservarDistribucion(d.puestos || []), true);
       if (d.sobreDirectorio) guardarSobre('directorio', d.sobreDirectorio);
       Object.keys(SOBRES_CONTENIDO).forEach(function (n) {
         var datos = d.sobresContenido && d.sobresContenido[n];
@@ -637,7 +732,9 @@ function crearNucleo(dep) {
       return ok({
         perfil: perfil(p),
         personas: leer('Personas').map(publica),
-        puestos: leer('Puestos').map(function (x) { return { piso: num(x.piso), puesto: num(x.puesto), estado: texto(x.estado) }; }),
+        // col, fila, asignable y referencias son de la v0.11; la v0.9.4 los ignora.
+        puestos: leer('Puestos').map(puestoPublico),
+        referencias: leerReferencias().map(referenciaPublica),
         directorio: dir ? { version: num(dir.version), datos: dir.datos } : null,
         config: { reglasClave: cfg.reglasClave, exigirCambioInicial: !!cfg.exigirCambioInicial, diasSesion: num(cfg.diasSesion), diasBitacora: num(cfg.diasBitacora), festivos: cfg.festivos || [] },
         novedades: novedadesVigentes(),
@@ -1131,10 +1228,132 @@ function crearNucleo(dep) {
       escribir('Personas', personas);
       // Quien se retira deja de estar en el Despacho: se borra su caracterización.
       borrarCaracterizacionesInactivas(personas);
-      if (d.puestos) escribir('Puestos', d.puestos);
+      // Con puestos del Excel se conserva la posición de los que ya existían. Siempre se recalcula el estado.
+      recalcularPuestos(personas, d.puestos ? conservarDistribucion(d.puestos) : null, !!d.puestos);
       var version = d.sobreDirectorio ? guardarSobre('directorio', d.sobreDirectorio) : null;
       bitacora(p.codigo, 'padron', (d.personas || []).length + ' cambios');
       return ok({ versionDirectorio: version });
+    },
+
+    // Diseño del esquema de un piso: reemplaza TODOS sus puestos (posición y asignable) y sus referencias.
+    // Si algo no es válido no se escribe nada. Los demás pisos no se tocan.
+    guardarDistribucion: function (d, p) {
+      if (!soloAdmin(p)) return falla('PERMISO', 'Solo el administrador puede hacer esto.');
+      d = d || {};
+      var actuales = leer('Puestos');
+      var piso = entero(d.piso);
+      if (!piso || !actuales.some(function (x) { return num(x.piso) === piso; })) {
+        return falla('DATOS', 'El piso ' + corto(d.piso) + ' no tiene puestos en la planta.');
+      }
+      if (!Array.isArray(d.puestos) || !d.puestos.length) return falla('DATOS', 'El piso debe conservar al menos un puesto.');
+      if (d.puestos.length > MAX_PUESTOS_PISO) return falla('DATOS', 'Un piso admite como máximo ' + MAX_PUESTOS_PISO + ' puestos.');
+      var entradaRefs = vacio(d.referencias) ? [] : d.referencias;
+      if (!Array.isArray(entradaRefs)) return falla('DATOS', 'Las referencias no tienen un formato válido.');
+      if (entradaRefs.length > MAX_REFERENCIAS_PISO) return falla('DATOS', 'Un piso admite como máximo ' + MAX_REFERENCIAS_PISO + ' referencias.');
+
+      // Casillas ocupadas: 'col,fila' -> nombre del elemento que la usa.
+      var casillas = {};
+      function ocupar(col, fila, nombre) {
+        var k = col + ',' + fila;
+        if (casillas[k]) return 'La casilla de la fila ' + fila + ', columna ' + col + ' está ocupada dos veces (' + casillas[k] + ' y ' + nombre + ').';
+        casillas[k] = nombre;
+        return null;
+      }
+
+      var puestos = [], porNumero = {};
+      for (var i = 0; i < d.puestos.length; i++) {
+        var x = d.puestos[i];
+        if (!x || typeof x !== 'object') return falla('DATOS', 'Hay un puesto con un formato no válido.');
+        var n = entero(x.puesto);
+        if (n === null || n < 1 || n > 999) return falla('DATOS', 'El número de puesto debe ser un entero de 1 a 999 (recibido: ' + corto(x.puesto) + ').');
+        if (porNumero[n]) return falla('DATOS', 'El puesto P' + piso + '-' + n + ' está repetido.');
+        var col = '', fila = '';
+        if (vacio(x.col) !== vacio(x.fila)) return falla('DATOS', 'El puesto P' + piso + '-' + n + ' necesita columna y fila, o ninguna de las dos.');
+        if (!vacio(x.col)) {
+          col = entero(x.col); fila = entero(x.fila);
+          if (col === null || col < 1 || col > MAX_COLUMNAS || fila === null || fila < 1 || fila > MAX_FILAS) {
+            return falla('DATOS', 'El puesto P' + piso + '-' + n + ' está fuera del esquema: la columna va de 1 a ' + MAX_COLUMNAS + ' y la fila de 1 a ' + MAX_FILAS + '.');
+          }
+        }
+        var asignable = true;
+        if (!vacio(x.asignable)) {
+          if (x.asignable === true || x.asignable === 'true') asignable = true;
+          else if (x.asignable === false || x.asignable === 'false') asignable = false;
+          else return falla('DATOS', 'El valor «asignable» del puesto P' + piso + '-' + n + ' no es válido.');
+        }
+        if (col !== '') {
+          var choque = ocupar(col, fila, 'P' + piso + '-' + n);
+          if (choque) return falla('DATOS', choque);
+        }
+        porNumero[n] = { puesto: n, col: col, fila: fila, asignable: asignable };
+        puestos.push(porNumero[n]);
+      }
+
+      var idsOtros = {};
+      leerReferencias().forEach(function (r) { if (num(r.piso) !== piso) idsOtros[texto(r.id)] = true; });
+      var idsNuevos = {};
+      var referencias = [];
+      for (var j = 0; j < entradaRefs.length; j++) {
+        var r = entradaRefs[j];
+        if (!r || typeof r !== 'object') return falla('DATOS', 'Hay una referencia con un formato no válido.');
+        if (TIPOS_REFERENCIA.indexOf(r.tipo) < 0) return falla('DATOS', 'El tipo de referencia «' + corto(r.tipo) + '» no es válido.');
+        if (typeof r.etiqueta === 'object' && r.etiqueta !== null) return falla('DATOS', 'La etiqueta de una referencia no es válida.');
+        var etiqueta = vacio(r.etiqueta) ? '' : texto(r.etiqueta).replace(/[\u0000-\u001f]/g, ' ').trim();
+        if (etiqueta.length > MAX_ETIQUETA) return falla('DATOS', 'La etiqueta de una referencia admite hasta ' + MAX_ETIQUETA + ' caracteres.');
+        var nombreRef = '«' + (etiqueta || r.tipo) + '»';
+        var rc = entero(r.col), rf = entero(r.fila), ra = entero(r.ancho), rl = entero(r.alto);
+        if (rc === null || rc < 1 || rf === null || rf < 1) return falla('DATOS', 'La referencia ' + nombreRef + ' necesita una columna y una fila.');
+        if (ra === null || ra < 1 || ra > MAX_LADO_REFERENCIA || rl === null || rl < 1 || rl > MAX_LADO_REFERENCIA) {
+          return falla('DATOS', 'El ancho y el alto de la referencia ' + nombreRef + ' van de 1 a ' + MAX_LADO_REFERENCIA + ' casillas.');
+        }
+        if (rc + ra - 1 > MAX_COLUMNAS || rf + rl - 1 > MAX_FILAS) {
+          return falla('DATOS', 'La referencia ' + nombreRef + ' se sale del esquema (' + MAX_COLUMNAS + ' columnas por ' + MAX_FILAS + ' filas).');
+        }
+        var id = vacio(r.id) ? '' : texto(r.id);
+        if (id !== '' && !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return falla('DATOS', 'El identificador de la referencia ' + nombreRef + ' no es válido.');
+        if (id !== '' && (idsOtros[id] || idsNuevos[id])) return falla('DATOS', 'El identificador de la referencia ' + nombreRef + ' ya está en uso.');
+        for (var a = 0; a < ra; a++) {
+          for (var b = 0; b < rl; b++) {
+            var choqueRef = ocupar(rc + a, rf + b, nombreRef);
+            if (choqueRef) return falla('DATOS', choqueRef);
+          }
+        }
+        if (id === '') { do { id = dep.uuid(); } while (idsOtros[id] || idsNuevos[id]); }
+        idsNuevos[id] = true;
+        referencias.push({ piso: piso, id: id, tipo: r.tipo, etiqueta: etiqueta, col: rc, fila: rf, ancho: ra, alto: rl });
+      }
+
+      // No se quita ni se deshabilita un puesto que tiene personas activas.
+      var personas = leer('Personas');
+      var ocupantes = ocupantesPorPuesto(personas);
+      var bloqueos = [];
+      actuales.filter(function (f) { return num(f.piso) === piso; }).forEach(function (f) {
+        var gente = ocupantes[clavePuesto(piso, f.puesto)] || [];
+        if (!gente.length) return;
+        var nuevo = porNumero[num(f.puesto)];
+        if (nuevo && nuevo.asignable) return;
+        bloqueos.push('El puesto P' + piso + '-' + num(f.puesto) + ' tiene ' + (gente.length === 1 ? 'asignada a ' : 'asignadas a ') + listaDeCodigos(gente) + ': ' +
+          (gente.length === 1 ? 'muévala' : 'muévalas') + (nuevo ? ' antes de marcarlo como no asignable.' : ' antes de quitarlo.'));
+      });
+      if (bloqueos.length) return falla('DATOS', bloqueos.join(' '));
+
+      // Los demás pisos quedan intactos y en su lugar; el piso editado conserva su sitio en la hoja.
+      puestos.sort(function (u, v) { return u.puesto - v.puesto; });
+      var filasPiso = puestos.map(function (u) {
+        return { piso: piso, puesto: u.puesto, estado: estadoPuesto((ocupantes[clavePuesto(piso, u.puesto)] || []).length),
+          col: u.col, fila: u.fila, asignable: u.asignable ? 'true' : 'false' };
+      });
+      var todos = [], colocado = false;
+      actuales.forEach(function (f) {
+        if (num(f.piso) !== piso) { todos.push(f); return; }
+        if (!colocado) { todos = todos.concat(filasPiso); colocado = true; }
+      });
+      var otrasReferencias = leerReferencias().filter(function (q) { return num(q.piso) !== piso; });
+      escribir('Puestos', todos);
+      escribir('Referencias', otrasReferencias.concat(referencias));
+      recalcularPuestos(personas, todos);
+      bitacora(p.codigo, 'distribucion', 'piso ' + piso);
+      return ok({ puestos: todos.map(puestoPublico), referencias: otrasReferencias.concat(referencias).map(referenciaPublica) });
     },
 
     // Roles, piso de brigada y agenda. Las reglas se validan aquí sobre el resultado final de TODAS
@@ -1142,7 +1361,8 @@ function crearNucleo(dep) {
     guardarRoles: function (d, p) {
       if (!soloAdmin(p)) return falla('PERMISO', 'Solo el administrador puede hacer esto.');
       var personas = leer('Personas');
-      var pisosSede = leer('Puestos').map(function (q) { return num(q.piso); });
+      var pisosSede = leer('Puestos').map(function (q) { return num(q.piso); })
+        .filter(function (n, i, todos) { return todos.indexOf(n) === i; });
       var cambios = Array.isArray(d.cambios) ? d.cambios : [];
       var ahora = new Date(dep.ahora()).toISOString();
       var tocadas = {};
