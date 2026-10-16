@@ -43,6 +43,26 @@ function adaptadorSheets() {
         return o;
       });
     },
+    // Solo las filas en las que «columna» vale exactamente «valor» (por ejemplo, las partes de un
+    // archivo). Evita leer la hoja completa cuando es grande: Archivos guarda todos los mapas y planos.
+    // Las partes de un archivo se agregan juntas, así que se lee un solo bloque de filas.
+    leerFiltrado: function (nombre, columna, valor) {
+      var h = hoja(nombre);
+      var ultima = h.getLastRow();
+      var cols = h.getRange(1, 1, 1, h.getLastColumn()).getValues()[0].map(String);
+      var ic = cols.indexOf(columna);
+      if (ic < 0 || ultima < 2) return [];
+      var celdas = h.getRange(2, ic + 1, ultima - 1, 1).createTextFinder(String(valor))
+        .matchEntireCell(true).matchCase(true).findAll();
+      if (!celdas.length) return [];
+      var numeros = celdas.map(function (c) { return c.getRow(); });
+      var desde = Math.min.apply(null, numeros), hasta = Math.max.apply(null, numeros);
+      return h.getRange(desde, 1, hasta - desde + 1, cols.length).getValues().map(function (f) {
+        var o = {};
+        cols.forEach(function (c, i) { o[c] = f[i] === null || f[i] === undefined ? '' : String(f[i]); });
+        return o;
+      }).filter(function (o) { return o[columna] === String(valor); });
+    },
     // Se escribe encima de las filas existentes y solo se limpia lo que sobra al final.
     // Así una lectura sin candado (pulso, emergencia) nunca ve la tabla vacía a medio escribir.
     escribir: function (nombre, filas) {

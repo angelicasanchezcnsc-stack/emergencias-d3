@@ -17,7 +17,6 @@ import { vistaCaracterizacion } from './vistas/caracterizacion.js';
 import { vistaCaracterizaciones } from './vistas/caracterizaciones.js';
 import * as carac from './caracterizacion.js';
 import * as contenido from './contenido.js';
-import * as novedades from './novedades.js';
 import * as emergencia from './emergencia.js';
 import { horaLegible, horaBogota } from './tiempo.js';
 import { confirmar } from './ui.js';
@@ -68,6 +67,7 @@ function armazon() {
         </div>
         <div class="fila">
           ${CONFIG.MODO_SERVIDOR === 'simulado' ? '<span class="insignia insignia-prueba" title="Los datos quedan solo en este navegador">Modo prueba</span>' : ''}
+          <span id="actividad" class="actividad oculto" aria-hidden="true"><span class="girador-mini"></span><span>Actualizando…</span></span>
           <div id="estado-red" class="estado-red"></div>
           <a id="btn-cuenta" class="btn btn-fantasma btn-chico oculto" href="#/cuenta" title="Mi cuenta">${icono('persona', 'ic-s')}<span>Mi cuenta</span></a>
           <button id="btn-salir" class="btn btn-fantasma btn-chico oculto" title="Cerrar sesión">${icono('salir', 'ic-s')}<span>Salir</span></button>
@@ -86,13 +86,21 @@ function armazon() {
     aviso('Sesión cerrada. Se borraron los datos de este celular.', 'info');
     ctx.navegar('ingreso');
   });
+  // Aviso discreto mientras el servidor responde (solo si tarda más de medio segundo). Es visual:
+  // los lectores de pantalla no lo anuncian, para no interrumpir con cada consulta.
+  let temporizadorActividad;
+  addEventListener('actividad-servidor', e => {
+    const el = document.getElementById('actividad');
+    clearTimeout(temporizadorActividad);
+    if (e.detail > 0) temporizadorActividad = setTimeout(() => el.classList.remove('oculto'), 500);
+    else el.classList.add('oculto');
+  });
   addEventListener('online', pintarRed);
   addEventListener('offline', pintarRed);
   addEventListener('estado-servidor', pintarRed);
   addEventListener('online', () => {
     if (!sesion.activa()) return;
-    sesion.refrescar().then(() => contenido.precargar()).catch(() => {});
-    novedades.actualizar();
+    sesion.refrescar().then(() => { dispatchEvent(new CustomEvent('novedades-cambio')); contenido.precargar(); }).catch(() => {});
   });
   pintarRed();
 }
@@ -150,6 +158,25 @@ function pintarNav(actual) {
 }
 
 let servidorListo = null; // ¿el servidor ya fue inicializado?
+
+// Pantallas que se vuelven a dibujar solas cuando llegan datos nuevos del servidor. Las demás los
+// usan la próxima vez que se abren, para no interrumpir a quien está escribiendo o marcando.
+const REPINTAR_AL_ACTUALIZAR = ['inicio', 'planta'];
+const rutaActual = () => (location.hash.replace(/^#\/?/, '') || 'inicio').split('?')[0];
+
+// Trae los datos nuevos sin hacer esperar a la persona: la pantalla ya se dibujó con la copia del celular.
+function actualizarEnSegundoPlano() {
+  sesion.refrescar().then(ok => {
+    if (!ok || !sesion.activa()) return;
+    // La carga inicial (base) ya trae las novedades vigentes: solo se avisa a las pantallas.
+    dispatchEvent(new CustomEvent('novedades-cambio'));
+    const ruta = rutaActual();
+    pintarNav(ruta);
+    const activo = document.activeElement;
+    const escribiendo = activo && activo.matches && activo.matches('input, textarea, select');
+    if (REPINTAR_AL_ACTUALIZAR.includes(ruta) && !escribiendo && !document.querySelector('.modal-fondo')) enrutar();
+  }).catch(() => { /* sesión vencida: refrescar ya la cerró */ });
+}
 
 // Cada pantalla se dibuja en su propio lienzo dentro de <main>. Si la persona cambia de pantalla
 // mientras otra todavía carga (por ejemplo, Caracterizaciones espera la respuesta del servidor),
@@ -209,6 +236,8 @@ async function enrutar() {
     if (vista === lienzoActual) vista.innerHTML = `<div class="nota nota-error">${icono('alerta')}<span>${esc(e.message || e)}</span></div>`;
   }
   if (vista === lienzoActual) scrollTo(0, 0);
+  // Marca de rendimiento (solo local, para medir cuánto tarda en verse la primera pantalla).
+  if (!performance.getEntriesByName('d3e-primera-vista').length) performance.mark('d3e-primera-vista');
 }
 
 async function iniciar() {
@@ -216,9 +245,11 @@ async function iniciar() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(e => console.warn('Sin modo sin conexión:', e));
   }
-  if (await sesion.restaurar()) {
+  // Con una copia guardada en el celular, la primera pantalla se dibuja de inmediato con ella y los
+  // datos nuevos llegan en segundo plano (más abajo). Sin copia, se espera al servidor.
+  const conSesion = await sesion.restaurar();
+  if (conSesion && !sesion.base()) {
     try { await sesion.refrescar(); } catch { /* sesión vencida: refrescar ya la cerró */ }
-    if (sesion.activa()) novedades.actualizar();
   }
   await emergencia.iniciar();
   await carac.iniciar();
@@ -232,11 +263,13 @@ async function iniciar() {
   addEventListener('emergencia-marcas-tarde', e => aviso(`${e.detail} reporte(s) llegaron después del cierre y no se tuvieron en cuenta.`, 'advertencia'));
   // Descarga en segundo plano mapas y planos para que estén sin conexión.
   contenido.precargar();
-  addEventListener('sesion-iniciada', () => { contenido.precargar(); novedades.actualizar(); });
+  // Al ingresar, la sesión ya trajo la carga inicial con las novedades.
+  addEventListener('sesion-iniciada', () => { contenido.precargar(); dispatchEvent(new CustomEvent('novedades-cambio')); });
   // Si el servidor cierra la sesión (por ejemplo, porque le quitaron todos los roles a la persona),
   // la pantalla vuelve sola al ingreso en vez de quedarse con datos que ya no le corresponden.
   addEventListener('sesion-cerrada', enrutar);
   addEventListener('hashchange', enrutar);
+  if (conSesion && sesion.activa() && sesion.base()) actualizarEnSegundoPlano();
   enrutar();
 }
 

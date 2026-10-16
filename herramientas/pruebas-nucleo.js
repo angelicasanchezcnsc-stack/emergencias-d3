@@ -28,14 +28,15 @@ const prueba = (grupo, nombre, fn) => pruebas.push({ grupo, nombre, fn });
 let N;   // { crearNucleo, presenciaDe, sha256, diaISO } evaluados desde Nucleo.gs
 let nav; // módulo web/js/presencia.js
 
-function crearEntorno() {
+function crearEntorno({ conFiltrado = false } = {}) {
   const tablas = {};
   let escrituras = [];
+  let lecturas = [];
   const reloj = { ahora: 0, hoy: '' };
   const props = { PIMIENTA: 'pimienta-de-prueba', CODIGO_INSTALACION: 'CODIGO01' };
   const memoria = new Map();
   const dep = {
-    leer: t => copia(tablas[t] || []),
+    leer: t => { lecturas.push(t); return copia(tablas[t] || []); },
     escribir: (t, f) => { escrituras.push(t); tablas[t] = f.map(x => ({ ...x })); },
     agregar: (t, f) => { escrituras.push(t); (tablas[t] = tablas[t] || []).push({ ...f }); },
     agregarVarias: (t, f) => { escrituras.push(t); (tablas[t] = tablas[t] || []).push(...f.map(x => ({ ...x }))); },
@@ -46,6 +47,9 @@ function crearEntorno() {
     bloqueo: fn => fn(),
     cache: { get: k => (memoria.has(k) ? memoria.get(k) : null), put: (k, v) => { memoria.set(k, v); } }
   };
+  if (conFiltrado) {
+    dep.leerFiltrado = (t, c, v) => { lecturas.push(t + ' (filtrada)'); return copia((tablas[t] || []).filter(f => String(f[c]) === String(v))); };
+  }
   const nucleo = N.crearNucleo(dep);
   const e = {
     // Hora de Bogotá (UTC-5, sin horario de verano).
@@ -56,6 +60,9 @@ function crearEntorno() {
     snapshot: () => JSON.stringify(tablas),
     escrituras: () => escrituras.slice(),
     reiniciarEscrituras() { escrituras = []; },
+    lecturas: () => lecturas.slice(),
+    reiniciarLecturas() { lecturas = []; },
+    usaBloqueo: accion => nucleo.usaBloqueo(accion),
     llamar(accion, datos = {}, token) {
       return copia(nucleo.procesar(copia({ accion, ...(token ? { token } : {}), ...datos })));
     },
@@ -1214,6 +1221,79 @@ prueba(AN, 'Informe real: 4 previstas, 3 evacuadas y 1 «no estaba» → 3 en la
   igual(nav.enSedeDe(p2), 3);
   igual(Math.round(p2.evacuados / nav.enSedeDe(p2) * 100), 100, 'Porcentaje del piso 2');
   igual(nav.enSedeDe(r.total), r.total.esperados - 1, 'Total');
+});
+
+// ---------- Velocidad: lecturas en paralelo, una lectura por hoja y archivos filtrados ----------
+
+const V = 'Velocidad del servidor (16/10/2026)';
+const cuantas = lista => lista.reduce((o, t) => { o[t] = (o[t] || 0) + 1; return o; }, {});
+
+prueba(V, 'Las acciones que solo leen no esperan el candado; las que escriben sí', () => {
+  const e = escenario();
+  ['ping', 'base', 'hoy', 'pulso', 'emergencia', 'bajarArchivo', 'historial', 'novedades', 'caracterizaciones', 'apoyos', 'miCaracterizacion']
+    .forEach(a => igual(e.usaBloqueo(a), false, a));
+  ['ingresar', 'guardarRoles', 'guardarNovedad', 'marcarEmergencia', 'activarEmergencia', 'cerrarEmergencia', 'reenvolver', 'subirArchivo', 'cambiarClave']
+    .forEach(a => igual(e.usaBloqueo(a), true, a));
+});
+prueba(V, 'Ninguna acción sin candado escribe en las hojas', () => {
+  const e = escenario();
+  ['ping', 'base', 'hoy', 'pulso', 'emergencia', 'historial', 'novedades', 'caracterizaciones', 'apoyos', 'miCaracterizacion'].forEach(a => {
+    e.reiniciarEscrituras();
+    e.llamar(a, {}, e.token);
+    igual(e.escrituras(), [], a);
+  });
+});
+prueba(V, 'La carga inicial (base) lee cada hoja una sola vez', () => {
+  const e = escenario();
+  e.reiniciarLecturas();
+  exito(e.llamar('base', {}, e.token));
+  const repetidas = Object.entries(cuantas(e.lecturas())).filter(([, n]) => n > 1);
+  igual(repetidas, [], 'Hojas leídas más de una vez');
+});
+prueba(V, 'Guardar roles lee cada hoja una sola vez', () => {
+  const e = escenario();
+  e.reiniciarLecturas();
+  exito(e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-003', roles: ['asesor'], pisoBrigada: null }] }, e.token));
+  const repetidas = Object.entries(cuantas(e.lecturas())).filter(([, n]) => n > 1);
+  igual(repetidas, [], 'Hojas leídas más de una vez');
+});
+prueba(V, 'Lo escrito en una petición se ve en las lecturas siguientes de esa misma petición', () => {
+  const e = escenario();
+  // guardarNovedad escribe la novedad y después vuelve a leer la hoja para purgar las vencidas.
+  const d = exito(guardar(e, { codigo: 'D3-005' }));
+  afirmar(e.tabla('Novedades').some(n => n.id === d.novedad.id), 'La novedad nueva debía quedar guardada');
+  afirmar(d.novedades.some(n => n.id === d.novedad.id), 'La respuesta debía incluirla');
+});
+prueba(V, 'Cada petición empieza sin memoria: ve los cambios hechos entre una y otra', () => {
+  const e = escenario();
+  exito(e.llamar('base', {}, e.token));
+  const ps = e.tabla('Personas'); ps.push(persona(9, 6, 3)); e.sembrar('Personas', ps);
+  const b = exito(e.llamar('base', {}, e.token));
+  afirmar(b.personas.some(p => p.codigo === 'D3-009'), 'La segunda petición debía ver a la persona nueva');
+});
+prueba(V, 'Las acciones no dañan lo que la memoria guarda (cada lectura es una copia)', () => {
+  const e = escenario();
+  exito(e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-003', roles: ['asesor'], pisoBrigada: null }] }, e.token));
+  const p = e.tabla('Personas').find(x => x.codigo === 'D3-003');
+  igual(p.roles, 'asesor');
+  igual(e.tabla('Personas').length, 8, 'No debía duplicar ni perder personas');
+});
+prueba(V, 'Bajar un archivo con lectura filtrada da lo mismo y no lee la hoja completa', () => {
+  const cargar = e => exito(e.llamar('subirArchivo', { id: 'punto', mime: 'image/png', partes: ['parte-a', 'parte-b', 'parte-c'], tam: 21 }, e.token));
+  const normal = escenario(); cargar(normal);
+  exito(normal.llamar('subirArchivo', { id: 'ruta-2', mime: 'image/png', partes: ['otra'], tam: 4 }, normal.token));
+  const filtrado = crearEntorno({ conFiltrado: true });
+  filtrado.fijarFecha('2026-10-19'); filtrado.sembrar('Puestos', PUESTOS);
+  filtrado.sembrar('Personas', normal.tabla('Personas')); filtrado.sembrar('Config', normal.tabla('Config'));
+  filtrado.sembrar('Archivos', normal.tabla('Archivos'));
+  filtrado.token = filtrado.entrar('D3-001');
+  filtrado.reiniciarLecturas();
+  const a = exito(normal.llamar('bajarArchivo', { id: 'punto' }, normal.token));
+  const b = exito(filtrado.llamar('bajarArchivo', { id: 'punto' }, filtrado.token));
+  igual(b, a, 'Mismo resultado');
+  igual(b.partes, ['parte-a', 'parte-b', 'parte-c']);
+  afirmar(!filtrado.lecturas().includes('Archivos'), 'No debía leer la hoja Archivos completa');
+  afirmar(filtrado.lecturas().includes('Archivos (filtrada)'), 'Debía usar la lectura filtrada');
 });
 
 // ---------- Ejecución y resultado ----------

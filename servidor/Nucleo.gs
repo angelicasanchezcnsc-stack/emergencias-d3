@@ -147,6 +147,19 @@ function presenciaDe(persona, fecha, novedades, festivos) {
  */
 function crearNucleo(dep) {
 
+  // Memoria de lecturas de la petición en curso: cada hoja se lee una sola vez por petición (leer en
+  // Google Sheets cuesta de 0,1 a 0,2 s por hoja). Se vacía al empezar cada petición (procesar) y se
+  // olvida la hoja que se escribe. Devuelve copias, porque las acciones modifican lo que leen.
+  var memoria = {};
+  function copiar(v) { return JSON.parse(JSON.stringify(v)); }
+  function leer(tabla) {
+    if (!Object.prototype.hasOwnProperty.call(memoria, tabla)) memoria[tabla] = dep.leer(tabla);
+    return copiar(memoria[tabla]);
+  }
+  function escribir(tabla, filas) { delete memoria[tabla]; dep.escribir(tabla, filas); }
+  function agregar(tabla, fila) { delete memoria[tabla]; dep.agregar(tabla, fila); }
+  function agregarVarias(tabla, filas) { delete memoria[tabla]; dep.agregarVarias(tabla, filas); }
+
   function ok(datos) { return { ok: true, datos: datos || {} }; }
   function falla(codigo, mensaje) { return { ok: false, codigo: codigo, error: mensaje }; }
 
@@ -162,17 +175,17 @@ function crearNucleo(dep) {
   function hashVerificador(v) { return sha256(texto(dep.prop('PIMIENTA')) + '|' + texto(v)); }
 
   function bitacora(codigo, accion, detalle) {
-    dep.agregar('Bitacora', { fecha: new Date(dep.ahora()).toISOString(), codigo: codigo || '', accion: accion, detalle: detalle || '' });
+    agregar('Bitacora', { fecha: new Date(dep.ahora()).toISOString(), codigo: codigo || '', accion: accion, detalle: detalle || '' });
   }
 
   function leerConfig() {
     var cfg = JSON.parse(JSON.stringify(CONFIG_INICIAL));
-    dep.leer('Config').forEach(function (f) { cfg[f.clave] = json(f.valor, f.valor); });
+    leer('Config').forEach(function (f) { cfg[f.clave] = json(f.valor, f.valor); });
     return cfg;
   }
 
   function escribirConfig(cfg) {
-    dep.escribir('Config', Object.keys(cfg).map(function (k) { return { clave: k, valor: JSON.stringify(cfg[k]) }; }));
+    escribir('Config', Object.keys(cfg).map(function (k) { return { clave: k, valor: JSON.stringify(cfg[k]) }; }));
   }
 
   function perfil(p) {
@@ -204,7 +217,7 @@ function crearNucleo(dep) {
   // Llaves públicas vigentes de las personas activas: { codigo: pub }.
   function llavesPublicas() {
     var o = {};
-    dep.leer('Personas').filter(activa).forEach(function (x) { o[x.codigo] = texto(x.pub); });
+    leer('Personas').filter(activa).forEach(function (x) { o[x.codigo] = texto(x.pub); });
     return o;
   }
 
@@ -232,19 +245,19 @@ function crearNucleo(dep) {
 
   function borrarCaracterizacionesInactivas(personas) {
     var activos = personas.filter(activa).map(function (x) { return x.codigo; });
-    var filas = dep.leer('Caracterizaciones');
+    var filas = leer('Caracterizaciones');
     var quedan = filas.filter(function (f) { return activos.indexOf(f.codigo) >= 0; });
-    if (quedan.length !== filas.length) dep.escribir('Caracterizaciones', quedan);
+    if (quedan.length !== filas.length) escribir('Caracterizaciones', quedan);
   }
 
   function sesionActual(token) {
     if (!token) return null;
     var th = sha256(texto(token));
     var ahora = dep.ahora();
-    var s = dep.leer('Sesiones').filter(function (x) { return x.tokenHash === th && num(x.expira) > ahora; })[0];
+    var s = leer('Sesiones').filter(function (x) { return x.tokenHash === th && num(x.expira) > ahora; })[0];
     if (!s) return null;
     // Quitarle todos los roles a alguien invalida sus sesiones en la siguiente petición.
-    var p = dep.leer('Personas').filter(function (x) { return x.codigo === s.codigo && tieneAcceso(x); })[0];
+    var p = leer('Personas').filter(function (x) { return x.codigo === s.codigo && tieneAcceso(x); })[0];
     return p || null;
   }
 
@@ -253,13 +266,13 @@ function crearNucleo(dep) {
   }
 
   function guardarSobre(nombre, datosCifrados) {
-    var sobres = dep.leer('Sobres');
+    var sobres = leer('Sobres');
     var s = sobres.filter(function (x) { return x.nombre === nombre; })[0];
     if (!s) { s = { nombre: nombre, version: 0 }; sobres.push(s); }
     s.version = num(s.version) + 1;
     s.datos = datosCifrados;
     s.actualizado = new Date(dep.ahora()).toISOString();
-    dep.escribir('Sobres', sobres);
+    escribir('Sobres', sobres);
     return s.version;
   }
 
@@ -318,9 +331,9 @@ function crearNucleo(dep) {
     var hoy = dep.hoy();
     if (cfg.ultimaPurga === hoy) return;
     var lb = new Date(dep.ahora() - Math.max(1, num(cfg.diasBitacora || 365)) * 86400000).toISOString().slice(0, 10);
-    var bit = dep.leer('Bitacora');
+    var bit = leer('Bitacora');
     var bit2 = bit.filter(function (f) { return texto(f.fecha).slice(0, 10) >= lb; });
-    if (bit2.length < bit.length) dep.escribir('Bitacora', bit2);
+    if (bit2.length < bit.length) escribir('Bitacora', bit2);
     cfg.ultimaPurga = hoy;
     escribirConfig(cfg);
   }
@@ -345,20 +358,20 @@ function crearNucleo(dep) {
   // Novedades que aún no vencen (hasta >= hoy): las de hoy y las futuras.
   function novedadesVigentes() {
     var hoy = dep.hoy();
-    return dep.leer('Novedades').filter(function (n) { return texto(n.hasta) >= hoy; }).map(novedadPublica);
+    return leer('Novedades').filter(function (n) { return texto(n.hasta) >= hoy; }).map(novedadPublica);
   }
 
   // Las novedades vencidas no sirven para nada: se borran al escribir.
   function purgarNovedades() {
     var hoy = dep.hoy();
-    var filas = dep.leer('Novedades');
+    var filas = leer('Novedades');
     var quedan = filas.filter(function (n) { return texto(n.hasta) >= hoy; });
-    if (quedan.length < filas.length) dep.escribir('Novedades', quedan);
+    if (quedan.length < filas.length) escribir('Novedades', quedan);
   }
 
   // Sobres de contenido y lista de archivos disponibles (sin su contenido).
   function contenidoPublico(cfg) {
-    var sobres = dep.leer('Sobres');
+    var sobres = leer('Sobres');
     var salida = {};
     Object.keys(SOBRES_CONTENIDO).forEach(function (n) {
       var s = sobres.filter(function (x) { return x.nombre === n; })[0];
@@ -374,7 +387,7 @@ function crearNucleo(dep) {
   // ---------- Emergencias ----------
 
   function emergenciaActiva(lista) {
-    return (lista || dep.leer('Emergencias')).filter(function (e) { return e.estado === 'activa'; })[0] || null;
+    return (lista || leer('Emergencias')).filter(function (e) { return e.estado === 'activa'; })[0] || null;
   }
 
   function emergenciaPublica(e) {
@@ -389,14 +402,14 @@ function crearNucleo(dep) {
   // recibe su propia marca y las cifras por piso: nunca el detalle de otras personas
   // (por ejemplo, quién necesita asistencia por discapacidad).
   function estadoEmergencia(id, p) {
-    var lista = dep.leer('Emergencias');
+    var lista = leer('Emergencias');
     var e = id ? lista.filter(function (x) { return x.id === id; })[0] : emergenciaActiva(lista);
     if (!e) return { emergencia: null, marcas: [], conteos: [] };
     if (p && !puedeEditar(p, ROLES_REPORTAR)) {
       var pub = emergenciaPublica(e);
       pub.esperados = {};
       var r = e.estado === 'activa' ? resumenCierre(e, '') : null;
-      var propia = dep.leer('MarcasEmergencia').filter(function (m) { return m.emergencia === e.id && m.codigo === p.codigo; })
+      var propia = leer('MarcasEmergencia').filter(function (m) { return m.emergencia === e.id && m.codigo === p.codigo; })
         .map(function (m) { return { codigo: m.codigo, estado: texto(m.estado), asistencia: texto(m.asistencia) === 'true', llegada: texto(m.llegada), reportadoPor: '', actualizado: '' }; });
       return {
         emergencia: pub, marcas: propia, conteos: [],
@@ -408,10 +421,10 @@ function crearNucleo(dep) {
     }
     return {
       emergencia: emergenciaPublica(e),
-      marcas: dep.leer('MarcasEmergencia').filter(function (m) { return m.emergencia === e.id; }).map(function (m) {
+      marcas: leer('MarcasEmergencia').filter(function (m) { return m.emergencia === e.id; }).map(function (m) {
         return { codigo: m.codigo, estado: texto(m.estado), asistencia: texto(m.asistencia) === 'true', llegada: texto(m.llegada), reportadoPor: texto(m.reportadoPor), actualizado: texto(m.actualizado) };
       }),
-      conteos: dep.leer('ConteosEmergencia').filter(function (c) { return c.emergencia === e.id; }).map(function (c) {
+      conteos: leer('ConteosEmergencia').filter(function (c) { return c.emergencia === e.id; }).map(function (c) {
         return { piso: num(c.piso), evacuados: num(c.evacuados), noUbicados: num(c.noUbicados), apoyo: num(c.apoyo), reportadoPor: texto(c.reportadoPor) };
       })
     };
@@ -423,7 +436,7 @@ function crearNucleo(dep) {
   function fotoEsperados() {
     var hoy = dep.hoy(), nov = novedadesVigentes(), fest = leerConfig().festivos || [];
     var foto = {};
-    dep.leer('Personas').filter(activa).forEach(function (p) {
+    leer('Personas').filter(activa).forEach(function (p) {
       var r = presenciaDe(p, hoy, nov, fest);
       if (!r.presente) return;
       foto[r.piso] = foto[r.piso] || { en: [], sin: [] };
@@ -436,9 +449,9 @@ function crearNucleo(dep) {
   // Los tiempos salen del momento en que se hizo cada marca (reloj del celular).
   function resumenCierre(e, observaciones) {
     var foto = json(e.esperados, {});
-    var marcas = dep.leer('MarcasEmergencia').filter(function (m) { return m.emergencia === e.id; });
-    var conteos = dep.leer('ConteosEmergencia').filter(function (c) { return c.emergencia === e.id; });
-    var personas = dep.leer('Personas');
+    var marcas = leer('MarcasEmergencia').filter(function (m) { return m.emergencia === e.id; });
+    var conteos = leer('ConteosEmergencia').filter(function (c) { return c.emergencia === e.id; });
+    var personas = leer('Personas');
     var pisoDe = {}, grupoDe = {}, marca = {};
     Object.keys(foto).forEach(function (piso) {
       (foto[piso].en || []).forEach(function (c) { pisoDe[c] = num(piso); grupoDe[c] = 'en'; });
@@ -554,17 +567,17 @@ function crearNucleo(dep) {
   var acciones = {
 
     ping: function () {
-      return ok({ servicio: 'EMERGENCIAS D3', inicializado: dep.leer('Personas').length > 0 });
+      return ok({ servicio: 'EMERGENCIAS D3', inicializado: leer('Personas').length > 0 });
     },
 
     inicializar: function (d) {
-      if (dep.leer('Personas').length > 0) return falla('YA_INICIALIZADO', 'El aplicativo ya fue inicializado.');
+      if (leer('Personas').length > 0) return falla('YA_INICIALIZADO', 'El aplicativo ya fue inicializado.');
       if (!d.codigoInstalacion || texto(d.codigoInstalacion).trim() !== texto(dep.prop('CODIGO_INSTALACION')))
         return falla('CODIGO', 'El código de instalación no coincide.');
       var personas = [];
       aplicarPadron(d.personas || [], personas);
-      dep.escribir('Personas', personas);
-      dep.escribir('Puestos', d.puestos || []);
+      escribir('Personas', personas);
+      escribir('Puestos', d.puestos || []);
       if (d.sobreDirectorio) guardarSobre('directorio', d.sobreDirectorio);
       Object.keys(SOBRES_CONTENIDO).forEach(function (n) {
         var datos = d.sobresContenido && d.sobresContenido[n];
@@ -577,7 +590,7 @@ function crearNucleo(dep) {
 
     ingresar: function (d) {
       var ahora = dep.ahora();
-      var personas = dep.leer('Personas');
+      var personas = leer('Personas');
       var p = personas.filter(function (x) { return x.hashCorreo === d.hashCorreo && activa(x); })[0];
       if (!p) { bitacora('', 'ingreso-fallido', 'correo no registrado'); return falla('CREDENCIALES', 'Correo o contraseña incorrectos.'); }
       if (num(p.bloqueadoHasta) > ahora) {
@@ -587,12 +600,12 @@ function crearNucleo(dep) {
       if (hashVerificador(d.verificador) !== p.verificador) {
         p.intentos = num(p.intentos) + 1;
         if (p.intentos >= MAX_INTENTOS) { p.bloqueadoHasta = ahora + MINUTOS_BLOQUEO * 60000; p.intentos = 0; }
-        dep.escribir('Personas', personas);
+        escribir('Personas', personas);
         bitacora(p.codigo, 'ingreso-fallido', '');
         return falla('CREDENCIALES', 'Correo o contraseña incorrectos.');
       }
       p.intentos = 0; p.bloqueadoHasta = 0;
-      dep.escribir('Personas', personas);
+      escribir('Personas', personas);
       // La contraseña es correcta, pero sin ningún rol no hay acceso. Se verifica primero la
       // contraseña para no revelar a quien no la conoce si un correo existe.
       if (!tieneAcceso(p)) {
@@ -601,9 +614,9 @@ function crearNucleo(dep) {
       }
       var token = (dep.uuid() + dep.uuid()).replace(/-/g, '');
       var cfg = leerConfig();
-      var sesiones = dep.leer('Sesiones').filter(function (s) { return num(s.expira) > ahora; });
+      var sesiones = leer('Sesiones').filter(function (s) { return num(s.expira) > ahora; });
       sesiones.push({ tokenHash: sha256(token), codigo: p.codigo, creada: ahora, expira: ahora + num(cfg.diasSesion) * 86400000 });
-      dep.escribir('Sesiones', sesiones);
+      escribir('Sesiones', sesiones);
       // Mantenimiento: aunque nadie registre novedades, la bitácora vieja (una vez al día) y las
       // novedades vencidas se borran al primer ingreso que ocurra.
       purgarNovedades();
@@ -614,17 +627,17 @@ function crearNucleo(dep) {
 
     salir: function (d) {
       var th = sha256(texto(d.token));
-      dep.escribir('Sesiones', dep.leer('Sesiones').filter(function (s) { return s.tokenHash !== th; }));
+      escribir('Sesiones', leer('Sesiones').filter(function (s) { return s.tokenHash !== th; }));
       return ok();
     },
 
     base: function (d, p) {
       var cfg = leerConfig();
-      var dir = dep.leer('Sobres').filter(function (s) { return s.nombre === 'directorio'; })[0];
+      var dir = leer('Sobres').filter(function (s) { return s.nombre === 'directorio'; })[0];
       return ok({
         perfil: perfil(p),
-        personas: dep.leer('Personas').map(publica),
-        puestos: dep.leer('Puestos').map(function (x) { return { piso: num(x.piso), puesto: num(x.puesto), estado: texto(x.estado) }; }),
+        personas: leer('Personas').map(publica),
+        puestos: leer('Puestos').map(function (x) { return { piso: num(x.piso), puesto: num(x.puesto), estado: texto(x.estado) }; }),
         directorio: dir ? { version: num(dir.version), datos: dir.datos } : null,
         config: { reglasClave: cfg.reglasClave, exigirCambioInicial: !!cfg.exigirCambioInicial, diasSesion: num(cfg.diasSesion), diasBitacora: num(cfg.diasBitacora), festivos: cfg.festivos || [] },
         novedades: novedadesVigentes(),
@@ -663,7 +676,7 @@ function crearNucleo(dep) {
         simulacro: simulacro ? 'true' : 'false', estado: 'activa', inicio: inicio, activadaPor: p.codigo,
         cierre: '', cerradaPor: '', version: 1, esperados: JSON.stringify(fotoEsperados())
       };
-      dep.agregar('Emergencias', e);
+      agregar('Emergencias', e);
       bitacora(p.codigo, simulacro ? 'simulacro-inicio' : 'emergencia-inicio', e.id + ' ' + e.tipo);
       return ok(estadoEmergencia(e.id, p));
     },
@@ -674,10 +687,10 @@ function crearNucleo(dep) {
     // op = { id, emergencia, momento, tipo: 'persona', codigo, campos: { estado?, asistencia?, llegada? } }
     //    | { id, emergencia, momento, tipo: 'conteo', piso, campos: { evacuados?, noUbicados?, apoyo? } }
     marcarEmergencia: function (d, p) {
-      var lista = dep.leer('Emergencias');
-      var personas = dep.leer('Personas').filter(activa);
-      var marcas = dep.leer('MarcasEmergencia');
-      var conteos = dep.leer('ConteosEmergencia');
+      var lista = leer('Emergencias');
+      var personas = leer('Personas').filter(activa);
+      var marcas = leer('MarcasEmergencia');
+      var conteos = leer('ConteosEmergencia');
       var reporta = puedeEditar(p, ROLES_REPORTAR);
       var ahora = new Date(dep.ahora()).toISOString();
       var tocadas = {};
@@ -712,17 +725,17 @@ function crearNucleo(dep) {
         if (cambio) tocadas[e.id] = true;
         return { id: op.id, estado: 'ok' };
       });
-      dep.escribir('MarcasEmergencia', marcas);
-      dep.escribir('ConteosEmergencia', conteos);
+      escribir('MarcasEmergencia', marcas);
+      escribir('ConteosEmergencia', conteos);
       if (Object.keys(tocadas).length) {
         lista.forEach(function (e) { if (tocadas[e.id]) e.version = num(e.version) + 1; });
-        dep.escribir('Emergencias', lista);
+        escribir('Emergencias', lista);
       }
       return ok({ resultados: resultados, estado: estadoEmergencia(null, p) });
     },
 
     cerrarEmergencia: function (d, p) {
-      var lista = dep.leer('Emergencias');
+      var lista = leer('Emergencias');
       var e = lista.filter(function (x) { return x.id === d.id && x.estado === 'activa'; })[0];
       if (!e) return falla('NO_ACTIVA', 'Esa emergencia ya fue cerrada.');
       var simulacro = texto(e.simulacro) === 'true';
@@ -737,9 +750,9 @@ function crearNucleo(dep) {
       // (quién estaba, a quién se marcó, quién necesitó asistencia): lo mínimo necesario.
       e.resumen = JSON.stringify(resumenCierre(e, d.observaciones));
       e.esperados = '{}';
-      dep.escribir('MarcasEmergencia', dep.leer('MarcasEmergencia').filter(function (m) { return m.emergencia !== e.id; }));
-      dep.escribir('ConteosEmergencia', dep.leer('ConteosEmergencia').filter(function (c) { return c.emergencia !== e.id; }));
-      dep.escribir('Emergencias', lista);
+      escribir('MarcasEmergencia', leer('MarcasEmergencia').filter(function (m) { return m.emergencia !== e.id; }));
+      escribir('ConteosEmergencia', leer('ConteosEmergencia').filter(function (c) { return c.emergencia !== e.id; }));
+      escribir('Emergencias', lista);
       bitacora(p.codigo, simulacro ? 'simulacro-cierre' : 'emergencia-cierre', e.id);
       return ok(estadoEmergencia(e.id, p));
     },
@@ -749,7 +762,7 @@ function crearNucleo(dep) {
     // Cada persona genera su par de llaves la primera vez que ingresa. La privada llega
     // ya cifrada con su contraseña: el servidor nunca puede abrirla.
     registrarPar: function (d, p) {
-      var personas = dep.leer('Personas');
+      var personas = leer('Personas');
       var x = personas.filter(function (y) { return y.codigo === p.codigo; })[0];
       var sobres = json(x.sobres, {});
       if (sobres.priv) return falla('YA_EXISTE', 'Ya tiene un par de llaves.');
@@ -758,7 +771,7 @@ function crearNucleo(dep) {
       sobres.priv = d.priv;
       x.sobres = JSON.stringify(sobres);
       x.actualizado = new Date(dep.ahora()).toISOString();
-      dep.escribir('Personas', personas);
+      escribir('Personas', personas);
       bitacora(p.codigo, 'par-llaves', '');
       return ok({ perfil: perfil(x) });
     },
@@ -775,7 +788,7 @@ function crearNucleo(dep) {
       }
       var v = d.consentimiento ? texto(d.consentimiento.v).slice(0, 20) : '';
       if (!v) return falla('CONSENTIMIENTO', 'Falta la aceptación de la autorización de tratamiento de datos.');
-      var filas = dep.leer('Caracterizaciones');
+      var filas = leer('Caracterizaciones');
       var actual = filas.filter(function (c) { return c.codigo === p.codigo; })[0];
       var versionActual = actual ? num(actual.version) : 0;
       if (d.versionBase !== undefined && d.versionBase !== null && num(d.versionBase) !== versionActual) {
@@ -791,7 +804,7 @@ function crearNucleo(dep) {
         apoyo: d.apoyo, clavesApoyo: JSON.stringify(clavesApoyo),
         consentimiento: JSON.stringify({ v: v, f: conservaFecha ? previo.f : ahora, modo: 'propio', por: p.codigo }), actualizado: ahora
       };
-      dep.escribir('Caracterizaciones', filas.filter(function (c) { return c.codigo !== p.codigo; }).concat([fila]));
+      escribir('Caracterizaciones', filas.filter(function (c) { return c.codigo !== p.codigo; }).concat([fila]));
       if (previo.v !== v || previo.modo === 'fisico') bitacora(p.codigo, 'consentimiento', v);
       bitacora(p.codigo, 'caracterizacion', 'v' + fila.version);
       return ok({ version: fila.version, consentimiento: JSON.parse(fila.consentimiento) });
@@ -803,7 +816,7 @@ function crearNucleo(dep) {
     // ella registra su llave pública, la coordinación (reenvolver) le agrega su envoltorio.
     guardarCaracterizacionAsistida: function (d, p) {
       if (!puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden registrar una caracterización asistida.');
-      var dueno = dep.leer('Personas').filter(function (x) { return x.codigo === d.codigo && activa(x); })[0];
+      var dueno = leer('Personas').filter(function (x) { return x.codigo === d.codigo && activa(x); })[0];
       if (!dueno) return falla('DATOS', 'La persona no existe o ya no está activa.');
       if (tieneAcceso(dueno)) return falla('PERMISO', 'Esta persona tiene acceso al aplicativo: debe diligenciar su caracterización ella misma.');
       var pubs = llavesPublicas();
@@ -819,7 +832,7 @@ function crearNucleo(dep) {
       if (!v || c.fisico !== true) return falla('CONSENTIMIENTO', 'Falta confirmar que la persona firmó el formato de autorización de tratamiento de datos.');
       if (!fechaValida(c.fechaFirma)) return falla('CONSENTIMIENTO', 'La fecha de la firma no es válida.');
       if (c.fechaFirma > dep.hoy()) return falla('CONSENTIMIENTO', 'La fecha de la firma no puede ser futura.');
-      var filas = dep.leer('Caracterizaciones');
+      var filas = leer('Caracterizaciones');
       var actual = filas.filter(function (x) { return x.codigo === d.codigo; })[0];
       var versionActual = actual ? num(actual.version) : 0;
       if (d.versionBase !== undefined && d.versionBase !== null && num(d.versionBase) !== versionActual) {
@@ -831,7 +844,7 @@ function crearNucleo(dep) {
         apoyo: d.apoyo, clavesApoyo: JSON.stringify(clavesApoyo),
         consentimiento: JSON.stringify({ v: v, f: c.fechaFirma + 'T00:00:00.000Z', modo: 'fisico', por: p.codigo }), actualizado: ahora
       };
-      dep.escribir('Caracterizaciones', filas.filter(function (x) { return x.codigo !== d.codigo; }).concat([fila]));
+      escribir('Caracterizaciones', filas.filter(function (x) { return x.codigo !== d.codigo; }).concat([fila]));
       bitacora(p.codigo, 'caracterizacion-asistida', d.codigo);
       return ok({ version: fila.version, consentimiento: JSON.parse(fila.consentimiento) });
     },
@@ -839,17 +852,17 @@ function crearNucleo(dep) {
     // La coordinación borra el registro de una persona sin acceso, a solicitud de ella.
     revocarCaracterizacionDe: function (d, p) {
       if (!puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden hacer esto.');
-      var dueno = dep.leer('Personas').filter(function (x) { return x.codigo === d.codigo; })[0];
+      var dueno = leer('Personas').filter(function (x) { return x.codigo === d.codigo; })[0];
       if (!dueno) return falla('DATOS', 'La persona no existe.');
       if (tieneAcceso(dueno)) return falla('PERMISO', 'Esta persona tiene acceso al aplicativo: ella misma puede revocar su autorización.');
-      var filas = dep.leer('Caracterizaciones');
+      var filas = leer('Caracterizaciones');
       var quedan = filas.filter(function (x) { return x.codigo !== d.codigo; });
-      if (quedan.length !== filas.length) { dep.escribir('Caracterizaciones', quedan); bitacora(p.codigo, 'revocacion-asistida', d.codigo); }
+      if (quedan.length !== filas.length) { escribir('Caracterizaciones', quedan); bitacora(p.codigo, 'revocacion-asistida', d.codigo); }
       return ok();
     },
 
     miCaracterizacion: function (d, p) {
-      var f = dep.leer('Caracterizaciones').filter(function (c) { return c.codigo === p.codigo; })[0];
+      var f = leer('Caracterizaciones').filter(function (c) { return c.codigo === p.codigo; })[0];
       if (!f) return ok({ registro: null });
       return ok({
         registro: {
@@ -862,9 +875,9 @@ function crearNucleo(dep) {
 
     // La persona revoca su autorización: se borra todo su registro.
     revocarCaracterizacion: function (d, p) {
-      var filas = dep.leer('Caracterizaciones');
+      var filas = leer('Caracterizaciones');
       var quedan = filas.filter(function (c) { return c.codigo !== p.codigo; });
-      if (quedan.length !== filas.length) { dep.escribir('Caracterizaciones', quedan); bitacora(p.codigo, 'revocacion', ''); }
+      if (quedan.length !== filas.length) { escribir('Caracterizaciones', quedan); bitacora(p.codigo, 'revocacion', ''); }
       return ok();
     },
 
@@ -873,9 +886,9 @@ function crearNucleo(dep) {
     caracterizaciones: function (d, p) {
       if (!puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden ver las caracterizaciones.');
       var activos = llavesPublicas();
-      var personas = dep.leer('Personas');
+      var personas = leer('Personas');
       return ok({
-        caracterizaciones: dep.leer('Caracterizaciones').filter(function (f) { return activos[f.codigo] !== undefined; }).map(function (f) {
+        caracterizaciones: leer('Caracterizaciones').filter(function (f) { return activos[f.codigo] !== undefined; }).map(function (f) {
           var c = json(f.claves, {}), a = json(f.clavesApoyo, {});
           var cons = json(f.consentimiento, null);
           var dueno = personas.filter(function (x) { return x.codigo === f.codigo; })[0];
@@ -895,9 +908,9 @@ function crearNucleo(dep) {
     apoyos: function (d, p) {
       var lector = puedeEditar(p, ROLES_LECTORES);
       var pisoBrigada = tieneRol(p, 'brigadista') ? num(p.pisoBrigada) : 0;
-      var personas = dep.leer('Personas').filter(activa);
+      var personas = leer('Personas').filter(activa);
       var salida = [];
-      dep.leer('Caracterizaciones').forEach(function (f) {
+      leer('Caracterizaciones').forEach(function (f) {
         if (f.codigo === p.codigo) return;
         var dueno = personas.filter(function (x) { return x.codigo === f.codigo; })[0];
         var w = json(f.clavesApoyo, {})[p.codigo];
@@ -913,7 +926,7 @@ function crearNucleo(dep) {
     reenvolver: function (d, p) {
       if (!puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden hacer esto.');
       var pubs = llavesPublicas();
-      var filas = dep.leer('Caracterizaciones');
+      var filas = leer('Caracterizaciones');
       var n = 0;
       (d.cambios || []).forEach(function (c) {
         var f = filas.filter(function (x) { return x.codigo === c.codigo; })[0];
@@ -931,7 +944,7 @@ function crearNucleo(dep) {
         });
         n++;
       });
-      dep.escribir('Caracterizaciones', filas);
+      escribir('Caracterizaciones', filas);
       if (n) bitacora(p.codigo, 'accesos', n + ' registro(s)');
       return ok({ n: n });
     },
@@ -939,7 +952,7 @@ function crearNucleo(dep) {
     // Histórico de emergencias y simulacros cerrados: solo totales y tiempos.
     historial: function (d, p) {
       if (!puedeEditar(p, ROLES_REPORTAR)) return falla('PERMISO', 'No tiene permiso para ver el histórico.');
-      var cerradas = dep.leer('Emergencias').filter(function (e) { return e.estado === 'cerrada'; })
+      var cerradas = leer('Emergencias').filter(function (e) { return e.estado === 'cerrada'; })
         .sort(function (a, b) { return num(b.inicio) - num(a.inicio); }).slice(0, 100)
         .map(function (e) {
           var o = emergenciaPublica(e);
@@ -959,7 +972,7 @@ function crearNucleo(dep) {
       if (!permitidos) return falla('DATOS', 'Contenido desconocido.');
       if (!puedeEditar(p, permitidos)) return falla('PERMISO', 'No tiene permiso para modificar este contenido.');
       if (!d.datos || texto(d.datos).length > LIMITE_CELDA) return falla('DATOS', 'El contenido es demasiado largo. Acórtelo e intente de nuevo.');
-      var actual = dep.leer('Sobres').filter(function (x) { return x.nombre === d.nombre; })[0];
+      var actual = leer('Sobres').filter(function (x) { return x.nombre === d.nombre; })[0];
       var versionActual = actual ? num(actual.version) : 0;
       if (d.versionBase !== undefined && d.versionBase !== null && num(d.versionBase) !== versionActual) {
         return falla('CONFLICTO', 'Otra persona modificó esto mientras usted lo editaba. Se recargó la versión nueva: revise e intente de nuevo.');
@@ -982,8 +995,8 @@ function crearNucleo(dep) {
       var cfg = leerConfig();
       var archivos = cfg.archivos || {};
       var version = (archivos[d.id] ? num(archivos[d.id].version) : 0) + 1;
-      dep.escribir('Archivos', dep.leer('Archivos').filter(function (f) { return f.id !== d.id; }));
-      dep.agregarVarias('Archivos', partes.map(function (x, k) { return { id: d.id, parte: k, datos: x }; }));
+      escribir('Archivos', leer('Archivos').filter(function (f) { return f.id !== d.id; }));
+      agregarVarias('Archivos', partes.map(function (x, k) { return { id: d.id, parte: k, datos: x }; }));
       archivos[d.id] = { mime: d.mime, version: version, partes: partes.length, tam: num(d.tam) };
       cfg.archivos = archivos;
       escribirConfig(cfg);
@@ -994,7 +1007,9 @@ function crearNucleo(dep) {
     bajarArchivo: function (d) {
       var meta = (leerConfig().archivos || {})[d.id];
       if (!meta) return falla('NO_EXISTE', 'Ese archivo aún no está cargado.');
-      var partes = dep.leer('Archivos').filter(function (f) { return f.id === d.id; })
+      // Si el adaptador sabe leer solo las filas de un archivo, no se lee la hoja completa (guarda todos los mapas y planos).
+      var filasArchivo = dep.leerFiltrado ? dep.leerFiltrado('Archivos', 'id', texto(d.id)) : leer('Archivos').filter(function (f) { return f.id === d.id; });
+      var partes = filasArchivo
         .sort(function (a, b) { return num(a.parte) - num(b.parte); })
         .map(function (f) { return f.datos; });
       if (partes.length !== num(meta.partes)) return falla('ERROR', 'El archivo está incompleto. Pida al administrador que lo cargue de nuevo.');
@@ -1006,7 +1021,7 @@ function crearNucleo(dep) {
       var cfg = leerConfig();
       var archivos = cfg.archivos || {};
       if (!archivos[d.id]) return ok();
-      dep.escribir('Archivos', dep.leer('Archivos').filter(function (f) { return f.id !== d.id; }));
+      escribir('Archivos', leer('Archivos').filter(function (f) { return f.id !== d.id; }));
       delete archivos[d.id];
       cfg.archivos = archivos;
       escribirConfig(cfg);
@@ -1025,7 +1040,7 @@ function crearNucleo(dep) {
     // para cualquier persona activa. No guarda el motivo: solo si estará o no en la sede.
     guardarNovedad: function (d, p) {
       var hoy = dep.hoy();
-      var persona = dep.leer('Personas').filter(function (x) { return x.codigo === d.codigo && activa(x); })[0];
+      var persona = leer('Personas').filter(function (x) { return x.codigo === d.codigo && activa(x); })[0];
       if (!persona) return falla('DATOS', 'La persona no existe o ya no está activa.');
       if (TIPOS_NOVEDAD.indexOf(d.tipo) < 0) return falla('DATOS', 'Tipo de novedad no válido.');
       if (!fechaValida(d.desde) || !fechaValida(d.hasta)) return falla('DATOS', 'Las fechas no son válidas.');
@@ -1035,7 +1050,7 @@ function crearNucleo(dep) {
       if (diasEntre(d.desde, d.hasta) > MAX_DIAS_NOVEDAD) return falla('DATOS', 'El rango no puede superar ' + MAX_DIAS_NOVEDAD + ' días.');
       var piso = '', puesto = '';
       if (d.tipo === 'otro_lugar') {
-        var puestos = dep.leer('Puestos');
+        var puestos = leer('Puestos');
         piso = num(d.piso);
         puesto = num(d.puesto);
         if (!piso || !puestos.some(function (x) { return num(x.piso) === piso; })) return falla('DATOS', 'El piso no existe.');
@@ -1043,7 +1058,7 @@ function crearNucleo(dep) {
           return falla('DATOS', 'Ese puesto no es de ese piso.');
         }
       }
-      var filas = dep.leer('Novedades');
+      var filas = leer('Novedades');
       var fila;
       if (d.id) {
         fila = filas.filter(function (x) { return x.id === d.id; })[0];
@@ -1056,7 +1071,7 @@ function crearNucleo(dep) {
       fila.piso = piso; fila.puesto = puesto;
       fila.registradoPor = p.codigo;
       fila.actualizado = new Date(dep.ahora()).toISOString();
-      dep.escribir('Novedades', filas);
+      escribir('Novedades', filas);
       purgarNovedades();
       purgarAntiguos();
       bitacora(p.codigo, 'novedad', fila.id);
@@ -1064,10 +1079,10 @@ function crearNucleo(dep) {
     },
 
     quitarNovedad: function (d, p) {
-      var filas = dep.leer('Novedades');
+      var filas = leer('Novedades');
       var quedan = filas.filter(function (x) { return x.id !== d.id; });
       if (quedan.length !== filas.length) {
-        dep.escribir('Novedades', quedan);
+        escribir('Novedades', quedan);
         bitacora(p.codigo, 'novedad-quitada', texto(d.id));
       }
       return ok({ novedades: novedadesVigentes() });
@@ -1090,7 +1105,7 @@ function crearNucleo(dep) {
     },
 
     cambiarClave: function (d, p) {
-      var personas = dep.leer('Personas');
+      var personas = leer('Personas');
       var yo = personas.filter(function (x) { return x.codigo === p.codigo; })[0];
       if (hashVerificador(d.verificadorActual) !== yo.verificador) return falla('CREDENCIALES', 'La contraseña actual no es correcta.');
       if (!d.verificadorNuevo || !d.sobresNuevos) return falla('DATOS', 'Faltan datos para cambiar la contraseña.');
@@ -1101,22 +1116,22 @@ function crearNucleo(dep) {
       yo.sobres = JSON.stringify(d.sobresNuevos);
       yo.debeCambiar = 'false';
       yo.actualizado = new Date(dep.ahora()).toISOString();
-      dep.escribir('Personas', personas);
+      escribir('Personas', personas);
       // Se cierran las demás sesiones de la persona (otro celular, un equipo prestado): solo sigue esta.
       var actual = sha256(texto(d.token));
-      dep.escribir('Sesiones', dep.leer('Sesiones').filter(function (s) { return s.codigo !== p.codigo || s.tokenHash === actual; }));
+      escribir('Sesiones', leer('Sesiones').filter(function (s) { return s.codigo !== p.codigo || s.tokenHash === actual; }));
       bitacora(p.codigo, 'cambio-clave', '');
       return ok({ perfil: perfil(yo) });
     },
 
     guardarPadron: function (d, p) {
       if (!soloAdmin(p)) return falla('PERMISO', 'Solo el administrador puede hacer esto.');
-      var personas = dep.leer('Personas');
+      var personas = leer('Personas');
       aplicarPadron(d.personas || [], personas);
-      dep.escribir('Personas', personas);
+      escribir('Personas', personas);
       // Quien se retira deja de estar en el Despacho: se borra su caracterización.
       borrarCaracterizacionesInactivas(personas);
-      if (d.puestos) dep.escribir('Puestos', d.puestos);
+      if (d.puestos) escribir('Puestos', d.puestos);
       var version = d.sobreDirectorio ? guardarSobre('directorio', d.sobreDirectorio) : null;
       bitacora(p.codigo, 'padron', (d.personas || []).length + ' cambios');
       return ok({ versionDirectorio: version });
@@ -1126,8 +1141,8 @@ function crearNucleo(dep) {
     // las personas activas (no solo las que cambian); si algo falla no se escribe nada.
     guardarRoles: function (d, p) {
       if (!soloAdmin(p)) return falla('PERMISO', 'Solo el administrador puede hacer esto.');
-      var personas = dep.leer('Personas');
-      var pisosSede = dep.leer('Puestos').map(function (q) { return num(q.piso); });
+      var personas = leer('Personas');
+      var pisosSede = leer('Puestos').map(function (q) { return num(q.piso); });
       var cambios = Array.isArray(d.cambios) ? d.cambios : [];
       var ahora = new Date(dep.ahora()).toISOString();
       var tocadas = {};
@@ -1165,13 +1180,13 @@ function crearNucleo(dep) {
           return falla('DATOS', 'El piso ' + n + ' tiene más de ' + MAX_BRIGADISTAS_POR_PISO + ' brigadistas.');
         }
       }
-      dep.escribir('Personas', personas);
+      escribir('Personas', personas);
       // Quien queda sin roles pierde el acceso: se cierran sus sesiones.
       var sinRol = {};
       personas.forEach(function (y) { if (tocadas[y.codigo] && roles(y).length === 0) sinRol[y.codigo] = true; });
-      var sesiones = dep.leer('Sesiones');
+      var sesiones = leer('Sesiones');
       var vigentes = sesiones.filter(function (s) { return !sinRol[s.codigo]; });
-      if (vigentes.length !== sesiones.length) dep.escribir('Sesiones', vigentes);
+      if (vigentes.length !== sesiones.length) escribir('Sesiones', vigentes);
       var version = d.sobreDirectorio ? guardarSobre('directorio', d.sobreDirectorio) : null;
       bitacora(p.codigo, 'roles', cambios.map(function (c) { return c && c.codigo; }).join(' '));
       return ok({ versionDirectorio: version });
@@ -1198,7 +1213,7 @@ function crearNucleo(dep) {
 
     restablecerClave: function (d, p) {
       if (!soloAdmin(p)) return falla('PERMISO', 'Solo el administrador puede hacer esto.');
-      var personas = dep.leer('Personas');
+      var personas = leer('Personas');
       var x = personas.filter(function (y) { return y.codigo === d.codigo; })[0];
       if (!x) return falla('DATOS', 'No existe la persona ' + d.codigo + '.');
       x.verificador = hashVerificador(d.verificador);
@@ -1209,16 +1224,18 @@ function crearNucleo(dep) {
       x.debeCambiar = d.debeCambiar ? 'true' : 'false';
       x.intentos = 0; x.bloqueadoHasta = 0;
       if (d.hashCorreo) x.hashCorreo = d.hashCorreo;
-      dep.escribir('Personas', personas);
-      dep.escribir('Sesiones', dep.leer('Sesiones').filter(function (s) { return s.codigo !== d.codigo; }));
+      escribir('Personas', personas);
+      escribir('Sesiones', leer('Sesiones').filter(function (s) { return s.codigo !== d.codigo; }));
       bitacora(p.codigo, 'restablecer-clave', d.codigo);
       return ok();
     }
   };
 
   var PUBLICAS = { ping: true, inicializar: true, ingresar: true };
-  // Solo leen: no toman el candado, para que muchos celulares consulten a la vez.
-  var SIN_BLOQUEO = { pulso: true, emergencia: true, bajarArchivo: true, historial: true, novedades: true };
+  // Solo leen: no toman el candado, para que muchos celulares consulten a la vez y no hagan fila
+  // detrás de quien está guardando. Ninguna de estas acciones escribe en las hojas.
+  var SIN_BLOQUEO = { ping: true, base: true, hoy: true, pulso: true, emergencia: true, bajarArchivo: true, historial: true,
+    novedades: true, caracterizaciones: true, apoyos: true, miCaracterizacion: true };
   // Lecturas: repetirlas no cambia nada, no hace falta recordar su respuesta.
   var LECTURAS = { ping: true, base: true, pulso: true, emergencia: true, hoy: true, bajarArchivo: true, historial: true,
     caracterizaciones: true, apoyos: true, miCaracterizacion: true, novedades: true };
@@ -1246,6 +1263,7 @@ function crearNucleo(dep) {
       var accion = peticion && peticion.accion;
       if (!acciones[accion]) return falla('ACCION', 'Acción desconocida.');
       var ejecutar = function () {
+        memoria = {};
         var previa = recordada(peticion);
         if (previa) return previa;
         var r;
@@ -1268,7 +1286,8 @@ function crearNucleo(dep) {
     }
   }
 
-  return { procesar: procesar };
+  // usaBloqueo: si la acción espera el candado (lo usa el servidor simulado para imitar la fila de Google).
+  return { procesar: procesar, usaBloqueo: function (accion) { return !!acciones[accion] && !SIN_BLOQUEO[accion]; } };
 }
 
 // SHA-256 síncrono en JavaScript puro (igual en Apps Script y en el navegador).

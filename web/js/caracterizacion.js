@@ -180,11 +180,23 @@ export async function leerTodas() {
 
 let reconciliando = false;
 let ultimaReconciliacion = 0;
+// Firma de quién puede abrir qué: roles, piso de brigada y llave pública de cada persona activa. Si
+// no cambió desde la última revisión completa, no hay envoltorios que agregar ni quitar y se evita
+// pedir todas las caracterizaciones. Por si otro dispositivo creó un registro con datos viejos, se
+// revisa igual cada seis horas.
+const CLAVE_REVISION = 'accesosRevisados';
+const SEIS_HORAS = 6 * 3600000;
+let revision = { firma: null, cuando: 0 };
+const firmaAccesos = () => activos()
+  .map(p => [p.codigo, (p.roles || []).slice().sort().join('+'), p.pisoBrigada || '', p.pub || ''].join(':'))
+  .sort().join('|');
 
 export async function reconciliar({ forzar = false } = {}) {
   const priv = sesion.llavePriv();
   if (!esLector() || !priv || reconciliando || !navigator.onLine) return 0;
   if (!forzar && Date.now() - ultimaReconciliacion < 60000) return 0;
+  const firma = firmaAccesos();
+  if (!forzar && firma === revision.firma && Date.now() - revision.cuando < SEIS_HORAS) return 0;
   reconciliando = true;
   ultimaReconciliacion = Date.now();
   try {
@@ -219,6 +231,8 @@ export async function reconciliar({ forzar = false } = {}) {
       }
     }
     if (cambios.length) await llamar('reenvolver', { cambios });
+    revision = { firma, cuando: Date.now() };
+    await almacen.guardar(CLAVE_REVISION, revision);
     return cambios.length;
   } catch (e) {
     console.warn('No se pudieron actualizar los accesos:', e && e.message);
@@ -264,6 +278,8 @@ export async function olvidarApoyos() {
 }
 
 export async function iniciar() {
+  revision = (await almacen.leer(CLAVE_REVISION)) || { firma: null, cuando: 0 };
+  addEventListener('sesion-cerrada', () => { revision = { firma: null, cuando: 0 }; });
   addEventListener('sesion-cerrada', () => { apoyosEnMemoria.clear(); });
   addEventListener('sesion-iniciada', () => { cargarApoyos(); setTimeout(() => reconciliar(), 3000); });
   addEventListener('online', () => { cargarApoyos(); reconciliar(); });

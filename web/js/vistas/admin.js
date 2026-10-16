@@ -301,14 +301,30 @@ function panelPersonas(panel, abrir) {
         cambios: cambios.map(({ codigo, roles, pisoBrigada, agenda }) => ({ codigo, roles, pisoBrigada, agenda })),
         sobreDirectorio: await llave.sobreDirectorio()
       });
-      await guardarLlave();
-      await sesion.refrescar();
+      // El servidor ya guardó: se aplica el cambio en la copia de este celular y se confirma de
+      // inmediato. El resto (por ejemplo, el directorio con los celulares nuevos) llega en segundo plano.
+      aplicarRolesLocal(cambios);
       aviso(`Se guardaron ${cambios.length} cambio(s).`, 'exito');
       if (nuevosConAcceso) aviso(`${nuevosConAcceso} persona(s) ahora tienen acceso. Genere y entregue su contraseña con el botón Contraseña.`, 'advertencia');
+      sesion.refrescar().catch(() => {});
+      await guardarLlave();
       if (!sesion.tieneRol('admin')) { location.hash = '#/inicio'; return; }
       abrir('personas');
     } catch (e) { llave.restaurar(copia); aviso(e.message, 'error'); }
   });
+}
+
+// Aplica en la copia de este celular los roles, el piso de brigada y la agenda que el servidor ya guardó.
+function aplicarRolesLocal(cambios) {
+  const b = sesion.base();
+  for (const x of cambios) {
+    const p = b.personas.find(y => y.codigo === x.codigo);
+    if (p) Object.assign(p, { roles: x.roles.slice(), pisoBrigada: x.pisoBrigada, agenda: x.agenda });
+  }
+  const yo = sesion.perfil();
+  const mio = cambios.find(x => x.codigo === yo.codigo);
+  if (mio) Object.assign(yo, { roles: mio.roles.slice(), pisoBrigada: mio.pisoBrigada });
+  sesion.guardarBase();
 }
 
 // ---------- Credenciales ----------
@@ -441,15 +457,23 @@ function panelConfig(panel) {
     e.preventDefault();
     const f = e.target;
     try {
-      await llamar('guardarConfig', {
+      const r = await llamar('guardarConfig', {
         reglasClave: { minimo: Math.max(0, Number(f.minimo.value) || 0), mayuscula: f.mayuscula.checked, numero: f.numero.checked, simbolo: f.simbolo.checked },
         exigirCambioInicial: f.exigir.checked, diasSesion: Number(f.dias.value) || 30,
         diasBitacora: Number(f.dbit.value) || 365,
         festivos: f.festivos.value.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
       });
-      await sesion.refrescar();
-      f.festivos.value = (sesion.base().config.festivos || []).join('\n');   // ordenados y sin repetir, como los guardó el servidor
+      // Se aplica en la copia de este celular lo que devolvió el servidor (festivos ordenados y sin
+      // repetir), sin esperar una recarga completa.
+      const c = (r && r.config) || {};
+      Object.assign(sesion.base().config, {
+        reglasClave: c.reglasClave, exigirCambioInicial: !!c.exigirCambioInicial, diasSesion: Number(c.diasSesion),
+        diasBitacora: Number(c.diasBitacora), festivos: c.festivos || []
+      });
+      sesion.guardarBase();
+      f.festivos.value = (c.festivos || []).join('\n');
       aviso('Configuración guardada.', 'exito');
+      sesion.refrescar().catch(() => {});
     } catch (err) { aviso(err.message, 'error'); }
   });
 }

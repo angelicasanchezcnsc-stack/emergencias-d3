@@ -384,6 +384,11 @@ details.tarjeta[open] .resumen-plegable { margin-bottom: .5rem; }
 @keyframes entra { from { transform: translateX(120%); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes barra { from { width: 100%; } to { width: 0; } }
 @keyframes giro { to { transform: rotate(360deg); } }
+/* Aviso discreto «Actualizando…» en el encabezado */
+.actividad { display: inline-flex; align-items: center; gap: .4rem; font-size: .75rem; font-weight: 600; color: var(--texto-60); white-space: nowrap; }
+.girador-mini { width: .85rem; height: .85rem; border-radius: 50%; border: 2px solid var(--corp-light); border-top-color: var(--corp-dark); animation: giro 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .girador-mini { animation: none; } }
+@media (max-width: 640px) { .actividad span:last-child { display: none; } }
 
 @media (max-width: 640px) {
   .resumen-grande { grid-template-columns: repeat(2, 1fr); }

@@ -56,8 +56,15 @@ function marcarServidor(responde) {
 }
 export const servidorDisponible = () => servidorResponde;
 
+// Consultas que la app hace sola en segundo plano: no muestran el aviso «Actualizando…».
+const SILENCIOSAS = new Set(['pulso', 'apoyos', 'reenvolver', 'bajarArchivo', 'novedades']);
+let enCurso = 0;
+const avisarActividad = () => dispatchEvent(new CustomEvent('actividad-servidor', { detail: enCurso }));
+
 export async function llamar(accion, datos = {}) {
   const enviar = await transporte();
+  const visible = !SILENCIOSAS.has(accion);
+  if (visible) { enCurso++; avisarActividad(); }
   let res;
   try {
     res = await enviar(accion, token ? { ...datos, token } : datos);
@@ -65,6 +72,8 @@ export async function llamar(accion, datos = {}) {
   } catch (e) {
     if (e instanceof ErrorApi && e.codigo === 'RED') marcarServidor(false);
     throw e;
+  } finally {
+    if (visible) { enCurso--; avisarActividad(); }
   }
   if (!res.ok) throw new ErrorApi(res.error, res.codigo);
   return res.datos;

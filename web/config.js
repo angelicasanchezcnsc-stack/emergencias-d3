@@ -8,7 +8,7 @@ const ES_LOCAL = ['localhost', '127.0.0.1'].includes(location.hostname);
 
 export const CONFIG = {
   APP_NOMBRE: 'EMERGENCIAS D3',
-  VERSION: 'v0.9.3',
+  VERSION: 'v0.9.4',
   SUBTITULO: 'Despacho 3, sede Calle 96',
   CREDITOS: 'Aplicativo de emergencias del Despacho 3 (Edwin Arturo Ruiz Moreno), 2026',
 

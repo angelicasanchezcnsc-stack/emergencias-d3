@@ -64,18 +64,45 @@ async function cargarNucleo() {
 let caido = false;
 export const simularCaida = valor => { caido = !!valor; };
 
-// Solo para pruebas: simula la demora de Google (milisegundos por petición). El servidor real
-// tarda de 1 a 4 segundos; con 0 el simulado responde al instante.
-let demora = 0;
-export const simularDemora = ms => { demora = Math.max(0, Number(ms) || 0); };
+// Solo para pruebas: imita a Google. Cada petición tarda «demora» milisegundos (el servidor real
+// tarda de 1 a 4 segundos) y, como en Apps Script, las acciones que usan el candado del servidor
+// esperan su turno en fila; las demás van en paralelo. Con 0 el simulado responde al instante.
+// La demora se recuerda en la pestaña (sessionStorage) para poder medir también la carga inicial.
+const CLAVE_DEMORA = 'd3e-demora-simulada';
+let demora = (() => { try { return Number(sessionStorage.getItem(CLAVE_DEMORA)) || 0; } catch { return 0; } })();
+export function simularDemora(ms) {
+  demora = Math.max(0, Number(ms) || 0);
+  try { if (demora) sessionStorage.setItem(CLAVE_DEMORA, String(demora)); else sessionStorage.removeItem(CLAVE_DEMORA); } catch { /* sin almacenamiento */ }
+}
+let fila = Promise.resolve();
+const enFila = tarea => { const turno = fila.then(tarea, tarea); fila = turno.catch(() => {}); return turno; };
+
+// Solo para pruebas: registro de las últimas peticiones (acción, milisegundos y si esperó en fila)
+// y cuántas siguen en curso.
+const registro = [];
+let enCurso = 0;
+export const registroSimulado = () => ({ peticiones: registro.slice(), enCurso });
+export const limpiarRegistroSimulado = () => { registro.length = 0; };
 
 export default async function llamarSimulado(accion, datos) {
-  if (demora) await new Promise(r => setTimeout(r, demora));
-  // El servidor real no responde sin internet; el simulado debe hacer lo mismo.
-  if (caido || !navigator.onLine) throw new ErrorApi('Sin conexión con el servidor.', 'RED');
   const n = await cargarNucleo();
-  // Copia profunda: simula el viaje por la red.
-  return JSON.parse(JSON.stringify(n.procesar(JSON.parse(JSON.stringify({ accion, ...datos })))));
+  const inicio = performance.now();
+  const conFila = !!(demora && n.usaBloqueo && n.usaBloqueo(accion));
+  const tarea = async () => {
+    if (demora) await new Promise(r => setTimeout(r, demora));
+    // El servidor real no responde sin internet; el simulado debe hacer lo mismo.
+    if (caido || !navigator.onLine) throw new ErrorApi('Sin conexión con el servidor.', 'RED');
+    // Copia profunda: simula el viaje por la red.
+    return JSON.parse(JSON.stringify(n.procesar(JSON.parse(JSON.stringify({ accion, ...datos })))));
+  };
+  enCurso++;
+  try {
+    return await (conFila ? enFila(tarea) : tarea());
+  } finally {
+    enCurso--;
+    registro.push({ accion, ms: Math.round(performance.now() - inicio), fila: conFila, inicio: Math.round(inicio), fin: Math.round(performance.now()) });
+    if (registro.length > 200) registro.shift();
+  }
 }
 
 // Solo para el modo simulado: el código que en el servidor real aparece en el

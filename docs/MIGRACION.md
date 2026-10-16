@@ -23,7 +23,7 @@ Hay dos caminos.
 4. Implemente la aplicación web y actualice `URL_SERVIDOR`.
 
 **b) Otro servidor (por ejemplo, .NET, Node o Python con una base de datos SQL).**
-1. Escriba un adaptador equivalente a `Codigo.gs`, con estas funciones: `leer`, `escribir`, `agregar`, `prop`, `uuid`, `ahora` y `bloqueo`.
+1. Escriba un adaptador equivalente a `Codigo.gs`, con estas funciones: `leer`, `escribir`, `agregar`, `agregarVarias`, `prop`, `uuid`, `ahora`, `hoy` y `bloqueo` (y, opcionales, `cache` y `leerFiltrado`).
 2. Reutilice la lógica de `Nucleo.gs` (JavaScript estándar) o tradúzcala respetando el contrato.
 3. Exporte cada hoja (`Personas`, `Puestos`, `Sesiones`, `Sobres`, `Config`, `Bitacora`) a CSV y cárguelas como tablas.
 4. Conserve el valor de `PIMIENTA`.
