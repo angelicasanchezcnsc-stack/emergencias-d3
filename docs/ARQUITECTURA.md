@@ -81,6 +81,8 @@ Reglas que no se rompen: ningún dato personal en el código ni en el repositori
 4. **Emergencia** (`emergencia.js`): `activarEmergencia` toma la foto de quién se espera en la sede (regla de presencia); los celulares la detectan con `pulso`; las marcas van por cola a `marcarEmergencia`; `cerrarEmergencia` calcula el informe y borra el detalle.
 5. **Sin conexión:** la interfaz abre desde el service worker; las marcas de emergencia quedan en cola (las novedades no: requieren internet); un brigadista puede activar la emergencia localmente (`L-…`) y se une a la del servidor con `unirse` al volver la señal.
 
+6. **El personal vive en la app.** La fuente principal es la app: Administración → Personas y roles mueve, intercambia, comparte puesto, agrega, corrige, retira y reactiva personas (`js/personal.js`), y Distribución de pisos diseña el esquema de cada piso. El Excel queda para la **carga inicial** y para volver a cargar con cuidado: reemplaza lo que no coincida con él, por eso la comparación se revisa y se marca «Revisé los cambios» antes de aplicar. La **exportación** («Exportar personal (CSV)», en Planta y Excel) se genera en el navegador con la llave abierta: separador `;`, UTF-8 con BOM (Excel muestra bien las tildes), columnas Piso, Puesto, Nombre, Correo, Estado, Roles y Días presenciales, ordenado por piso y puesto, con las vacantes (sin nombre) y las personas retiradas al final de su puesto. Se descarga como `personal-emergencias-d3-AAAA-MM-DD.csv` y tiene datos personales: se guarda fuera de la carpeta APP y no se comparte.
+
 ## 6. Cómo hacer un cambio
 
 1. `git pull` antes de empezar (GitHub es la copia oficial).

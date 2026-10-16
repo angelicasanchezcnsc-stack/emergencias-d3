@@ -12,6 +12,7 @@ import * as personal from '../personal.js';
 import { panelDistribucion, confirmarSalidaDistribucion } from './distribucion.js';
 import { ventanaPuesto, ventanaAgregar, ventanaCorregir, ventanaMas, ventanaHistorial } from './ventanas-personal.js';
 import { ARCHIVOS } from '../contenido-inicial.js';
+import { fechaBogota } from '../tiempo.js';
 
 const PESTANAS = [
   ['llave', 'llave', 'Llave'],
@@ -93,15 +94,34 @@ async function panelLlave(panel, abrir) {
 function panelExcel(panel, abrir) {
   let filas = null, cambios = null;
   panel.innerHTML = tarjeta({
-    icono: 'hoja', tono: 'turquesa', titulo: 'Cargar o volver a cargar el Excel de puestos',
+    icono: 'hoja', tono: 'turquesa', titulo: 'Excel: carga inicial y exportación',
     subtitulo: 'El archivo se lee en este computador; no se sube. Antes de aplicar verá cada cambio.',
-    cuerpo: `<div class="fila"><button class="btn btn-secundario" id="elegir">${icono('subir', 'ic-s')}Elegir Excel</button></div>
+    cuerpo: `<div class="nota nota-adv">${icono('info')}<span>La app es la fuente principal del personal. Cargar un Excel reemplaza lo que no coincida con él: revise la comparación antes de aplicar.</span></div>
+      <div class="fila">
+        <button class="btn btn-secundario" id="elegir">${icono('subir', 'ic-s')}Elegir Excel</button>
+        <button class="btn btn-secundario" id="exportar">${icono('hoja', 'ic-s')}Exportar personal (CSV)</button>
+      </div>
+      <p class="ayuda" style="margin-top:.5rem">Este archivo tiene datos personales: guárdelo fuera de la carpeta APP y no lo comparta.</p>
       <div id="previa" style="margin-top:1rem"></div>
-      <div class="fila oculto" id="acciones" style="margin-top:1rem">
-        <button class="btn btn-oscuro" id="aplicar">${icono('ok', 'ic-s')}Aplicar cambios</button>
+      <div class="oculto" id="acciones" style="margin-top:1rem">
+        <label class="casilla"><input type="checkbox" id="reviso">Revisé los cambios: el Excel está actualizado</label>
+        <div class="fila" style="margin-top:.5rem"><button class="btn btn-oscuro" id="aplicar" disabled>${icono('ok', 'ic-s')}Aplicar cambios</button></div>
       </div>`
   });
   const $ = s => panel.querySelector(s);
+  // El botón de aplicar solo se habilita con la casilla de revisión marcada.
+  $('#reviso').addEventListener('change', () => { $('#aplicar').disabled = !$('#reviso').checked; });
+  $('#exportar').addEventListener('click', () => {
+    try {
+      const csv = personal.csvPersonal();
+      const enlace = document.createElement('a');
+      enlace.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      enlace.download = `personal-emergencias-d3-${fechaBogota()}.csv`;
+      enlace.click();
+      setTimeout(() => URL.revokeObjectURL(enlace.href), 1000);
+      aviso('Archivo exportado. Guárdelo fuera de la carpeta APP y no lo comparta: tiene datos personales.', 'advertencia');
+    } catch (e) { aviso(e.message, 'error'); }
+  });
   $('#elegir').addEventListener('click', async () => {
     const archivo = await elegirArchivo('.xlsx');
     if (!archivo) return;
@@ -110,10 +130,13 @@ function panelExcel(panel, abrir) {
       filas = r.filas;
       cambios = llave.compararExcel(filas);
       $('#previa').innerHTML = previaExcel(cambios, r.avisos, filas);
+      $('#reviso').checked = false;
+      $('#aplicar').disabled = true;
       $('#acciones').classList.toggle('oculto', !cambios.some(c => c.tipo !== 'igual') && !puestosCambiaron(filas));
     } catch (e) { aviso('No se pudo leer el Excel: ' + e.message, 'error'); }
   });
   $('#aplicar').addEventListener('click', async () => {
+    if (!$('#reviso').checked) return aviso('Marque la casilla: confirme que revisó los cambios.', 'advertencia');
     const retiros = cambios.filter(c => c.tipo === 'retiro');
     if (retiros.some(c => sesion.base().personas.find(p => p.codigo === c.codigo)?.roles.includes('admin'))) {
       return aviso('El Excel retira al administrador. Asigne primero otro administrador.', 'error');
@@ -143,7 +166,7 @@ function panelExcel(panel, abrir) {
 }
 
 function puestosCambiaron(filas) {
-  const actuales = (sesion.base().puestos || []).map(p => `${p.piso}-${p.puesto}-${p.estado}`).sort().join('|');
+  const actuales = (sesion.base().puestos || []).map(p => `${p.piso}-${p.puesto}-${p.estado === 'vacante' ? 'vacante' : 'ocupado'}`).sort().join('|');
   const nuevos = filas.map(f => `${f.piso}-${f.puesto}-${f.correo ? 'ocupado' : 'vacante'}`).sort().join('|');
   return actuales !== nuevos;
 }

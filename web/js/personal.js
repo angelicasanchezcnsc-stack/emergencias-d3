@@ -251,3 +251,49 @@ export async function reactivarPersona(codigo, piso, puesto) {
     await cerrar(`Reactivación de ${codigo} en ${rotulo(piso, puesto)}`, { esperar: true });
   });
 }
+
+// ---------- Exportar el personal ----------
+
+const NOMBRE_ROL = { admin: 'administrador', coordinador: 'coordinador', suplente: 'suplente', brigadista: 'brigadista', asesor: 'asesor' };
+const DIAS_CORTOS = { 1: 'lunes', 2: 'martes', 3: 'miércoles', 4: 'jueves', 5: 'viernes', 6: 'sábado', 7: 'domingo' };
+
+// Un campo del CSV: entre comillas si lleva «;», comillas o saltos de línea. Si empieza con un carácter que Excel
+// tomaría como fórmula (= + - @), se le antepone un apóstrofo para que se vea como texto.
+export function campoCsv(valor) {
+  let t = String(valor == null ? '' : valor);
+  if (/^[=+\-@\t\r]/.test(t)) t = "'" + t;
+  return /[;"\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+}
+
+const textoAgenda = agenda => {
+  const a = String(agenda == null ? '' : agenda).trim();
+  return a === '' ? 'Lunes a viernes' : a === 'ocasional' ? 'Ocasional' : diasDeAgenda(a).map(d => DIAS_CORTOS[d]).join(', ');
+};
+
+// Filas del personal para exportar, ordenadas por piso y puesto: una por persona activa, una por cada vacante
+// (sin nombre) y, al final de su puesto, las personas retiradas. Requiere la llave abierta (nombres y correos).
+export function filasExportacion() {
+  exigirLlave();
+  const base = sesion.base();
+  const personas = base.personas || [];
+  const filas = [];
+  const rol = p => (p.roles || []).map(r => NOMBRE_ROL[r] || r).join(', ');
+  const deLlave = codigo => llave.persona(codigo) || { nombre: codigo, correo: '' };
+  const activasEn = (piso, puesto) => personas.filter(p => p.estado === 'activo' && p.piso === piso && p.puesto === puesto);
+  (base.puestos || []).forEach(x => {
+    const gente = activasEn(x.piso, x.puesto);
+    if (!gente.length) filas.push({ piso: x.piso, puesto: x.puesto, orden: 0, nombre: '', correo: '', estado: 'vacante', roles: '', dias: '' });
+    gente.forEach(p => filas.push({ piso: x.piso, puesto: x.puesto, orden: 0, nombre: deLlave(p.codigo).nombre, correo: deLlave(p.codigo).correo, estado: 'activo', roles: rol(p), dias: textoAgenda(p.agenda) }));
+  });
+  personas.filter(p => p.estado !== 'activo').forEach(p => {
+    filas.push({ piso: p.piso, puesto: p.puesto, orden: 1, nombre: deLlave(p.codigo).nombre, correo: deLlave(p.codigo).correo, estado: 'inactivo', roles: rol(p), dias: textoAgenda(p.agenda) });
+  });
+  return filas.sort((a, b) => a.piso - b.piso || a.puesto - b.puesto || a.orden - b.orden || a.nombre.localeCompare(b.nombre, 'es'));
+}
+
+// CSV con «;» como separador, UTF-8 con BOM (para que Excel muestre bien las tildes) y saltos de línea de Windows.
+export function csvPersonal() {
+  const encabezado = ['Piso', 'Puesto', 'Nombre', 'Correo', 'Estado', 'Roles', 'Días presenciales'];
+  const lineas = [encabezado, ...filasExportacion().map(f => [f.piso, f.puesto, f.nombre, f.correo, f.estado, f.roles, f.dias])];
+  return '\uFEFF' + lineas.map(l => l.map(campoCsv).join(';')).join('\r\n') + '\r\n';
+}
