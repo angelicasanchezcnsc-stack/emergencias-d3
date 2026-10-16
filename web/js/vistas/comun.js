@@ -4,6 +4,7 @@ import { esc, insignia, modal, aviso } from '../ui.js';
 import * as llave from '../llave.js';
 import * as sesion from '../sesion.js';
 import { fechaBogota } from '../tiempo.js';
+import { mapaPiso, rotulo } from '../mapa-piso.js';
 
 // ---------- Presencia y novedades ----------
 
@@ -24,6 +25,51 @@ export const TIPOS_NOVEDAD = { no_asiste: 'No asiste', otro_lugar: 'En otro luga
 export function textoNovedad(n) {
   if (n.tipo !== 'otro_lugar') return TIPOS_NOVEDAD[n.tipo] || n.tipo;
   return `En otro lugar: piso ${n.piso}, ${n.puesto ? 'puesto ' + n.puesto : 'sala o área común del piso'}`;
+}
+
+// Ventana con el mapa del piso para elegir un puesto (cualquiera, también uno ocupado). Devuelve { piso, puesto } o null.
+// «codigo» es la persona a la que se le busca puesto: su puesto habitual se marca como «Actual».
+export function elegirPuestoEnMapa({ piso, codigo = null, titulo = 'Elegir un puesto en el mapa' }) {
+  const base = sesion.base();
+  const activas = (base.personas || []).filter(p => p.estado === 'activo');
+  const ocupantes = new Map();
+  activas.forEach(p => {
+    const k = `${p.piso}-${p.puesto}`;
+    if (!ocupantes.has(k)) ocupantes.set(k, []);
+    ocupantes.get(k).push({ codigo: p.codigo, nombre: sesion.nombreDe(p.codigo) });
+  });
+  const mia = activas.find(p => p.codigo === codigo);
+  const estado = { piso: CONFIG.PISOS.includes(piso) ? piso : CONFIG.PISOS[0], elegido: null };
+  const estadoDe = p => {
+    if (estado.elegido && estado.elegido.piso === p.piso && estado.elegido.puesto === p.puesto) return { clase: 'elegido' };
+    if (mia && mia.piso === p.piso && mia.puesto === p.puesto) return { clase: 'actual', texto: 'puesto habitual de esta persona' };
+    return {};
+  };
+  const mapa = mapaPiso({
+    piso: estado.piso, puestos: base.puestos || [], referencias: base.referencias || [], ocupantes, modo: 'elegir', idBase: 'mapa-novedad',
+    pisos: CONFIG.PISOS, estadoDe
+  });
+  const respuesta = modal({
+    titulo, ancho: 'ancho',
+    cuerpo: `<p class="sutil">Toque el puesto donde estará. Puede elegir uno ocupado. Para una sala o área común, use el selector del formulario.</p>
+      <div id="caja-mapa-novedad">${mapa.html}</div>
+      <p class="ayuda" id="resumen-novedad" role="status" aria-live="polite" style="margin-top:.75rem">Aún no eligió ningún puesto.</p>`,
+    acciones: [
+      { texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
+      { texto: 'Elegir este puesto', clase: 'btn-oscuro', antes: () => { if (!estado.elegido) { aviso('Toque un puesto en el mapa.', 'advertencia'); return false; } }, valor: () => ({ ...estado.elegido }) }
+    ]
+  });
+  const fondo = Array.from(document.querySelectorAll('.modal-fondo')).pop();
+  const control = mapa.enlazar(fondo.querySelector('#caja-mapa-novedad'), {
+    alElegir: p => {
+      estado.elegido = { piso: p.piso, puesto: p.puesto };
+      const gente = ocupantes.get(`${p.piso}-${p.puesto}`) || [];
+      fondo.querySelector('#resumen-novedad').textContent = `Puesto elegido: ${rotulo(p.piso, p.puesto)}${gente.length ? `, ocupado habitualmente por ${gente.map(g => g.nombre).join(' y ')}` : ' (libre)'}.`;
+      control.repintar({});
+    },
+    alCambiarPiso: n => { estado.piso = n; control.repintar({ piso: n }); }
+  });
+  return respuesta;
 }
 
 // Formulario para registrar o editar una novedad de presencia de una persona.
@@ -53,6 +99,7 @@ export async function formularioNovedad(persona, existente = null) {
         <div class="campo"><label class="etiqueta" for="n-piso">Piso</label>
           <select id="n-piso">${CONFIG.PISOS.map(n => `<option value="${n}" ${n === piso0 ? 'selected' : ''}>Piso ${n}</option>`).join('')}</select></div>
         <div class="campo"><label class="etiqueta" for="n-puesto">Puesto</label><select id="n-puesto">${opcionesPuesto(piso0, puesto0)}</select></div>
+        <button type="button" class="btn btn-secundario btn-chico" id="n-mapa">Elegir en el mapa</button>
       </div>
       <p class="ayuda">No escriba el motivo. Solo se registra si la persona estará o no en la sede.</p>`,
     acciones: [
@@ -83,6 +130,16 @@ export async function formularioNovedad(persona, existente = null) {
   const selPiso = document.querySelector('#n-piso');
   selTipo.addEventListener('change', () => document.querySelector('#n-lugar').classList.toggle('oculto', selTipo.value !== 'otro_lugar'));
   selPiso.addEventListener('change', () => { document.querySelector('#n-puesto').innerHTML = opcionesPuesto(Number(selPiso.value), 0); });
+  // «Elegir en el mapa»: el resultado se escribe en los selectores, que siguen siendo la alternativa accesible.
+  const formulario = selPiso.closest('.modal-fondo');
+  formulario.querySelector('#n-mapa').addEventListener('click', async () => {
+    const r = await elegirPuestoEnMapa({ piso: Number(selPiso.value), codigo: persona.codigo, titulo: 'Elegir en el mapa dónde estará ' + sesion.nombreDe(persona.codigo) });
+    if (!r) return;
+    selPiso.value = String(r.piso);
+    selPiso.dispatchEvent(new Event('change'));
+    formulario.querySelector('#n-puesto').value = String(r.puesto);
+    formulario.querySelector('#n-puesto').focus();
+  });
   return respuesta;
 }
 

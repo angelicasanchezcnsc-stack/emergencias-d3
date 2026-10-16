@@ -6,7 +6,8 @@ import * as emergencia from '../emergencia.js';
 import * as carac from '../caracterizacion.js';
 import { esc, icono, aviso, insignia, confirmar, modal } from '../ui.js';
 import { horaLegible, horaBogota } from '../tiempo.js';
-import { enSedeDe } from '../presencia.js';
+import { enSedeDe, ubicacionHoy } from '../presencia.js';
+import { mapaPiso, iniciales, rotulo } from '../mapa-piso.js';
 
 const { TIPOS, PROTOCOLO, ROLES_ACTIVAR, ROLES_SIMULACRO_INICIAR, ROLES_CERRAR, ROLES_REPORTAR, tiene } = emergencia;
 
@@ -17,6 +18,12 @@ const ESTADO = {
   no_estaba: ['No estaba hoy', 'gris']
 };
 const hora = ms => horaLegible(horaBogota(new Date(ms)));
+const CLAVE_VISTA_EMERGENCIA = 'd3e-vista-emergencia';
+const leerVistaReporte = () => { try { return localStorage.getItem(CLAVE_VISTA_EMERGENCIA) === 'mapa' ? 'mapa' : 'lista'; } catch (e) { return 'lista'; } };
+const guardarVistaReporte = v => { try { localStorage.setItem(CLAVE_VISTA_EMERGENCIA, v); } catch (e) { /* no se recuerda */ } };
+// Clase del mapa según la marca de la emergencia; si hay varias personas en el puesto manda la más urgente.
+const CLASE_MARCA = { evacuado: 'evacuado', no_ubicado: 'no-ubicado', apoyo: 'apoyo', no_estaba: 'no-estaba', '': 'sin-marcar' };
+const URGENCIA = ['no_ubicado', 'apoyo', '', 'evacuado', 'no_estaba'];
 const normalizar = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 function insigniaMarca(m) {
@@ -66,6 +73,7 @@ export function vistaEmergencia(vista) {
   let busqueda = '';
   let terminada = null;
   let pendientePintar = false;
+  let vistaReporte = leerVistaReporte();
 
   // ---------- Sin emergencia ----------
   const pintarInactiva = () => {
@@ -131,6 +139,80 @@ export function vistaEmergencia(vista) {
     });
   };
 
+  // ---------- Reporte del piso: filas, mapa y hoja de acciones ----------
+
+  // Botones de cada fila de persona (Evacuado, No ubicado, Apoyo, No estaba y la casilla de asistencia). Sirven igual
+  // en la lista y en la hoja de acciones del mapa. «marcasDe» entrega las marcas más recientes.
+  function enlazarFilas(raiz, marcasDe) {
+    raiz.querySelectorAll('.fila-marca').forEach(filaEl => {
+      const codigo = filaEl.dataset.codigo;
+      filaEl.querySelectorAll('[data-estado]').forEach(b => b.addEventListener('click', () => {
+        const m = marcasDe().get(codigo);
+        emergencia.marcarPersona(codigo, { estado: m && m.estado === b.dataset.estado ? '' : b.dataset.estado });
+      }));
+      filaEl.querySelector('[data-asistencia]').addEventListener('change', ev => emergencia.marcarPersona(codigo, { asistencia: ev.target.checked }));
+    });
+  }
+
+  // Quién está previsto en cada puesto del piso hoy y cómo se pinta (según la marca de la emergencia).
+  function datosDelMapa(fila, marcas) {
+    const personas = (sesion.base().personas || []);
+    const puestosDelPiso = new Set((sesion.base().puestos || []).filter(x => x.piso === fila.piso).map(x => x.puesto));
+    const ocupantes = new Map();
+    const sinPuesto = [];
+    fila.miembros.forEach(x => {
+      const persona = personas.find(p => p.codigo === x.codigo);
+      let puesto = null;
+      if (persona) {
+        const u = ubicacionHoy(persona);
+        if (u.presente && u.piso === fila.piso && u.puesto) puesto = u.puesto;
+        else if (persona.piso === fila.piso && persona.puesto) puesto = persona.puesto;
+      }
+      const dato = { codigo: x.codigo, nombre: sesion.nombreDe(x.codigo) };
+      if (puesto && puestosDelPiso.has(puesto)) {
+        const k = `${fila.piso}-${puesto}`;
+        if (!ocupantes.has(k)) ocupantes.set(k, []);
+        ocupantes.get(k).push(dato);
+      } else sinPuesto.push(dato);
+    });
+    const estadoDe = (p, gente) => {
+      if (!gente.length) return {};
+      const estados = gente.map(g => { const m = marcas.get(g.codigo); return m && m.estado ? m.estado : ''; });
+      const mandan = URGENCIA.find(u => estados.includes(u));
+      const necesitan = gente.filter(g => textoApoyo(g.codigo));
+      const mas = gente.length > 1 ? ` +${gente.length - 1}` : '';
+      const etiqueta = `${necesitan.length && mandan !== 'apoyo' ? '✚' : ''}${iniciales(gente[0])}${mas}`;
+      const texto = gente.map((g, i) => `${g.nombre}: ${estados[i] ? ESTADO[estados[i]]?.[0] || estados[i] : 'sin marcar'}${textoApoyo(g.codigo) ? ', necesita apoyo (' + textoApoyo(g.codigo) + ')' : ''}`).join('; ');
+      return { clase: CLASE_MARCA[mandan] || 'sin-marcar', etiqueta, texto };
+    };
+    return { ocupantes, estadoDe, sinPuesto };
+  }
+
+  // Hoja de acciones de un puesto: el nombre y los mismos botones de la fila. Se actualiza sola con cada cambio.
+  async function abrirHoja(clavePuesto, titulo, codigos, pisoVista) {
+    const marcasAhora = () => { const a = emergencia.actual(); return new Map(((a && a.marcas) || []).map(m => [m.codigo, m])); };
+    const cuerpo = () => codigos.map(c => filaPersona(c, marcasAhora().get(c), '', pisoVista)).join('');
+    const respuesta = modal({ titulo, cuerpo: `<div id="hoja-cuerpo">${cuerpo()}</div>`, ancho: 'ancho' });
+    const fondo = Array.from(document.querySelectorAll('.modal-fondo')).pop();
+    const caja = fondo.querySelector('#hoja-cuerpo');
+    const pintarHoja = () => {
+      const activo = document.activeElement;
+      const marca = activo && caja.contains(activo) ? [activo.closest('.fila-marca')?.dataset.codigo, activo.dataset.estado || (activo.hasAttribute('data-asistencia') ? 'asistencia' : '')] : null;
+      caja.innerHTML = cuerpo();
+      enlazarFilas(caja, marcasAhora);
+      if (marca && marca[0]) {
+        const fila = Array.from(caja.querySelectorAll('.fila-marca')).find(f => f.dataset.codigo === marca[0]);
+        (marca[1] === 'asistencia' ? fila?.querySelector('[data-asistencia]') : fila?.querySelector(`[data-estado="${marca[1]}"]`))?.focus();
+      }
+    };
+    enlazarFilas(caja, marcasAhora);
+    addEventListener('emergencia-cambio', pintarHoja);
+    await respuesta;
+    removeEventListener('emergencia-cambio', pintarHoja);
+    // El mapa se repintó con cada cambio: el foco vuelve al puesto tocado.
+    if (clavePuesto) vista.querySelector(`[data-mp-puesto="${clavePuesto}"]`)?.focus();
+  }
+
   // ---------- Con emergencia ----------
   const pintarActiva = a => {
     const e = a.emergencia;
@@ -175,18 +257,28 @@ export function vistaEmergencia(vista) {
     const otros = q ? (sesion.base().personas || []).filter(p => p.estado === 'activo' && !fila.miembros.some(x => x.codigo === p.codigo) && normalizar(sesion.nombreDe(p.codigo)).includes(q)) : [];
     const grupo = (titulo, lista, extra) => lista.length ? `<h4>${titulo}</h4>${lista.map(x => filaPersona(x.codigo, x.marca, extra, fila.piso)).join('')}` : '';
 
+    const hayMapa = vistaReporte === 'mapa';
+    const cuerpoLista = `<input id="buscar" type="search" aria-label="Buscar por nombre en este piso o en todo el Despacho" placeholder="Buscar por nombre en este piso o en todo el Despacho…" value="${esc(busqueda)}" autocomplete="off" style="margin-bottom:.5rem">
+        ${grupo('Previstas hoy en este piso', delPiso.filter(x => x.grupo === 'en'), '')}
+        ${grupo('Sin reporte del día (verifique si están en la sede)', delPiso.filter(x => x.grupo === 'sin'), '')}
+        ${grupo('Reportados aunque no estaban en la lista', delPiso.filter(x => x.grupo === 'extra'), '')}
+        ${otros.length ? `<h4>En otros pisos</h4>${otros.map(p => filaPersona(p.codigo, marcas.get(p.codigo), `P${p.piso}-${p.puesto} · `, fila.piso)).join('')}` : ''}
+        ${!fila.miembros.length && !otros.length ? '<p class="sutil">No había nadie previsto en este piso al activar.</p>' : ''}`;
+    // Mapa: cada puesto muestra el estado de quien está previsto ahí hoy (el puesto de hoy, si está en otro lugar).
+    const datosMapa = hayMapa ? datosDelMapa(fila, marcas) : null;
+    const cuerpoMapa = hayMapa ? `<div id="mapa-emergencia"></div>
+        ${datosMapa.sinPuesto.length ? `<div style="margin-top:.75rem"><h4>Sin puesto en el mapa</h4><div class="fila">${datosMapa.sinPuesto.map(g =>
+          `<button class="btn btn-secundario btn-chico" data-sin-puesto="${esc(g.codigo)}" aria-label="${esc('Marcar a ' + g.nombre)}">${esc(g.nombre)}</button>`).join('')}</div></div>` : ''}` : '';
+    const cuerpoReporte = `<div class="fila no-imprimir" style="margin-bottom:.75rem"><button class="btn btn-secundario btn-chico" id="vista-reporte">${hayMapa ? 'Ver como lista' : 'Ver como mapa'}</button></div>
+        ${hayMapa ? cuerpoMapa : cuerpoLista}`;
+
     const reporte = reporta ? `
       <section class="tarjeta">
         <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-rojo">${icono('escudo')}</div>
           <div><h3>Reporte del piso</h3><p class="sutil">Marque a cada persona o, si no hay tiempo, reporte por conteo</p></div></div>
         <div class="fila" id="pisos" style="margin-bottom:.75rem">${r.filas.map(f =>
           `<button class="pestana ${f.piso === fila.piso ? 'activa' : ''}" data-p="${f.piso}">Piso ${f.piso}${f.piso === yo.pisoBrigada ? ' · su brigada' : ''} (${f.esperados})</button>`).join('')}</div>
-        <input id="buscar" type="search" aria-label="Buscar por nombre en este piso o en todo el Despacho" placeholder="Buscar por nombre en este piso o en todo el Despacho…" value="${esc(busqueda)}" autocomplete="off" style="margin-bottom:.5rem">
-        ${grupo('Previstas hoy en este piso', delPiso.filter(x => x.grupo === 'en'), '')}
-        ${grupo('Sin reporte del día (verifique si están en la sede)', delPiso.filter(x => x.grupo === 'sin'), '')}
-        ${grupo('Reportados aunque no estaban en la lista', delPiso.filter(x => x.grupo === 'extra'), '')}
-        ${otros.length ? `<h4>En otros pisos</h4>${otros.map(p => filaPersona(p.codigo, marcas.get(p.codigo), `P${p.piso}-${p.puesto} · `, fila.piso)).join('')}` : ''}
-        ${!fila.miembros.length && !otros.length ? '<p class="sutil">No había nadie previsto en este piso al activar.</p>' : ''}
+        ${cuerpoReporte}
         <details class="conteo" id="conteo" ${fila.conteo ? 'open' : ''}>
           <summary>Reportar el piso ${fila.piso} por conteo (sin nombres)</summary>
           <div class="fila" style="margin-top:.75rem">
@@ -282,14 +374,28 @@ export function vistaEmergencia(vista) {
       clearTimeout(buscar._t);
       buscar._t = setTimeout(() => { pintar(); const nuevo = vista.querySelector('#buscar'); nuevo.focus(); nuevo.setSelectionRange(nuevo.value.length, nuevo.value.length); }, 250);
     });
-    vista.querySelectorAll('.fila-marca').forEach(filaEl => {
-      const codigo = filaEl.dataset.codigo;
-      filaEl.querySelectorAll('[data-estado]').forEach(b => b.addEventListener('click', () => {
-        const m = marcas.get(codigo);
-        emergencia.marcarPersona(codigo, { estado: m && m.estado === b.dataset.estado ? '' : b.dataset.estado });
-      }));
-      filaEl.querySelector('[data-asistencia]').addEventListener('change', ev => emergencia.marcarPersona(codigo, { asistencia: ev.target.checked }));
+    enlazarFilas(vista, () => marcas);
+    vista.querySelector('#vista-reporte')?.addEventListener('click', () => {
+      vistaReporte = vistaReporte === 'mapa' ? 'lista' : 'mapa';
+      guardarVistaReporte(vistaReporte);
+      pintar();
+      vista.querySelector('#vista-reporte')?.focus();
     });
+    if (datosMapa) {
+      const mapa = mapaPiso({
+        piso: fila.piso, puestos: sesion.base().puestos || [], referencias: sesion.base().referencias || [], ocupantes: datosMapa.ocupantes,
+        modo: 'elegir', idBase: 'emergencia-' + fila.piso, estadoDe: datosMapa.estadoDe, sinSelector: true, vista: 'mapa'
+      });
+      const caja = vista.querySelector('#mapa-emergencia');
+      caja.innerHTML = mapa.html;
+      mapa.enlazar(caja, { alElegir: p => {
+        const gente = datosMapa.ocupantes.get(`${p.piso}-${p.puesto}`) || [];
+        if (!gente.length) return aviso(`El puesto ${rotulo(p.piso, p.puesto)} está libre: nadie previsto ahí hoy.`, 'info');
+        abrirHoja(`${p.piso}-${p.puesto}`, `Puesto ${rotulo(p.piso, p.puesto)}`, gente.map(g => g.codigo), fila.piso);
+      } });
+      vista.querySelectorAll('[data-sin-puesto]').forEach(b => b.addEventListener('click', () =>
+        abrirHoja(null, 'Persona sin puesto en el mapa', [b.dataset.sinPuesto], fila.piso)));
+    }
     vista.querySelector('#guardar-conteo')?.addEventListener('click', async () => {
       await emergencia.marcarConteo(fila.piso, {
         evacuados: vista.querySelector('#c-ev').value, noUbicados: vista.querySelector('#c-nu').value, apoyo: vista.querySelector('#c-ap').value
@@ -335,8 +441,10 @@ export function vistaEmergencia(vista) {
     const enfocado = document.activeElement;
     if (enfocado && vista.contains(enfocado) && enfocado.matches('#c-ev, #c-nu, #c-ap')) { pendientePintar = true; return; }
     pendientePintar = false;
+    const puestoEnfocado = enfocado && vista.contains(enfocado) && enfocado.closest ? (enfocado.closest('[data-mp-puesto]') || {}).dataset?.mpPuesto : null;
     const a = emergencia.actual();
     if (a) pintarActiva(a); else pintarInactiva();
+    if (puestoEnfocado) vista.querySelector(`[data-mp-puesto="${puestoEnfocado}"]`)?.focus();
   };
 
   const alCambiar = () => { if (location.hash.startsWith('#/emergencia')) pintar(); };

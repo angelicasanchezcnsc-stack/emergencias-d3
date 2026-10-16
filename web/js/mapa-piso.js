@@ -88,10 +88,10 @@ export function ubicar(puestos, referencias = []) {
   return { puestos: resultado, filas, columnas: ultimaCol };
 }
 
-function leerVista() {
-  try { const v = localStorage.getItem(CLAVE_VISTA); return v === 'mapa' || v === 'lista' ? v : null; } catch (e) { return null; }
+function leerVista(clave = CLAVE_VISTA) {
+  try { const v = localStorage.getItem(clave); return v === 'mapa' || v === 'lista' ? v : null; } catch (e) { return null; }
 }
-function guardarVista(v) { try { localStorage.setItem(CLAVE_VISTA, v); } catch (e) { /* sin almacenamiento: no se recuerda */ } }
+function guardarVista(v, clave = CLAVE_VISTA) { try { localStorage.setItem(clave, v); } catch (e) { /* sin almacenamiento: no se recuerda */ } }
 
 function hayPlano(piso) {
   try { return !!contenido.archivosMeta()['plano-' + piso]; } catch (e) { return false; }
@@ -112,13 +112,16 @@ function hayPlano(piso) {
  *   idBase        prefijo de los ids (único en la página)
  *   pisos         pisos para las pestañas (si no viene, no hay pestañas)
  *   vistaPorDefecto 'mapa' | 'lista' mientras no haya una elección guardada
+ *   claveVista    clave de localStorage donde se recuerda mapa o lista (por defecto la de todas las pantallas)
+ *   sinSelector   true = sin el botón «Ver como lista / mapa» (la pantalla trae el suyo)
+ *   leyendaExtra  [{ simbolo, nombre, senal }] filas extra para la leyenda
  *   refElegida    id de la referencia elegida (solo en modo editar)
  *   plano         (piso) → ¿hay plano? Por defecto mira los archivos guardados (plano-N)
  *   abrirPlano    (piso) → abre el plano. Por defecto lo abre en una ventana
  */
 export function mapaPiso(opciones) {
   const estado = { ...opciones };
-  let vista = estado.vista || leerVista() || estado.vistaPorDefecto || 'mapa';
+  let vista = estado.vista || leerVista(estado.claveVista) || estado.vistaPorDefecto || 'mapa';
   let foco = null;   // casilla con tabindex 0 en modo editar
   const id = () => estado.idBase || 'mapa';
 
@@ -251,6 +254,7 @@ export function mapaPiso(opciones) {
       const x = CLASES[c];
       return `<li><span class="mp-muestra mp-${c}" aria-hidden="true">${esc(x.simbolo || '')}</span><span><strong>${esc(x.nombre)}</strong> <span class="sutil">${esc(x.senal)}</span></span></li>`;
     });
+    (estado.leyendaExtra || []).forEach(x => items.push(`<li><span class="mp-muestra mp-ocupado" aria-hidden="true">${esc(x.simbolo || '')}</span><span><strong>${esc(x.nombre)}</strong> <span class="sutil">${esc(x.senal || '')}</span></span></li>`));
     if (hayResaltado) items.push(`<li><span class="mp-muestra mp-resaltado" aria-hidden="true"></span><span><strong>${esc(CLASE_RESALTADO.nombre)}</strong> <span class="sutil">${esc(CLASE_RESALTADO.senal)}</span></span></li>`);
     return items.length ? `<ul class="mp-leyenda" aria-label="Leyenda del mapa">${items.join('')}</ul>` : '';
   }
@@ -263,7 +267,7 @@ export function mapaPiso(opciones) {
         `<button type="button" class="pestana ${n === estado.piso ? 'activa' : ''}" data-mp-piso="${n}" aria-pressed="${n === estado.piso}">Piso ${n}</button>`).join('')}</div>` : ''}
       <div class="fila mp-acciones">
         ${planoOk ? `<button type="button" class="btn btn-secundario btn-chico" data-mp-plano="${esc(estado.piso)}">${icono(ICONO_PLANO)}Ver plano del piso</button>` : ''}
-        <button type="button" class="btn btn-secundario btn-chico" data-mp-vista>${vista === 'mapa' ? 'Ver como lista' : 'Ver como mapa'}</button>
+        ${estado.sinSelector ? '' : `<button type="button" class="btn btn-secundario btn-chico" data-mp-vista>${vista === 'mapa' ? 'Ver como lista' : 'Ver como mapa'}</button>`}
       </div>
     </div>`;
   }
@@ -310,7 +314,7 @@ export function mapaPiso(opciones) {
       if (!b || !caja.contains(b) || b.disabled) return;
       if (b.hasAttribute('data-mp-vista')) {
         vista = vista === 'mapa' ? 'lista' : 'mapa';
-        guardarVista(vista);
+        guardarVista(vista, estado.claveVista);
         pintar(vista === 'mapa' ? 'Mostrando el mapa.' : 'Mostrando la lista.');
         caja.querySelector('[data-mp-vista]').focus();
       } else if (b.hasAttribute('data-mp-plano')) {
