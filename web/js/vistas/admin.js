@@ -5,7 +5,7 @@ import * as sesion from '../sesion.js';
 import * as llave from '../llave.js';
 import { llamar } from '../api.js';
 import { leerXlsx, interpretarPlanta } from '../xlsx.js';
-import { esc, icono, aviso, espera, tarjeta, insignia, confirmar } from '../ui.js';
+import { esc, icono, aviso, espera, tarjeta, insignia, confirmar, barraBusqueda, enlazarBusqueda, coincide } from '../ui.js';
 import { previaExcel, elegirArchivo, guardarLlave, abrirLlave, mostrarCredencial } from './comun.js';
 import * as contenido from '../contenido.js';
 import { ARCHIVOS } from '../contenido-inicial.js';
@@ -144,6 +144,10 @@ function puestosCambiaron(filas) {
 const DIAS_PRESENCIALES = [['1', 'L'], ['2', 'M'], ['3', 'X'], ['4', 'J'], ['5', 'V']];
 // '' y '1,2,3,4,5' significan lo mismo: lunes a viernes.
 const agendaNorm = a => (a === '1,2,3,4,5' ? '' : a || '');
+const NOMBRE_ROL = { admin: 'administrador', coordinador: 'coordinador', suplente: 'suplente', brigadista: 'brigadista', asesor: 'asesor' };
+// Texto en el que se busca a una persona: nombre, correo, código, puesto y roles.
+const textoBusqueda = (s, l) => [l.nombre, l.correo, s.codigo, `P${s.piso}-${s.puesto}`, `piso ${s.piso} puesto ${s.puesto}`,
+  ...(s.roles || []).map(r => NOMBRE_ROL[r] || r)].join(' ');
 
 function panelPersonas(panel, abrir) {
   const servidor = sesion.base().personas.filter(p => p.estado === 'activo');
@@ -156,7 +160,8 @@ function panelPersonas(panel, abrir) {
   panel.innerHTML = `
     <div class="nota nota-info">${icono('info')}<span>Solo ingresan al aplicativo las personas con un rol. Las demás siguen en las listas de emergencia y de Hoy en la sede.</span></div>
     <div class="nota nota-info" style="margin-top:.5rem">${icono('info')}<span>El coordinador y el suplente ven todos los pisos y las caracterizaciones; asigne uno de esos roles a quien supervise el aplicativo. Cada piso tiene uno o dos brigadistas, hay un coordinador y, si se quiere, un suplente. El asesor reporta en las emergencias. Siempre debe quedar al menos un administrador. El celular solo se pide a los brigadistas, al coordinador y al suplente, y viaja cifrado.</span></div>
-    <div class="fila" id="filtro-acceso" style="margin:1rem 0">
+    <div style="margin-top:1rem">${barraBusqueda({ id: 'buscar-personas' })}</div>
+    <div class="fila" id="filtro-acceso" style="margin:0 0 1rem">
       <button class="pestana activa" data-f="todas">Todas</button>
       <button class="pestana" data-f="con">Con acceso</button>
       <button class="pestana" data-f="sin">Sin acceso</button>
@@ -191,6 +196,7 @@ function panelPersonas(panel, abrir) {
         </tr>`;
       }).join('')}</tbody>
     </table></div>
+    <p class="sutil oculto" id="sin-resultados" style="margin-top:.75rem">Nadie coincide con la búsqueda.</p>
     <div class="fila" style="margin-top:1rem"><button class="btn btn-oscuro" id="guardar">${icono('guardar', 'ic-s')}Guardar roles, días y celulares</button></div>`;
 
   // El piso solo aplica a brigadistas; el celular también a coordinador y suplente; «Ocasional»
@@ -209,10 +215,25 @@ function panelPersonas(panel, abrir) {
     tr.querySelectorAll('[data-rol], [data-ocasional]').forEach(c => c.addEventListener('change', () => sincronizar(tr)));
   });
 
-  // Filtro por el acceso guardado (no cambia mientras se editan las casillas).
+  // Búsqueda y filtro por el acceso guardado (el filtro no cambia mientras se editan las casillas).
+  // Las filas ocultas siguen en la tabla: al guardar se envían igual, con lo que tengan marcado.
+  const textos = new Map(filas.map(({ s, l }) => [s.codigo, textoBusqueda(s, l)]));
+  let acceso = 'todas', texto = '';
+  const filtrar = () => {
+    let visibles = 0;
+    panel.querySelectorAll('tbody tr').forEach(tr => {
+      const ver = (acceso === 'todas' || tr.dataset.acceso === acceso) && coincide(textos.get(tr.dataset.codigo), texto);
+      tr.classList.toggle('oculto', !ver);
+      if (ver) visibles++;
+    });
+    panel.querySelector('#sin-resultados').classList.toggle('oculto', visibles > 0);
+    busqueda.conteo(texto || acceso !== 'todas' ? `Se muestran ${visibles} de ${filas.length} personas.` : '');
+  };
+  const busqueda = enlazarBusqueda(panel, 'buscar-personas', v => { texto = v; filtrar(); });
   panel.querySelectorAll('#filtro-acceso button').forEach(b => b.addEventListener('click', () => {
     panel.querySelectorAll('#filtro-acceso button').forEach(x => x.classList.toggle('activa', x === b));
-    panel.querySelectorAll('tbody tr').forEach(tr => { tr.classList.toggle('oculto', b.dataset.f !== 'todas' && tr.dataset.acceso !== b.dataset.f); });
+    acceso = b.dataset.f;
+    filtrar();
   }));
 
   panel.querySelectorAll('[data-accion=clave]').forEach(b => b.addEventListener('click', async () => {
@@ -300,7 +321,9 @@ function panelCredenciales(panel, abrir) {
   panel.innerHTML = `
     <div class="no-imprimir">
       <div class="nota nota-info">${icono('info')}<span>Contraseñas temporales que aún no se han entregado. Al marcarlas como entregadas se borran de la llave. Si alguien la pierde, genere otra en Personas y roles.</span></div>
-      ${pendientes.length ? `<div class="fila" style="margin-bottom:1rem"><button class="btn btn-secundario" id="imprimir">${icono('imprimir', 'ic-s')}Imprimir credenciales</button></div>` : '<p class="sutil">No hay contraseñas pendientes por entregar.</p>'}
+      ${pendientes.length ? `${barraBusqueda({ id: 'buscar-credenciales' })}
+        <div class="fila" style="margin-bottom:1rem"><button class="btn btn-secundario" id="imprimir">${icono('imprimir', 'ic-s')}Imprimir credenciales</button></div>
+        <p class="ayuda" style="margin-top:-.5rem">Si busca a una persona, se imprime solo su credencial.</p>` : '<p class="sutil">No hay contraseñas pendientes por entregar.</p>'}
     </div>
     <div id="credenciales">${pendientes.map(p => `
       <div class="credencial" data-codigo="${esc(p.codigo)}">
@@ -314,6 +337,18 @@ function panelCredenciales(panel, abrir) {
         <p class="ayuda">Ingrese en ${esc(direccion)} y cambie la contraseña en «Mi cuenta».</p>
       </div>`).join('')}</div>`;
   panel.querySelector('#imprimir')?.addEventListener('click', () => print());
+  if (pendientes.length) {
+    const textos = new Map(pendientes.map(p => [p.codigo, [p.nombre, p.correo, p.codigo, `P${p.piso}-${p.puesto}`].join(' ')]));
+    const busqueda = enlazarBusqueda(panel, 'buscar-credenciales', v => {
+      let visibles = 0;
+      panel.querySelectorAll('.credencial').forEach(c => {
+        const ver = coincide(textos.get(c.dataset.codigo), v);
+        c.classList.toggle('oculto', !ver);
+        if (ver) visibles++;
+      });
+      busqueda.conteo(v ? `Se muestran ${visibles} de ${pendientes.length} credenciales.` : '');
+    });
+  }
   panel.querySelectorAll('[data-entregada]').forEach(c => c.addEventListener('change', async () => {
     llave.marcarEntregada(c.closest('[data-codigo]').dataset.codigo);
     await guardarLlave();

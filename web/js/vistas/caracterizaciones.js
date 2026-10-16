@@ -4,7 +4,7 @@
 import { CONFIG } from '../../config.js';
 import * as sesion from '../sesion.js';
 import * as carac from '../caracterizacion.js';
-import { esc, icono, aviso, insignia, modal, confirmar } from '../ui.js';
+import { esc, icono, aviso, insignia, modal, confirmar, barraBusqueda, enlazarBusqueda, coincide } from '../ui.js';
 import { fechaLegible, fechaBogota } from '../tiempo.js';
 import { formularioCaracterizacion } from './form-caracterizacion.js';
 
@@ -12,6 +12,9 @@ const { CATEGORIAS, APOYOS, VINCULACIONES, etiqueta } = carac;
 const tel = t => String(t || '').replace(/[^\d+]/g, '');
 const parrafos = texto => String(texto || '').split(/\n\n+/).map(p => `<p>${esc(p)}</p>`).join('');
 const porNombre = (x, y) => sesion.nombreDe(x.codigo).localeCompare(sesion.nombreDe(y.codigo), 'es');
+// Texto en el que se busca a una persona: nombre, código y puesto.
+const textoPersona = p => [sesion.nombreDe(p.codigo), p.codigo, `P${p.piso}-${p.puesto}`, `piso ${p.piso} puesto ${p.puesto}`].join(' ');
+const opcionPersona = (p, elegida) => `<option value="${esc(p.codigo)}" ${p.codigo === elegida ? 'selected' : ''}>${esc(sesion.nombreDe(p.codigo))} (P${p.piso}-${p.puesto})</option>`;
 
 function detalle(p, r) {
   const d = r.datos, a = r.apoyo;
@@ -90,9 +93,10 @@ async function abrirAsistida(vista, pre = {}) {
     titulo: edicion ? 'Editar caracterización asistida' : 'Registrar caracterización asistida', ancho: 'ancho',
     cuerpo: `
       <p class="sutil">Solo para personas sin acceso al aplicativo que ya firmaron el formato de autorización impreso. Guarde el formato firmado con la custodia de la coordinación.</p>
+      ${edicion ? '' : barraBusqueda({ id: 'as-buscar', etiqueta: 'Buscar a la persona', ejemplo: 'Nombre o puesto (P2-14)' })}
       <div class="campo"><label class="etiqueta" for="as-persona">Persona</label>
         <select id="as-persona" ${edicion ? 'disabled' : ''}>${edicion ? '' : '<option value="">Elija a la persona…</option>'}${(edicion ? candidatasEdicion(pre.codigo) : candidatas).map(p =>
-          `<option value="${esc(p.codigo)}" ${p.codigo === pre.codigo ? 'selected' : ''}>${esc(sesion.nombreDe(p.codigo))} (P${p.piso}-${p.puesto})</option>`).join('')}</select></div>
+          opcionPersona(p, pre.codigo)).join('')}</select></div>
       <div class="pila">${formu.html}</div>
       <section class="tarjeta">
         <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-ambar">${icono('libro')}</div><div><h3>Formato firmado</h3><p class="sutil">Autorización, texto versión ${esc(consent.version)}</p></div></div>
@@ -119,8 +123,20 @@ async function abrirAsistida(vista, pre = {}) {
       }
     ]
   });
-  // El modal ya está en pantalla: se conectan los eventos del formulario compartido.
-  formu.enlazar([...document.querySelectorAll('.modal-fondo')].pop());
+  // El modal ya está en pantalla: se conectan los eventos del formulario compartido y la búsqueda.
+  const fondo = [...document.querySelectorAll('.modal-fondo')].pop();
+  formu.enlazar(fondo);
+  if (!edicion) {
+    const sel = fondo.querySelector('#as-persona');
+    const busqueda = enlazarBusqueda(fondo, 'as-buscar', v => {
+      const elegida = sel.value;
+      const lista = candidatas.filter(p => p.codigo === elegida || coincide(textoPersona(p), v));
+      sel.innerHTML = '<option value="">Elija a la persona…</option>' + lista.map(p => opcionPersona(p, elegida)).join('');
+      // Si queda una sola persona, se elige sola.
+      if (v && lista.length === 1) sel.value = lista[0].codigo;
+      busqueda.conteo(!v ? '' : lista.length === 1 ? `Una coincidencia: ${sesion.nombreDe(lista[0].codigo)}, elegida.` : `${lista.length} coincidencias.`);
+    });
+  }
   const r = await respuesta;
   if (!r) return;
   try {
@@ -151,9 +167,13 @@ export async function vistaCaracterizaciones(vista) {
   const sinAcceso = lista.filter(x => x.r && x.r.estado !== 'ok').length;
   const requieren = lista.filter(x => x.r && x.r.estado === 'ok' && x.r.apoyo.apoyo !== 'ninguno').length;
   let filtro = 'todas';
+  let texto = '';
+  let busqueda = null;
 
   const pintar = () => {
-    const visibles = lista.filter(({ r }) => filtro === 'todas' ? true : filtro === 'apoyo' ? (r && r.estado === 'ok' && r.apoyo.apoyo !== 'ninguno') : !r);
+    const visibles = lista.filter(({ p, r }) => (filtro === 'todas' ? true : filtro === 'apoyo' ? (r && r.estado === 'ok' && r.apoyo.apoyo !== 'ninguno') : !r)
+      && coincide(textoPersona(p), texto));
+    if (busqueda) busqueda.conteo(texto ? `Se muestran ${visibles.length} de ${lista.length} personas.` : '');
     vista.querySelector('#tabla').innerHTML = visibles.length ? `<div class="tabla-caja"><table>
       <thead><tr><th>Persona</th><th>Ubicación</th><th>Estado</th><th>Condición</th><th>Apoyo</th><th>Contacto de emergencia</th><th></th></tr></thead>
       <tbody>${visibles.map(({ p, r }) => {
@@ -204,6 +224,7 @@ export async function vistaCaracterizaciones(vista) {
       <div><strong>${personas.length - hechas}</strong><span>sin diligenciar</span></div>
       <div><strong>${lectoresTexto()}</strong><span>con acceso al detalle</span></div>
     </div>
+    ${barraBusqueda({ id: 'buscar-carac', ejemplo: 'Nombre, código o puesto (P2-14)' })}
     <div class="fila" id="filtro" style="margin-bottom:1rem">
       <button class="pestana activa" data-f="todas">Todas</button>
       <button class="pestana" data-f="apoyo">Necesitan apoyo</button>
@@ -218,6 +239,7 @@ export async function vistaCaracterizaciones(vista) {
     pintar();
   }));
 
+  busqueda = enlazarBusqueda(vista, 'buscar-carac', v => { texto = v; pintar(); });
   vista.querySelector('#imprimir-formato').addEventListener('click', async () => imprimirFormato(await carac.consentimientoActual()));
   vista.querySelector('#registrar-asistida').addEventListener('click', () => abrirAsistida(vista));
 

@@ -1,6 +1,6 @@
 import { CONFIG } from '../../config.js';
 import * as sesion from '../sesion.js';
-import { esc, insignia, icono } from '../ui.js';
+import { esc, insignia, icono, barraBusqueda, enlazarBusqueda, coincide } from '../ui.js';
 
 export function vistaPlanta(vista) {
   const base = sesion.base();
@@ -8,8 +8,16 @@ export function vistaPlanta(vista) {
   if (!base) { vista.innerHTML = '<div class="nota nota-adv">Sin datos. Conéctese una vez para descargar la planta física.</div>'; return; }
 
   const activas = base.personas.filter(p => p.estado === 'activo');
-  const pintar = filtro => {
-    const pisos = CONFIG.PISOS.filter(n => filtro === 'todos' || n === filtro);
+  const textoPersona = p => [sesion.nombreDe(p.codigo), p.codigo, `P${p.piso}-${p.puesto}`, `piso ${p.piso} puesto ${p.puesto}`].join(' ');
+  let filtroPiso = 'todos', texto = '', busqueda = null;
+  // Con una búsqueda, los puestos de quienes coinciden se resaltan y solo se muestran los pisos donde hay alguno.
+  const pintar = () => {
+    const encontradas = texto ? activas.filter(p => coincide(textoPersona(p), texto)) : [];
+    const pisos = CONFIG.PISOS.filter(n => (filtroPiso === 'todos' || n === filtroPiso) && (!texto || encontradas.some(p => p.piso === n)));
+    if (busqueda) {
+      busqueda.conteo(!texto ? '' : !encontradas.length ? 'Nadie coincide con la búsqueda.'
+        : `${encontradas.length} coincidencia(s): ${encontradas.slice(0, 5).map(p => `${sesion.nombreDe(p.codigo)} (P${p.piso}-${p.puesto})`).join('; ')}${encontradas.length > 5 ? '…' : ''}`);
+    }
     vista.querySelector('#pisos').innerHTML = pisos.map(n => {
       const puestos = base.puestos.filter(x => x.piso === n).sort((a, b) => a.puesto - b.puesto);
       const brigadistas = activas.filter(p => p.roles.includes('brigadista') && p.pisoBrigada === n);
@@ -25,7 +33,8 @@ export function vistaPlanta(vista) {
         <div class="puestos">${puestos.map(x => {
           const p = activas.find(a => a.piso === n && a.puesto === x.puesto);
           if (!p) return `<div class="puesto vacante"><div class="num">P${n}-${x.puesto}</div>Vacante</div>`;
-          return `<div class="puesto ${p.codigo === yo.codigo ? 'mio' : ''}">
+          const resaltado = texto && encontradas.includes(p);
+          return `<div class="puesto ${p.codigo === yo.codigo ? 'mio' : ''} ${resaltado ? 'resaltado' : ''}">
             <div class="num">P${n}-${x.puesto}</div>${esc(sesion.nombreDe(p.codigo))}
             ${p.roles.includes('brigadista') ? '<div>' + insignia('Brigadista', 'rojo') + '</div>' : ''}</div>`;
         }).join('') || '<p class="sutil">Sin puestos cargados.</p>'}</div>
@@ -41,10 +50,13 @@ export function vistaPlanta(vista) {
         ${CONFIG.PISOS.map(n => `<button class="pestana" data-p="${n}">Piso ${n}</button>`).join('')}
       </div>
     </div>
+    ${barraBusqueda({ id: 'buscar-planta', ejemplo: 'Nombre, código o puesto (P2-14)' })}
     <div id="pisos" class="pila"></div>`;
   vista.querySelectorAll('#filtro button').forEach(b => b.addEventListener('click', () => {
     vista.querySelectorAll('#filtro button').forEach(x => x.classList.toggle('activa', x === b));
-    pintar(b.dataset.p === 'todos' ? 'todos' : Number(b.dataset.p));
+    filtroPiso = b.dataset.p === 'todos' ? 'todos' : Number(b.dataset.p);
+    pintar();
   }));
-  pintar('todos');
+  busqueda = enlazarBusqueda(vista, 'buscar-planta', v => { texto = v; pintar(); });
+  pintar();
 }

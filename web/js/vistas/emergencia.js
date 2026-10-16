@@ -181,7 +181,7 @@ export function vistaEmergencia(vista) {
           <div><h3>Reporte del piso</h3><p class="sutil">Marque a cada persona o, si no hay tiempo, reporte por conteo</p></div></div>
         <div class="fila" id="pisos" style="margin-bottom:.75rem">${r.filas.map(f =>
           `<button class="pestana ${f.piso === fila.piso ? 'activa' : ''}" data-p="${f.piso}">Piso ${f.piso}${f.piso === yo.pisoBrigada ? ' · su brigada' : ''} (${f.esperados})</button>`).join('')}</div>
-        <input id="buscar" type="text" placeholder="Buscar por nombre en este piso o en todo el Despacho…" value="${esc(busqueda)}" autocomplete="off" style="margin-bottom:.5rem">
+        <input id="buscar" type="search" aria-label="Buscar por nombre en este piso o en todo el Despacho" placeholder="Buscar por nombre en este piso o en todo el Despacho…" value="${esc(busqueda)}" autocomplete="off" style="margin-bottom:.5rem">
         ${grupo('Previstas hoy en este piso', delPiso.filter(x => x.grupo === 'en'), '')}
         ${grupo('Sin reporte del día (verifique si están en la sede)', delPiso.filter(x => x.grupo === 'sin'), '')}
         ${grupo('Reportados aunque no estaban en la lista', delPiso.filter(x => x.grupo === 'extra'), '')}

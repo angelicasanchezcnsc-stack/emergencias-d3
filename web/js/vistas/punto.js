@@ -104,7 +104,7 @@ export function vistaPunto(vista) {
         <button class="btn btn-peligro" id="ver-ausentes">${icono('alerta', 'ic-s')}Lista de ausentes (${faltan.length})</button>
       </div>
 
-      <input id="buscar" class="buscar-grande" type="search" placeholder="Buscar por nombre…" value="${esc(busqueda)}" autocomplete="off">
+      <input id="buscar" class="buscar-grande" type="search" aria-label="Buscar por nombre" placeholder="Buscar por nombre…" value="${esc(busqueda)}" autocomplete="off">
       <div class="fila" id="filtro" style="margin:.75rem 0">
         <button class="pestana ${pisoSel === 'todos' ? 'activa' : ''}" data-p="todos">Todos</button>
         ${r.filas.map(f => `<button class="pestana ${pisoSel === f.piso ? 'activa' : ''}" data-p="${f.piso}">Piso ${f.piso} (${f.llegaron}/${enSedeDe(f)})</button>`).join('')}

@@ -126,7 +126,7 @@ export function vistaHoy(vista) {
     </div>
     <div class="fila" id="resumen" style="margin-bottom:1rem"></div>
     <div class="fila" style="margin-bottom:1rem">
-      <input id="buscar" type="text" placeholder="Buscar por nombre…" style="flex:1;min-width:12rem" autocomplete="off">
+      <input id="buscar" type="search" aria-label="Buscar por nombre" placeholder="Buscar por nombre…" style="flex:1;min-width:12rem" autocomplete="off">
     </div>
     <div class="fila" id="filtro" style="margin-bottom:1rem">
       <button class="pestana activa" data-p="todos">Todos</button>

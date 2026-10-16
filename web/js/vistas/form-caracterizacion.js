@@ -3,10 +3,12 @@
 // apoyo para evacuar; la autorización cambia según quién diligencia y la pone cada pantalla.
 import * as sesion from '../sesion.js';
 import * as carac from '../caracterizacion.js';
-import { esc, icono } from '../ui.js';
+import { esc, icono, barraBusqueda, enlazarBusqueda, coincide } from '../ui.js';
 
 const { CATEGORIAS, APOYOS, VINCULACIONES } = carac;
 const opciones = (lista, actual) => lista.map(([v, t]) => `<option value="${esc(v)}" ${v === actual ? 'selected' : ''}>${esc(t)}</option>`).join('');
+const opcionColega = (p, elegido) => `<option value="${esc(p.codigo)}" ${p.codigo === elegido ? 'selected' : ''}>${esc(sesion.nombreDe(p.codigo))} (P${p.piso}-${p.puesto})</option>`;
+const textoColega = p => [sesion.nombreDe(p.codigo), `P${p.piso}-${p.puesto}`, `piso ${p.piso} puesto ${p.puesto}`].join(' ');
 
 const DATOS_VACIOS = { vinculacion: '', contacto: { nombre: '', parentesco: '', telefono: '' }, categoria: 'ninguna', nota: '', observaciones: '' };
 const APOYO_VACIO = { apoyo: 'ninguno', detalle: '', acompanante: null };
@@ -41,8 +43,9 @@ export function formularioCaracterizacion({ datos, apoyo, colegas = [], asistida
         <div class="campo"><label class="etiqueta" for="apoyo">Apoyo que ${asistida ? 'necesita' : 'necesito'}</label><select id="apoyo">${opciones(APOYOS, a.apoyo)}</select></div>
         <div id="bloque-apoyo" class="${a.apoyo === 'ninguno' ? 'oculto' : ''}">
           <div class="campo"><label class="etiqueta" for="detalle">¿Qué necesita exactamente? (breve)</label><input id="detalle" type="text" maxlength="120" value="${esc(a.detalle)}" placeholder="Ej.: ayuda para bajar por la escalera" autocomplete="off"></div>
+          ${barraBusqueda({ id: 'acomp-buscar', etiqueta: 'Buscar acompañante', ejemplo: 'Nombre o puesto (P2-14)' })}
           <div class="campo"><label class="etiqueta" for="acompanante">Persona que ${asistida ? 'la acompaña' : 'me acompaña'} (opcional)</label>
-            <select id="acompanante"><option value="">Ninguna</option>${colegas.map(p => `<option value="${esc(p.codigo)}" ${p.codigo === a.acompanante ? 'selected' : ''}>${esc(sesion.nombreDe(p.codigo))} (P${p.piso}-${p.puesto})</option>`).join('')}</select>
+            <select id="acompanante"><option value="">Ninguna</option>${colegas.map(p => opcionColega(p, a.acompanante)).join('')}</select>
             <p class="ayuda">Esa persona verá, en una emergencia, que ${asistida ? 'se necesita' : 'usted necesita'} su ayuda y de qué tipo. ${asistida ? 'La persona debe hablar con ella antes.' : 'Hable con ella antes.'}</p></div>
         </div>
       </section>`;
@@ -53,6 +56,14 @@ export function formularioCaracterizacion({ datos, apoyo, colegas = [], asistida
     enlazar(f) {
       const sel = f.querySelector('#apoyo');
       sel.addEventListener('change', () => f.querySelector('#bloque-apoyo').classList.toggle('oculto', sel.value === 'ninguno'));
+      // La búsqueda filtra la lista de acompañantes; la persona ya elegida nunca se quita de la lista.
+      const selA = f.querySelector('#acompanante');
+      const busqueda = enlazarBusqueda(f, 'acomp-buscar', v => {
+        const elegido = selA.value;
+        const lista = colegas.filter(p => p.codigo === elegido || coincide(textoColega(p), v));
+        selA.innerHTML = '<option value="">Ninguna</option>' + lista.map(p => opcionColega(p, elegido)).join('');
+        busqueda.conteo(v ? `${lista.length} coincidencia(s).` : '');
+      });
     },
     // propia: el mensaje habla de «su» contacto; si no, del contacto de la persona.
     leer(f, { propia = true } = {}) {

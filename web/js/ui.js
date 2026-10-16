@@ -28,7 +28,8 @@ const ICONOS = {
   telefono: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
   reloj: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   ubicacion: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
-  libro: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>'
+  libro: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
+  buscar: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>'
 };
 
 export const icono = (nombre, clase = 'ic') =>
@@ -99,6 +100,51 @@ export function espera(mensaje) {
 }
 
 export const insignia = (texto, tono = 'gris') => `<span class="insignia insignia-${tono}">${esc(texto)}</span>`;
+
+// ---------- Búsqueda de personas ----------
+
+// Texto sin tildes ni mayúsculas, para comparar nombres.
+export const normalizar = t => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+// ¿El texto contiene todas las palabras buscadas, en cualquier orden? («sanchez angelica» encuentra
+// «Angélica Sánchez»). Una búsqueda vacía coincide con todo.
+export function coincide(texto, busqueda) {
+  const palabras = normalizar(busqueda).split(/\s+/).filter(Boolean);
+  if (!palabras.length) return true;
+  const t = normalizar(texto);
+  return palabras.every(p => t.includes(p));
+}
+
+// Barra de búsqueda con etiqueta visible, botón para limpiar y un conteo de resultados que anuncian
+// los lectores de pantalla. Devuelve el HTML; enlazarBusqueda conecta sus eventos.
+export function barraBusqueda({ id, etiqueta = 'Buscar persona', ejemplo = 'Nombre, correo, código o puesto (P2-14)' }) {
+  return `<div class="busqueda no-imprimir" role="search">
+    <label class="etiqueta" for="${id}">${esc(etiqueta)}</label>
+    <div class="busqueda-caja">${icono('buscar', 'ic-s')}
+      <input id="${id}" type="search" placeholder="${esc(ejemplo)}" autocomplete="off" aria-describedby="${id}-conteo">
+      <button type="button" class="btn btn-fantasma btn-chico oculto" data-limpiar="${id}" aria-label="Limpiar la búsqueda">${icono('cerrar', 'ic-s')}</button>
+    </div>
+    <p class="ayuda" id="${id}-conteo" role="status" aria-live="polite"></p>
+  </div>`;
+}
+
+// alCambiar(texto) se llama al escribir (tras una pausa corta), al limpiar y con Escape.
+// Escape solo limpia la búsqueda: no cierra la ventana en la que esté la barra.
+// Devuelve { valor(), conteo(texto) }.
+export function enlazarBusqueda(raiz, id, alCambiar) {
+  const entrada = raiz.querySelector('#' + id);
+  const limpiar = raiz.querySelector(`[data-limpiar="${id}"]`);
+  const conteo = raiz.querySelector('#' + id + '-conteo');
+  let pausa;
+  const avisar = () => { limpiar.classList.toggle('oculto', !entrada.value); alCambiar(entrada.value); };
+  entrada.addEventListener('input', () => { clearTimeout(pausa); pausa = setTimeout(avisar, 150); });
+  entrada.addEventListener('keydown', e => {
+    if (e.key === 'Enter') e.preventDefault();
+    if (e.key === 'Escape' && entrada.value) { e.preventDefault(); e.stopPropagation(); entrada.value = ''; avisar(); }
+  });
+  limpiar.addEventListener('click', () => { entrada.value = ''; avisar(); entrada.focus(); });
+  return { valor: () => entrada.value, conteo: texto => { conteo.textContent = texto; } };
+}
 
 export function tarjeta({ icono: ic, tono = 'ambar', titulo, subtitulo = '', cuerpo = '', clase = '' }) {
   return `<section class="tarjeta ${clase}">
