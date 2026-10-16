@@ -1,6 +1,6 @@
 // Trabajador de servicio: guarda la aplicación en el celular para que abra sin internet.
 // Al publicar una versión nueva, cambie VERSION para renovar la copia guardada.
-const VERSION = 'd3e-v0.11.1';
+const VERSION = 'd3e-v0.11.2';
 
 const ARCHIVOS = [
   './', 'index.html', 'config.js', 'manifest.webmanifest', 'css/earm.css',

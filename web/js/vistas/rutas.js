@@ -6,6 +6,22 @@ import { esc, icono, aviso, insignia, modal } from '../ui.js';
 
 const esAdmin = () => sesion.tieneRol('admin');
 
+// Un PDF se muestra dentro de la página solo si el navegador tiene visor de PDF (los de computador). Los
+// celulares, sobre todo con Android, no lo tienen: allí se ofrecen los botones para abrirlo o descargarlo.
+const puedeIncrustarPdf = () => navigator.pdfViewerEnabled !== false;
+
+export function htmlPdf(url, titulo, incrustar = puedeIncrustarPdf()) {
+  const nombre = String(titulo || 'archivo').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() + '.pdf';
+  if (incrustar) {
+    return `<div class="pdf-caja"><embed src="${url}" type="application/pdf" class="pdf-visor">
+      <a class="btn btn-secundario btn-chico" href="${url}" target="_blank" rel="noopener" data-titulo="${esc(titulo)}">Abrir el PDF en pantalla completa</a></div>`;
+  }
+  return `<div class="pdf-caja">
+    <div class="nota nota-info">${icono('info')}<span>Este celular no muestra PDF dentro de la aplicación. Ábralo o descárguelo para verlo con otra aplicación del celular. Si prefiere verlo aquí, el administrador puede cargar el archivo como imagen (PNG o JPG).</span></div>
+    <div class="fila"><a class="btn btn-primario" href="${url}" target="_blank" rel="noopener" data-titulo="${esc(titulo)}">Abrir el PDF</a>
+      <a class="btn btn-secundario" href="${url}" download="${esc(nombre)}">Descargar el PDF</a></div></div>`;
+}
+
 // Muestra un archivo guardado: imagen en pantalla o PDF con botón para abrirlo.
 async function piezaArchivo(id, titulo, textoVacio) {
   const meta = contenido.archivosMeta()[id];
@@ -19,10 +35,7 @@ async function piezaArchivo(id, titulo, textoVacio) {
       <span class="sutil">Conéctese a internet una vez para descargarlo; después quedará disponible sin conexión.</span></div></div>`;
   }
   const url = URL.createObjectURL(blob);
-  if (blob.type === 'application/pdf') {
-    return `<div class="pdf-caja"><embed src="${url}" type="application/pdf" class="pdf-visor">
-      <a class="btn btn-secundario btn-chico" href="${url}" target="_blank" rel="noopener" data-titulo="${esc(titulo)}">Abrir el PDF en pantalla completa</a></div>`;
-  }
+  if (blob.type === 'application/pdf') return htmlPdf(url, titulo);
   return `<img class="imagen-ruta" src="${url}" alt="${esc(titulo)}" data-ampliar tabindex="0">
     <p class="ayuda">Toque la imagen para ampliarla.</p>`;
 }
@@ -36,11 +49,10 @@ export async function abrirArchivoEnVentana(id, titulo) {
   }
   const url = URL.createObjectURL(blob);
   const cuerpo = blob.type === 'application/pdf'
-    ? `<div class="pdf-caja"><embed src="${url}" type="application/pdf" class="pdf-visor">
-        <a class="btn btn-secundario btn-chico" href="${url}" target="_blank" rel="noopener">Abrir el PDF en pantalla completa</a></div>`
+    ? htmlPdf(url, titulo)
     : `<div class="zoom"><img src="${url}" alt="${esc(titulo)}"></div><p class="ayuda">Use dos dedos para acercar la imagen o deslícela para moverla.</p>`;
   const resultado = await modal({ titulo, ancho: 'ancho', cuerpo });
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
   return resultado;
 }
 
