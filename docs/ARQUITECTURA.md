@@ -32,7 +32,8 @@ Celular / computador (navegador)                     Google (cuenta personal del
 | `js/api.js` | Única puerta al servidor: `llamar(accion, datos)`. Agrega token e `idPeticion` y reintenta cuando Google pierde la respuesta. |
 | `js/sesion.js` | Ingreso, sesión guardada, base del día (`base`), llave del directorio, par de llaves personal, cambio de contraseña. |
 | `js/cripto.js` | WebCrypto: huella del correo, verificador, envolturas AES-GCM, ECDH P-256 + HKDF, archivo de llave. |
-| `js/llave.js` | Llave maestra en memoria (código → nombre, correo, celular, contraseña temporal pendiente), lectura y escritura del archivo, comparación con el Excel. |
+| `js/llave.js` | Llave maestra en memoria (código → nombre, correo, celular, contraseña temporal pendiente), lectura y escritura del archivo, comparación con el Excel y el historial de cambios del personal (los últimos 300, con fecha, qué cambió y quién; sin nombres ni correos; vive solo en la llave). |
+| `js/personal.js` | Gestión del personal desde la app, sin interfaz: mover, intercambiar, compartir puesto, agregar, corregir datos, retirar y reactivar. Cada cambio pasa por `guardarPadron` (con el directorio al día), anota el historial y actualiza la copia local; si el servidor rechaza, la llave vuelve a como estaba. No guarda el archivo de la llave: lo hace la pantalla. Su interfaz está en `js/vistas/ventanas-personal.js` y se usa desde Administración → Personas y roles. |
 | `js/xlsx.js` | Lector mínimo de .xlsx (sin librerías) y lectura de la planta física. |
 | `js/almacen.js` | IndexedDB clave-valor para la copia local. |
 | `js/presencia.js` | Regla de presencia (`presenciaDe`, idéntica a la del servidor), foto de esperados y `ubicacionHoy`. |

@@ -277,6 +277,7 @@ button.mp-ref { cursor: pointer; }
 .mp-muestra { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1.75rem; height: 1.75rem; border: 2px solid #BDBDBD; border-radius: 6px; background: #fff; font-size: .8rem; font-weight: 700; }
 .mp-fila-resaltada td { background: rgba(255, 238, 88, .3); }
 .mp-vacio { margin-bottom: .5rem; }
+.btn-ubic { min-height: 44px; white-space: nowrap; }
 /* Barra de búsqueda de personas */
 .busqueda { margin: 0 0 1rem; }
 .busqueda-caja { position: relative; display: flex; align-items: center; gap: .25rem; }

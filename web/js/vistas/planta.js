@@ -21,22 +21,24 @@ export function vistaPlanta(vista) {
     vista.querySelector('#pisos').innerHTML = pisos.map(n => {
       const puestos = base.puestos.filter(x => x.piso === n).sort((a, b) => a.puesto - b.puesto);
       const brigadistas = activas.filter(p => p.roles.includes('brigadista') && p.pisoBrigada === n);
-      const ocupados = puestos.filter(x => x.estado === 'ocupado').length;
+      const personasDelPiso = activas.filter(p => p.piso === n).length;
+      const vacantes = puestos.filter(x => x.estado === 'vacante').length;
       return `<section class="tarjeta">
         <div class="piso-cab">
           <h3>Piso ${n}</h3>
-          <div class="fila">${insignia(`${ocupados} personas`, 'gris')} ${insignia(`${puestos.length - ocupados} vacantes`, 'gris')}</div>
+          <div class="fila">${insignia(`${personasDelPiso} personas`, 'gris')} ${insignia(`${vacantes} vacantes`, 'gris')}</div>
         </div>
         <p class="sutil" style="margin-bottom:.75rem">${icono('escudo', 'ic-s')} Brigadistas: ${brigadistas.length
           ? brigadistas.map(b => `${esc(sesion.nombreDe(b.codigo))}${sesion.celularDe(b.codigo) ? ` · <a href="tel:${esc(sesion.celularDe(b.codigo).replace(/\s/g, ''))}">${esc(sesion.celularDe(b.codigo))}</a>` : ''}`).join('; ')
           : 'sin asignar'}</p>
         <div class="puestos">${puestos.map(x => {
-          const p = activas.find(a => a.piso === n && a.puesto === x.puesto);
-          if (!p) return `<div class="puesto vacante"><div class="num">P${n}-${x.puesto}</div>Vacante</div>`;
-          const resaltado = texto && encontradas.includes(p);
-          return `<div class="puesto ${p.codigo === yo.codigo ? 'mio' : ''} ${resaltado ? 'resaltado' : ''}">
-            <div class="num">P${n}-${x.puesto}</div>${esc(sesion.nombreDe(p.codigo))}
-            ${p.roles.includes('brigadista') ? '<div>' + insignia('Brigadista', 'rojo') + '</div>' : ''}</div>`;
+          // Un puesto compartido tiene dos o más personas: se muestran todas.
+          const gente = activas.filter(a => a.piso === n && a.puesto === x.puesto);
+          if (!gente.length) return `<div class="puesto vacante"><div class="num">P${n}-${x.puesto}</div>Vacante</div>`;
+          const resaltado = texto && gente.some(p => encontradas.includes(p));
+          return `<div class="puesto ${gente.some(p => p.codigo === yo.codigo) ? 'mio' : ''} ${resaltado ? 'resaltado' : ''}">
+            <div class="num">P${n}-${x.puesto}${gente.length > 1 ? ' · compartido' : ''}</div>${gente.map(p => `<div>${esc(sesion.nombreDe(p.codigo))}</div>
+            ${p.roles.includes('brigadista') ? '<div>' + insignia('Brigadista', 'rojo') + '</div>' : ''}`).join('')}</div>`;
         }).join('') || '<p class="sutil">Sin puestos cargados.</p>'}</div>
       </section>`;
     }).join('');

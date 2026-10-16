@@ -284,7 +284,7 @@ export function mapaPiso(opciones) {
     const claveDelFoco = () => {
       const a = document.activeElement;
       if (!a || !caja.contains(a)) return null;
-      for (const at of ['data-mp-puesto', 'data-mp-casilla', 'data-mp-ref', 'data-mp-vista', 'data-mp-plano']) {
+      for (const at of ['data-mp-puesto', 'data-mp-casilla', 'data-mp-ref', 'data-mp-vista', 'data-mp-plano', 'data-mp-piso']) {
         if (a.hasAttribute(at)) return [at, a.getAttribute(at)];
       }
       return null;

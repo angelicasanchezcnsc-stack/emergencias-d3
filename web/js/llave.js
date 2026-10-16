@@ -12,13 +12,25 @@ let manejador = null;
 export const abierta = () => !!llave;
 export const personas = () => (llave ? llave.personas : []);
 export const persona = codigo => personas().find(p => p.codigo === codigo);
+export const puestos = () => (llave ? llave.puestos || [] : []);
 export const ahoraIso = () => new Date().toISOString();
+
+// Historial de cambios del personal (los últimos 300), dentro de la llave y no en Google. Cada entrada:
+// { fecha, quien, que }. «quien» es el código de quien hizo el cambio y «que» un texto corto con códigos y
+// puestos, sin nombres ni correos.
+export const MAX_HISTORIAL = 300;
+export const historial = () => (llave && llave.historial ? llave.historial.slice().reverse() : []);
+export function registrarCambio(quien, que) {
+  if (!llave.historial) llave.historial = [];
+  llave.historial.push({ fecha: ahoraIso(), quien, que });
+  if (llave.historial.length > MAX_HISTORIAL) llave.historial.splice(0, llave.historial.length - MAX_HISTORIAL);
+}
 
 export function crear(fraseNueva) {
   llave = {
     version: 1, creada: ahoraIso(), actualizada: ahoraIso(),
     claves: { dir: cripto.aB64(cripto.nuevaLlaveDatos()) },
-    siguiente: 1, personas: [], puestos: []
+    siguiente: 1, personas: [], puestos: [], historial: []
   };
   frase = fraseNueva;
   manejador = null;
@@ -93,14 +105,14 @@ export async function sobresIniciales(semillas) {
   return salida;
 }
 
-function nuevoCodigo() {
+export function nuevoCodigo() {
   const codigo = CONFIG.PREFIJO_CODIGO + String(llave.siguiente).padStart(3, '0');
   llave.siguiente += 1;
   return codigo;
 }
 
 // Genera una contraseña temporal y el material que el servidor necesita.
-async function credencialesPara(p, exigirCambio) {
+export async function credencialesPara(p, exigirCambio) {
   const clave = cripto.claveTemporal();
   const cred = await cripto.credenciales(p.correo, clave);
   p.claveTemporal = clave;

@@ -8,6 +8,8 @@ import { leerXlsx, interpretarPlanta } from '../xlsx.js';
 import { esc, icono, aviso, espera, tarjeta, insignia, confirmar, barraBusqueda, enlazarBusqueda, coincide } from '../ui.js';
 import { previaExcel, elegirArchivo, guardarLlave, abrirLlave, mostrarCredencial } from './comun.js';
 import * as contenido from '../contenido.js';
+import * as personal from '../personal.js';
+import { ventanaPuesto, ventanaAgregar, ventanaCorregir, ventanaMas, ventanaHistorial } from './ventanas-personal.js';
 import { ARCHIVOS } from '../contenido-inicial.js';
 
 const PESTANAS = [
@@ -156,17 +158,34 @@ function panelPersonas(panel, abrir) {
   const marca = (r, s) => s.roles.includes(r) ? 'checked' : '';
   // Días de la agenda guardada: '' = lunes a viernes; 'ocasional'; o una lista de días ISO.
   const diasDe = a => (a === 'ocasional' ? [] : a ? a.split(',').map(Number) : [1, 2, 3, 4, 5]);
+  // Personas retiradas (inactivas en la llave): se pueden reactivar.
+  const retiradas = llave.personas().filter(p => p.estado !== 'activo').sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  const botonUbicacion = (s, l) => `<button class="btn btn-fantasma btn-chico btn-ubic mono" data-accion="ubicacion"
+    aria-label="${esc(`Cambiar el puesto de ${l.nombre}, hoy en el piso ${s.piso}, puesto ${s.puesto}`)}">P${s.piso}-${s.puesto} <span aria-hidden="true">✎</span></button>`;
+  const tablaRetiradas = () => retiradas.length ? `<table>
+      <thead><tr><th>Persona</th><th>Último puesto</th><th></th></tr></thead>
+      <tbody>${retiradas.map(p => `<tr data-retirada="${esc(p.codigo)}">
+        <td><strong>${esc(p.nombre)}</strong><div class="sutil"><span class="mono">${esc(p.codigo)}</span> · ${esc(p.correo)}</div></td>
+        <td class="mono">P${p.piso}-${p.puesto}</td>
+        <td><button class="btn btn-secundario btn-chico" data-accion="reactivar" aria-label="${esc('Reactivar a ' + p.nombre)}">Reactivar</button></td>
+      </tr>`).join('')}</tbody></table>`
+    : '<p class="sutil" style="padding:1rem;margin:0">No hay personas retiradas.</p>';
 
   panel.innerHTML = `
     <div class="nota nota-info">${icono('info')}<span>Solo ingresan al aplicativo las personas con un rol. Las demás siguen en las listas de emergencia y de Hoy en la sede.</span></div>
     <div class="nota nota-info" style="margin-top:.5rem">${icono('info')}<span>El coordinador y el suplente ven todos los pisos y las caracterizaciones; asigne uno de esos roles a quien supervise el aplicativo. Cada piso tiene uno o dos brigadistas, hay un coordinador y, si se quiere, un suplente. El asesor reporta en las emergencias. Siempre debe quedar al menos un administrador. El celular solo se pide a los brigadistas, al coordinador y al suplente, y viaja cifrado.</span></div>
+    <div class="fila entre" style="margin-top:1rem">
+      <p class="sutil" style="margin:0">Los cambios de puesto, altas, retiros y correcciones se guardan en el momento, sin usar el botón de abajo.</p>
+      <button class="btn btn-primario" id="agregar-persona">${icono('personas', 'ic-s')}Agregar persona</button>
+    </div>
     <div style="margin-top:1rem">${barraBusqueda({ id: 'buscar-personas' })}</div>
     <div class="fila" id="filtro-acceso" style="margin:0 0 1rem">
       <button class="pestana activa" data-f="todas">Todas</button>
       <button class="pestana" data-f="con">Con acceso</button>
       <button class="pestana" data-f="sin">Sin acceso</button>
+      <button class="pestana" data-f="retiradas">Retiradas (${retiradas.length})</button>
     </div>
-    <div class="tabla-caja"><table>
+    <div class="tabla-caja" id="caja-activas"><table>
       <thead><tr><th>Persona</th><th>Ubicación</th><th>Acceso</th><th>Roles</th><th>Días presenciales</th><th>Brigada y celular</th><th></th></tr></thead>
       <tbody>${filas.map(({ s, l }) => {
         const dias = diasDe(s.agenda);
@@ -174,7 +193,7 @@ function panelPersonas(panel, abrir) {
         return `
         <tr data-codigo="${esc(s.codigo)}" data-acceso="${s.roles.length ? 'con' : 'sin'}" data-finde="${esc(dias.filter(d => d > 5).join(','))}">
           <td><strong>${esc(l.nombre)}</strong><div class="sutil"><span class="mono">${esc(s.codigo)}</span> · ${esc(l.correo)}</div></td>
-          <td class="mono">P${s.piso}-${s.puesto}</td>
+          <td>${botonUbicacion(s, l)}</td>
           <td data-insignia-acceso></td>
           <td>
             <label class="casilla"><input type="checkbox" data-rol="admin" ${marca('admin', s)}>Administrador</label>
@@ -192,12 +211,19 @@ function panelPersonas(panel, abrir) {
             <select data-campo="piso">${CONFIG.PISOS.map(n => `<option value="${n}" ${(s.pisoBrigada || s.piso) === n ? 'selected' : ''}>Piso ${n}</option>`).join('')}</select>
             <input data-campo="celular" type="tel" placeholder="Celular" value="${esc(l.celular || '')}" style="margin-top:.4rem">
           </td>
-          <td><button class="btn btn-fantasma btn-chico" data-accion="clave" title="Generar contraseña temporal">${icono('recargar', 'ic-s')}Contraseña</button></td>
+          <td><div class="fila" style="flex-wrap:nowrap">
+            <button class="btn btn-fantasma btn-chico" data-accion="clave" title="Generar contraseña temporal">${icono('recargar', 'ic-s')}Contraseña</button>
+            <button class="btn btn-fantasma btn-chico" data-accion="mas" aria-label="${esc('Más acciones para ' + l.nombre)}">Más</button>
+          </div></td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>
+    <div class="tabla-caja oculto" id="caja-retiradas">${tablaRetiradas()}</div>
     <p class="sutil oculto" id="sin-resultados" style="margin-top:.75rem">Nadie coincide con la búsqueda.</p>
-    <div class="fila" style="margin-top:1rem"><button class="btn btn-oscuro" id="guardar">${icono('guardar', 'ic-s')}Guardar roles, días y celulares</button></div>`;
+    <div class="fila" style="margin-top:1rem" id="pie-personas">
+      <button class="btn btn-oscuro" id="guardar">${icono('guardar', 'ic-s')}Guardar roles, días y celulares</button>
+      <button class="btn btn-secundario" id="cambios-recientes">${icono('reloj', 'ic-s')}Cambios recientes</button>
+    </div>`;
 
   // El piso solo aplica a brigadistas; el celular también a coordinador y suplente; «Ocasional»
   // deshabilita los días; la insignia de acceso sigue a las casillas de roles.
@@ -210,7 +236,7 @@ function panelPersonas(panel, abrir) {
     const conAcceso = [...tr.querySelectorAll('[data-rol]')].some(c => c.checked);
     tr.querySelector('[data-insignia-acceso]').innerHTML = conAcceso ? insignia('Con acceso', 'verde') : insignia('Sin acceso', 'gris');
   };
-  panel.querySelectorAll('tbody tr').forEach(tr => {
+  panel.querySelectorAll('#caja-activas tbody tr').forEach(tr => {
     sincronizar(tr);
     tr.querySelectorAll('[data-rol], [data-ocasional]').forEach(c => c.addEventListener('change', () => sincronizar(tr)));
   });
@@ -218,16 +244,30 @@ function panelPersonas(panel, abrir) {
   // Búsqueda y filtro por el acceso guardado (el filtro no cambia mientras se editan las casillas).
   // Las filas ocultas siguen en la tabla: al guardar se envían igual, con lo que tengan marcado.
   const textos = new Map(filas.map(({ s, l }) => [s.codigo, textoBusqueda(s, l)]));
+  const textosRetiradas = new Map(retiradas.map(p => [p.codigo, [p.nombre, p.correo, p.codigo, `P${p.piso}-${p.puesto}`].join(' ')]));
   let acceso = 'todas', texto = '';
   const filtrar = () => {
+    const enRetiradas = acceso === 'retiradas';
+    panel.querySelector('#caja-activas').classList.toggle('oculto', enRetiradas);
+    panel.querySelector('#caja-retiradas').classList.toggle('oculto', !enRetiradas);
+    panel.querySelector('#pie-personas').classList.toggle('oculto', enRetiradas);
     let visibles = 0;
-    panel.querySelectorAll('tbody tr').forEach(tr => {
-      const ver = (acceso === 'todas' || tr.dataset.acceso === acceso) && coincide(textos.get(tr.dataset.codigo), texto);
-      tr.classList.toggle('oculto', !ver);
-      if (ver) visibles++;
-    });
-    panel.querySelector('#sin-resultados').classList.toggle('oculto', visibles > 0);
-    busqueda.conteo(texto || acceso !== 'todas' ? `Se muestran ${visibles} de ${filas.length} personas.` : '');
+    if (enRetiradas) {
+      panel.querySelectorAll('#caja-retiradas tbody tr').forEach(tr => {
+        const ver = coincide(textosRetiradas.get(tr.dataset.retirada), texto);
+        tr.classList.toggle('oculto', !ver);
+        if (ver) visibles++;
+      });
+    } else {
+      panel.querySelectorAll('#caja-activas tbody tr').forEach(tr => {
+        const ver = (acceso === 'todas' || tr.dataset.acceso === acceso) && coincide(textos.get(tr.dataset.codigo), texto);
+        tr.classList.toggle('oculto', !ver);
+        if (ver) visibles++;
+      });
+    }
+    panel.querySelector('#sin-resultados').classList.toggle('oculto', visibles > 0 || (enRetiradas && !retiradas.length));
+    const total = enRetiradas ? retiradas.length : filas.length;
+    busqueda.conteo(texto || acceso !== 'todas' ? `Se muestran ${visibles} de ${total} personas.` : '');
   };
   const busqueda = enlazarBusqueda(panel, 'buscar-personas', v => { texto = v; filtrar(); });
   panel.querySelectorAll('#filtro-acceso button').forEach(b => b.addEventListener('click', () => {
@@ -252,6 +292,83 @@ function panelPersonas(panel, abrir) {
     } catch (e) { llave.restaurar(copia); capa.cerrar(); aviso(e.message, 'error'); }
   }));
 
+  // ---------- Gestión del personal: cada cambio se guarda en el momento, aparte del botón «Guardar» ----------
+  const pintarUbicacion = codigo => {
+    const tr = panel.querySelector(`#caja-activas tr[data-codigo="${CSS.escape(codigo)}"]`);
+    const s = sesion.base().personas.find(p => p.codigo === codigo);
+    if (!tr || !s) return null;
+    const l = llave.persona(codigo) || { nombre: codigo, correo: '' };
+    tr.children[1].innerHTML = botonUbicacion(s, l);
+    textos.set(codigo, textoBusqueda(s, l));
+    return tr;
+  };
+  // Las altas, retiros y correcciones vuelven a dibujar la tabla: no se pierde lo que haya marcado sin guardar.
+  const sinPendientes = () => {
+    if (!hayPendientes()) return true;
+    aviso('Hay cambios sin guardar en roles, días o celulares. Guárdelos con el botón de abajo y vuelva a intentarlo.', 'advertencia');
+    return false;
+  };
+  const ejecutar = async (mensaje, fn) => { const capa = espera(mensaje); try { return await fn(); } finally { capa.cerrar(); } };
+
+  panel.addEventListener('click', async ev => {
+    const b = ev.target.closest('[data-accion]');
+    if (!b) return;
+    const accion = b.dataset.accion;
+    if (accion === 'ubicacion') {
+      const codigo = b.closest('tr').dataset.codigo;
+      const r = await ventanaPuesto({ codigo });
+      if (!r) return;
+      try {
+        await ejecutar('Guardando el cambio…', () => r.tipo === 'mover' ? personal.moverPersona(codigo, r.piso, r.puesto)
+          : r.tipo === 'intercambiar' ? personal.intercambiar(codigo, r.con) : personal.compartir(codigo, r.piso, r.puesto));
+      } catch (e) { return aviso(e.message, 'error'); }
+      aviso({ mover: 'Persona cambiada de puesto.', intercambiar: 'Puestos intercambiados.', compartir: 'Puesto compartido.' }[r.tipo], 'exito');
+      await guardarLlave();
+      const tr = pintarUbicacion(codigo);
+      if (r.con) pintarUbicacion(r.con);
+      if (tr) tr.querySelector('[data-accion=ubicacion]').focus();
+    } else if (accion === 'mas') {
+      if (!sinPendientes()) return;
+      const codigo = b.closest('tr').dataset.codigo;
+      const op = await ventanaMas(codigo);
+      if (op === 'corregir') {
+        const d = await ventanaCorregir(codigo);
+        if (!d) return;
+        let r;
+        try { r = await ejecutar('Guardando los datos…', () => personal.corregirDatos(codigo, d)); } catch (e) { return aviso(e.message, 'error'); }
+        aviso(r.correo ? 'Datos corregidos. Se generó una contraseña temporal nueva para el correo nuevo: entréguela desde Credenciales o con el botón Contraseña.' : 'Datos corregidos.', 'exito');
+        await guardarLlave();
+        abrir('personas');
+      } else if (op === 'retirar') {
+        const nombre = (llave.persona(codigo) || {}).nombre || codigo;
+        if (!await confirmar('Retirar a una persona', `${esc(nombre)} saldrá de las listas de emergencia y de «Hoy en la sede», y su caracterización se borra. Podrá reactivarla desde el filtro «Retiradas».`, 'Retirar', true)) return;
+        try { await ejecutar('Retirando…', () => personal.retirarPersona(codigo)); } catch (e) { return aviso(e.message, 'error'); }
+        aviso('Persona retirada.', 'exito');
+        await guardarLlave();
+        abrir('personas');
+      }
+    } else if (accion === 'reactivar') {
+      if (!sinPendientes()) return;
+      const codigo = b.closest('tr').dataset.retirada;
+      const r = await ventanaPuesto({ codigo, reactivar: true });
+      if (!r) return;
+      try { await ejecutar('Reactivando…', () => personal.reactivarPersona(codigo, r.piso, r.puesto)); } catch (e) { return aviso(e.message, 'error'); }
+      aviso('Persona reactivada.', 'exito');
+      await guardarLlave();
+      abrir('personas');
+    }
+  });
+  panel.querySelector('#agregar-persona').addEventListener('click', async () => {
+    if (!sinPendientes()) return;
+    const d = await ventanaAgregar();
+    if (!d) return;
+    try { await ejecutar('Agregando a la persona…', () => personal.agregarPersona(d)); } catch (e) { return aviso(e.message, 'error'); }
+    aviso('Persona agregada sin rol: no tiene acceso a la app. Si se lo da, genere su contraseña con el botón Contraseña.', 'exito');
+    await guardarLlave();
+    abrir('personas');
+  });
+  panel.querySelector('#cambios-recientes').addEventListener('click', () => ventanaHistorial());
+
   // Agenda que se envía: 'ocasional', '' (lunes a viernes) o los días marcados (con los del fin de
   // semana que ya tuviera guardados, que esta pantalla no edita). Sin ningún día = ocasional.
   const agendaDe = tr => {
@@ -262,14 +379,25 @@ function panelPersonas(panel, abrir) {
     return dias.join(',') === '1,2,3,4,5' ? '' : dias.join(',');
   };
 
+  // Lo que hay marcado hoy en la tabla de personas con acceso.
+  const leerFormulario = () => [...panel.querySelectorAll('#caja-activas tbody tr')].map(tr => {
+    const roles = [...tr.querySelectorAll('[data-rol]:checked')].map(c => c.dataset.rol);
+    const brig = roles.includes('brigadista');
+    const conCelular = brig || roles.includes('coordinador') || roles.includes('suplente');
+    return { codigo: tr.dataset.codigo, roles, pisoBrigada: brig ? Number(tr.querySelector('[data-campo=piso]').value) : null,
+      celular: conCelular ? tr.querySelector('[data-campo=celular]').value.trim() : '', agenda: agendaDe(tr) };
+  });
+  // Cuenta como cambio: roles, piso de brigada, celular o agenda.
+  const cambiosDe = leidas => leidas.filter(x => {
+    const s = servidor.find(y => y.codigo === x.codigo);
+    const l = llave.persona(x.codigo) || {};
+    return s.roles.slice().sort().join() !== x.roles.slice().sort().join() || (s.pisoBrigada || null) !== x.pisoBrigada
+      || (l.celular || '') !== x.celular || agendaNorm(s.agenda) !== x.agenda;
+  });
+  const hayPendientes = () => cambiosDe(leerFormulario()).length > 0;
+
   panel.querySelector('#guardar').addEventListener('click', async () => {
-    const leidas = [...panel.querySelectorAll('tbody tr')].map(tr => {
-      const roles = [...tr.querySelectorAll('[data-rol]:checked')].map(c => c.dataset.rol);
-      const brig = roles.includes('brigadista');
-      const conCelular = brig || roles.includes('coordinador') || roles.includes('suplente');
-      return { codigo: tr.dataset.codigo, roles, pisoBrigada: brig ? Number(tr.querySelector('[data-campo=piso]').value) : null,
-        celular: conCelular ? tr.querySelector('[data-campo=celular]').value.trim() : '', agenda: agendaDe(tr) };
-    });
+    const leidas = leerFormulario();
     const errores = [];
     if (!leidas.some(x => x.roles.includes('admin'))) errores.push('Debe quedar al menos un administrador.');
     if (leidas.filter(x => x.roles.includes('coordinador')).length > 1) errores.push('Solo puede haber un coordinador.');
@@ -281,12 +409,7 @@ function panelPersonas(panel, abrir) {
     if (errores.length) return aviso(errores.join(' '), 'error');
 
     // Cuenta como cambio: roles, piso de brigada, celular o agenda.
-    const cambios = leidas.filter(x => {
-      const s = servidor.find(y => y.codigo === x.codigo);
-      const l = llave.persona(x.codigo) || {};
-      return s.roles.slice().sort().join() !== x.roles.slice().sort().join() || (s.pisoBrigada || null) !== x.pisoBrigada
-        || (l.celular || '') !== x.celular || agendaNorm(s.agenda) !== x.agenda;
-    });
+    const cambios = cambiosDe(leidas);
     if (!cambios.length) return aviso('No hay cambios por guardar.', 'info');
     // Quienes pasan de sin acceso a con acceso y no tienen una contraseña temporal pendiente en la llave.
     const nuevosConAcceso = cambios.filter(x => {
