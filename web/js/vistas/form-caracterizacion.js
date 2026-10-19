@@ -5,12 +5,12 @@ import * as sesion from '../sesion.js';
 import * as carac from '../caracterizacion.js';
 import { esc, icono, barraBusqueda, enlazarBusqueda, coincide } from '../ui.js';
 
-const { CATEGORIAS, APOYOS, VINCULACIONES } = carac;
+const { CATEGORIAS, APOYOS } = carac;
 const opciones = (lista, actual) => lista.map(([v, t]) => `<option value="${esc(v)}" ${v === actual ? 'selected' : ''}>${esc(t)}</option>`).join('');
 const opcionColega = (p, elegido) => `<option value="${esc(p.codigo)}" ${p.codigo === elegido ? 'selected' : ''}>${esc(sesion.nombreDe(p.codigo))} (P${p.piso}-${p.puesto})</option>`;
 const textoColega = p => [sesion.nombreDe(p.codigo), `P${p.piso}-${p.puesto}`, `piso ${p.piso} puesto ${p.puesto}`].join(' ');
 
-const DATOS_VACIOS = { vinculacion: '', contacto: { nombre: '', parentesco: '', telefono: '' }, categoria: 'ninguna', nota: '', observaciones: '' };
+const DATOS_VACIOS = { contacto: { nombre: '', parentesco: '', telefono: '' }, categoria: 'ninguna', nota: '', observaciones: '' };
 const APOYO_VACIO = { apoyo: 'ninguno', detalle: '', acompanante: null };
 
 // datos / apoyo: valores actuales (o nada). colegas: personas que pueden ser acompañantes.
@@ -23,8 +23,6 @@ export function formularioCaracterizacion({ datos, apoyo, colegas = [], asistida
   const html = `
       <section class="tarjeta">
         <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-verde">${icono('persona')}</div><div><h3>${asistida ? 'Datos de la persona' : 'Mis datos'}</h3><p class="sutil">Registre solo lo necesario para una evacuación segura</p></div></div>
-        <div class="campo"><label class="etiqueta" for="vinculacion">Empleo o vinculación</label>
-          <select id="vinculacion"><option value="">Seleccione…</option>${VINCULACIONES.map(v => `<option ${v === d.vinculacion ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>
         <h4>Contacto de emergencia</h4>
         <div class="campo"><label class="etiqueta" for="c-nombre">Nombre</label><input id="c-nombre" type="text" maxlength="80" value="${esc(d.contacto.nombre)}" autocomplete="off"></div>
         <div class="fila">
@@ -71,7 +69,7 @@ export function formularioCaracterizacion({ datos, apoyo, colegas = [], asistida
       if (!contacto.nombre || !contacto.telefono) return { error: propia ? 'Escriba el nombre y el teléfono de su contacto de emergencia.' : 'Escriba el nombre y el teléfono del contacto de emergencia de la persona.' };
       const tipo = f.querySelector('#apoyo').value;
       const datos = {
-        vinculacion: f.querySelector('#vinculacion').value, contacto, categoria: f.querySelector('#categoria').value,
+        contacto, categoria: f.querySelector('#categoria').value,
         nota: f.querySelector('#nota').value.trim(), observaciones: f.querySelector('#observaciones').value.trim()
       };
       const apoyoDatos = {

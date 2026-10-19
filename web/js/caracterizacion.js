@@ -21,7 +21,6 @@ export const CATEGORIAS = [
 export const APOYOS = [
   ['ninguno', 'No necesito apoyo'], ['acompanamiento', 'Acompañamiento'], ['ruta_alternativa', 'Ruta alternativa']
 ];
-export const VINCULACIONES = ['Funcionario(a) de planta', 'Contratista', 'Asesor(a)', 'Profesional', 'Otro'];   // «Empleo o vinculación»
 export const etiqueta = (lista, valor) => (lista.find(x => x[0] === valor) || [, valor || '—'])[1];
 
 const ROLES_LECTORES = ['admin', 'coordinador', 'suplente'];

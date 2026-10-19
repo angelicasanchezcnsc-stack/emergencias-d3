@@ -8,7 +8,7 @@ import { esc, icono, aviso, insignia, modal, confirmar, barraBusqueda, enlazarBu
 import { fechaLegible, fechaBogota } from '../tiempo.js';
 import { formularioCaracterizacion } from './form-caracterizacion.js';
 
-const { CATEGORIAS, APOYOS, VINCULACIONES, etiqueta } = carac;
+const { CATEGORIAS, APOYOS, etiqueta } = carac;
 const tel = t => String(t || '').replace(/[^\d+]/g, '');
 const parrafos = texto => String(texto || '').split(/\n\n+/).map(p => `<p>${esc(p)}</p>`).join('');
 const porNombre = (x, y) => sesion.nombreDe(x.codigo).localeCompare(sesion.nombreDe(y.codigo), 'es');
@@ -27,7 +27,7 @@ function detalle(p, r) {
       <p class="sutil">Piso ${p.piso} · Puesto ${p.puesto} · Diligenciada el ${esc(fechaLegible(fechaBogota(new Date(r.actualizado))))} · autorización ${esc((r.consentimiento && r.consentimiento.v) || '—')}${fisico ? ` · formato firmado el ${esc(fechaLegible(String(r.consentimiento.f).slice(0, 10)))}, registrada por ${esc(sesion.nombreDe(r.consentimiento.por))}` : ''}</p>
       <div class="nota nota-adv">${icono('candado')}<span>Datos sensibles. Úselos solo para la atención de emergencias; no los copie ni los comparta.</span></div>
       <table class="tabla-ficha"><tbody>
-        ${fila('Empleo o vinculación', d.vinculacion)}
+        ${d.vinculacion ? fila('Empleo o vinculación (registro anterior)', d.vinculacion) : ''}
         ${fila('Contacto de emergencia', [d.contacto.nombre, d.contacto.parentesco && '(' + d.contacto.parentesco + ')'].filter(Boolean).join(' '))}
         <tr><th>Teléfono del contacto</th><td>${d.contacto.telefono ? `<a href="tel:${esc(tel(d.contacto.telefono))}">${esc(d.contacto.telefono)}</a>` : '—'}</td></tr>
         ${fila('Condición relevante', etiqueta(CATEGORIAS, d.categoria))}
@@ -53,7 +53,6 @@ function imprimirFormato(consent) {
       <h2>Datos de la persona</h2>
       <table class="tabla-ficha"><tbody>
         ${campo('Nombre completo')}
-        <tr><th>Empleo o vinculación</th><td style="height:1.1cm">${VINCULACIONES.map(v => '☐ ' + esc(v)).join('&nbsp;&nbsp;&nbsp; ')}</td></tr>
         ${campo('Contacto de emergencia: nombre')}
         ${campo('Contacto de emergencia: parentesco')}
         ${campo('Contacto de emergencia: teléfono')}
