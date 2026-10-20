@@ -50,10 +50,15 @@ function chipApoyo(codigo) {
 
 // Contacto de emergencia de la persona, plegado (lo reciben la coordinación y los brigadistas de su piso; la
 // EPS y la ARL, solo durante la emergencia). Se recuerda cuáles están abiertos para que no se cierren al repintar.
+// La coordinación lo ve siempre. Un brigadista, solo si la persona está marcada «No ubicado», «Requiere apoyo» o
+// con asistencia por discapacidad (decisión de la usuaria, 20/10/2026). Es una regla de la pantalla: el celular
+// guarda la copia cifrada del piso para poder usarla sin internet.
 const contactosAbiertos = new Set();
-function detalleContacto(codigo) {
+const MARCAS_CON_CONTACTO = ['no_ubicado', 'apoyo'];
+const contactoVisible = m => contacto.esCoordinacion() || !!(m && (MARCAS_CON_CONTACTO.includes(m.estado) || m.asistencia));
+function detalleContacto(codigo, m) {
   const c = contacto.contactoDe(codigo);
-  if (!c || !c.abierto) return '';
+  if (!c || !c.abierto || !contactoVisible(m)) return '';
   return `<details class="detalle-contacto" data-contacto-de="${esc(codigo)}" ${contactosAbiertos.has(codigo) ? 'open' : ''}>
     <summary>${icono('telefono', 'ic-s')}Contacto de emergencia</summary>${fichaContacto(c)}</details>`;
 }
@@ -68,7 +73,7 @@ function textoOtraBrigada(m, pisoVista) {
 function filaPersona(codigo, m, extra = '', pisoVista = null) {
   const activo = s => (m && m.estado === s ? 'activo' : '');
   return `<div class="fila-marca" data-codigo="${esc(codigo)}">
-    <div class="fila-dia-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong><span class="sutil">${extra}${insigniaMarca(m)}${esc(textoOtraBrigada(m, pisoVista))}</span>${chipApoyo(codigo)}${detalleContacto(codigo)}</div>
+    <div class="fila-dia-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong><span class="sutil">${extra}${insigniaMarca(m)}${esc(textoOtraBrigada(m, pisoVista))}</span>${chipApoyo(codigo)}${detalleContacto(codigo, m)}</div>
     <div class="marca-btns">
       <button class="btn-estado ${activo('evacuado')} e-evacuado" data-estado="evacuado" title="Evacuado">${icono('ok', 'ic-s')}<span>Evacuado</span></button>
       <button class="btn-estado ${activo('no_ubicado')} e-no" data-estado="no_ubicado" title="No ubicado">${icono('alerta', 'ic-s')}<span>No ubicado</span></button>
@@ -293,6 +298,7 @@ export function vistaEmergencia(vista) {
           <div><h3>Reporte del piso</h3><p class="sutil">Marque a cada persona o, si no hay tiempo, reporte por conteo</p></div></div>
         <div class="fila" id="pisos" style="margin-bottom:.75rem">${r.filas.map(f =>
           `<button class="pestana ${f.piso === fila.piso ? 'activa' : ''}" data-p="${f.piso}">Piso ${f.piso}${f.piso === yo.pisoBrigada ? ' · su brigada' : ''} (${f.esperados})</button>`).join('')}</div>
+        ${reporta && !contacto.esCoordinacion() && yo.roles.includes('brigadista') ? `<p class="ayuda" style="margin:0 0 .5rem">El contacto de emergencia de una persona aparece cuando la marca «No ubicado» o «Apoyo», o con asistencia por discapacidad.</p>` : ''}
         ${pedirOtroPiso ? `<div class="nota nota-info" style="margin-bottom:.75rem">${icono('telefono')}<span>Los contactos de emergencia del piso ${fila.piso} no están en su celular. Si los necesita, pídalos: queda registrado que usted los consultó.
           <button class="btn btn-secundario btn-chico" id="ver-otro-piso" style="margin-top:.4rem">Ver contactos del piso ${fila.piso}</button></span></div>` : ''}
         ${cuerpoReporte}
@@ -348,7 +354,7 @@ export function vistaEmergencia(vista) {
           const pre = textoApoyo(codigo);
           return `<div class="contacto"><div class="contacto-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong>
             <span class="sutil">${f ? 'Piso ' + f.piso + ' · ' : ''}${insigniaMarca(m)}${m && m.asistencia ? ' ' + insignia('Asistencia por discapacidad', 'azul') : ''}</span>
-            ${pre ? `<span class="chip-apoyo">${icono('alerta', 'ic-s')}<span>${esc(pre)}</span></span>` : ''}${detalleContacto(codigo)}</div></div>`;
+            ${pre ? `<span class="chip-apoyo">${icono('alerta', 'ic-s')}<span>${esc(pre)}</span></span>` : ''}${detalleContacto(codigo, m)}</div></div>`;
         }).join('')}
       </section>` : ''}
 

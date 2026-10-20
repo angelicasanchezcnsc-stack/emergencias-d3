@@ -9,6 +9,7 @@ import { esc, icono, aviso, insignia, modal, confirmar, barraBusqueda, enlazarBu
 import { fechaLegible, fechaBogota } from '../tiempo.js';
 import { formularioCaracterizacion } from './form-caracterizacion.js';
 import { fichaContacto, ventanaContacto, textoOrigen, enlaceTel } from './ventana-contacto.js';
+import { imprimirVerificacion } from './verificacion-contactos.js';
 
 const { CATEGORIAS, APOYOS, etiqueta } = carac;
 const tel = t => String(t || '').replace(/[^\d+]/g, '');
@@ -272,6 +273,7 @@ export async function vistaCaracterizaciones(vista) {
       <div><h2>Caracterizaciones</h2><p class="sutil">Solo la coordinación y la administración ven esta información</p></div>
       <div class="fila no-imprimir">
         <button class="btn btn-secundario btn-chico" id="imprimir-formato">${icono('imprimir', 'ic-s')}Imprimir formato de autorización</button>
+        <button class="btn btn-secundario btn-chico" id="imprimir-verificacion" ${listo ? '' : 'disabled'}>${icono('imprimir', 'ic-s')}Imprimir verificación de contactos</button>
         <button class="btn btn-primario btn-chico" id="registrar-asistida" ${listo ? '' : 'disabled'}>${icono('persona', 'ic-s')}Registrar caracterización asistida</button>
         ${sesion.tieneRol('admin') ? '<button class="btn btn-secundario btn-chico" id="editar-texto">Editar texto de la autorización</button>' : ''}
       </div>
@@ -295,7 +297,7 @@ export async function vistaCaracterizaciones(vista) {
     </div>
     <div id="tabla"></div>
     <p class="ayuda" style="margin-top:1rem">Quien tiene acceso al aplicativo diligencia la suya, con su propia autorización. A quien no tiene acceso se le registra con el formato impreso y firmado, que custodia la coordinación (caracterización asistida). Si una persona se retira del Despacho, su registro se borra.</p>
-    <p class="ayuda">El contacto de emergencia viene del archivo del área de personal (Administración → Contactos de emergencia) y no depende de la caracterización. Lo ven la coordinación y los brigadistas de su piso; la EPS y la ARL, los brigadistas solo durante una emergencia o un simulacro. Aquí se corrige lo que avise cada persona.</p>`;
+    <p class="ayuda">El contacto de emergencia viene del archivo del área de personal (Administración → Contactos de emergencia) y no depende de la caracterización. Lo ve la coordinación; los brigadistas de su piso, solo durante una emergencia o un simulacro y cuando la persona queda marcada como no ubicada, con necesidad de apoyo o de asistencia. Aquí se corrige lo que avise cada persona.</p>`;
 
   vista.querySelectorAll('#filtro button').forEach(b => b.addEventListener('click', () => {
     vista.querySelectorAll('#filtro button').forEach(x => x.classList.toggle('activa', x === b));
@@ -305,6 +307,7 @@ export async function vistaCaracterizaciones(vista) {
 
   busqueda = enlazarBusqueda(vista, 'buscar-carac', v => { texto = v; pintar(); });
   vista.querySelector('#imprimir-formato').addEventListener('click', async () => imprimirFormato(await carac.consentimientoActual()));
+  vista.querySelector('#imprimir-verificacion').addEventListener('click', () => imprimirVerificacion());
   vista.querySelector('#registrar-asistida').addEventListener('click', () => abrirAsistida(vista));
 
   vista.querySelector('#editar-texto')?.addEventListener('click', async () => {

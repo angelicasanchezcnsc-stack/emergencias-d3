@@ -12,7 +12,7 @@ const ARCHIVOS = [
   'js/vistas/contactos.js', 'js/vistas/rutas.js', 'js/vistas/recomendaciones.js',
   'js/emergencia.js', 'js/vistas/emergencia.js', 'js/vistas/punto.js', 'js/vistas/historico.js',
   'js/caracterizacion.js', 'js/vistas/caracterizacion.js', 'js/vistas/caracterizaciones.js', 'js/vistas/form-caracterizacion.js',
-  'js/archivo-contactos.js', 'js/contacto-emergencia.js', 'js/vistas/admin-contactos.js', 'js/vistas/ventana-contacto.js'
+  'js/archivo-contactos.js', 'js/contacto-emergencia.js', 'js/vistas/admin-contactos.js', 'js/vistas/ventana-contacto.js', 'js/vistas/verificacion-contactos.js'
 ];
 
 self.addEventListener('install', e => {

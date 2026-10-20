@@ -481,6 +481,18 @@ details.tarjeta[open] .resumen-plegable { margin-bottom: .5rem; }
   #censo-impreso tr { break-inside: avoid; }
   #censo-impreso .casilla-papel { text-align: center; font-size: 13pt; }
   #censo-impreso .aviso-datos { margin-top: 14pt; font-size: 8.5pt; font-style: italic; }
+  /* Verificación de contactos (v0.12): una ficha recortable por persona, sin partirse entre páginas */
+  #censo-impreso .salto-pagina { break-before: page; }
+  #censo-impreso .ficha-contacto { border: 1px dashed #000; padding: 6pt 8pt; margin: 0 0 12pt; break-inside: avoid; }
+  #censo-impreso .ficha-contacto th:first-child { width: 24%; text-align: left; }
+  #censo-impreso .ficha-contacto td:nth-child(3) { width: 18%; white-space: nowrap; }
+  #censo-impreso .ficha-contacto td:last-child { width: 30%; }
+  #censo-impreso .ficha-cabeza { margin: 0 0 2pt; font-size: 10.5pt; }
+  #censo-impreso .ficha-fecha { float: right; font-size: 8.5pt; }
+  #censo-impreso .ficha-ayuda, #censo-impreso .ayuda-papel { margin: 0 0 4pt; font-size: 9pt; }
+  #censo-impreso .ficha-firma { margin: 10pt 0 0; }
+  #censo-impreso .ficha-contacto .aviso-datos { margin-top: 4pt; }
+  #censo-impreso .vacio-papel { color: #555; font-style: italic; }
   body::before, body::after, .cabecera, .pie, .no-imprimir, #avisos { display: none !important; }
   body { background: #fff; }
   .tarjeta { box-shadow: none; border: none; backdrop-filter: none; }

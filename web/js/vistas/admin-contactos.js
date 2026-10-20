@@ -28,7 +28,7 @@ export function panelContactos(panel, abrir) {
   panel.innerHTML = tarjeta({
     icono: 'telefono', tono: 'rojo', titulo: 'Contactos de emergencia',
     subtitulo: 'Carga desde el archivo del área de personal. El archivo se lee en este computador; no se sube.',
-    cuerpo: `<div class="nota nota-info">${icono('info')}<span>Quién los ve: la coordinación (administrador, coordinador y suplente) siempre; cada brigadista, los de su piso, y los de otro piso solo si los pide (queda registrado). La EPS y la ARL, los brigadistas solo durante una emergencia o un simulacro. Todo viaja cifrado: Google no puede leerlo.</span></div>
+    cuerpo: `<div class="nota nota-info">${icono('info')}<span>Quién los ve: la coordinación (administrador, coordinador y suplente) siempre; cada brigadista, durante una emergencia o un simulacro, el de las personas de su piso marcadas como no ubicadas, con necesidad de apoyo o de asistencia (los de otro piso solo si los pide, y queda registrado). La EPS y la ARL, los brigadistas solo durante la emergencia. Todo viaja cifrado: Google no puede leerlo.</span></div>
       <p id="estado-carga" style="margin:.75rem 0">Consultando cuántos contactos hay cargados…</p>
       <p class="ayuda">Columnas, en este orden: ${esc(COLUMNAS.join(', '))}. Se empareja por correo con las personas de la app. Cargar reemplaza el contacto que ya tuviera cada persona.</p>
       <div class="fila"><button class="btn btn-secundario" id="elegir">${icono('subir', 'ic-s')}Elegir archivo (Excel o CSV)</button></div>

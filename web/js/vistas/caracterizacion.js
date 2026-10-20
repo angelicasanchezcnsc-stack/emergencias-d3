@@ -17,7 +17,7 @@ function seccionContacto(c, listo, hay) {
     ${c && c.abierto ? fichaContacto(c)
       : hay ? `<p class="sutil">Su contacto está cargado, pero aún no se puede abrir con su llave. Se habilita cuando alguien de la coordinación ingrese a la app.</p>`
       : '<p class="sutil">Aún no hay un contacto de emergencia cargado para usted.</p>'}
-    <p class="ayuda">Lo ven la coordinación y los brigadistas de su piso (los de otro piso solo si lo piden durante una emergencia, y queda registrado). La EPS y la ARL, los brigadistas solo durante una emergencia o un simulacro. Va cifrado.</p>
+    <p class="ayuda">Lo ve la coordinación. Los brigadistas de su piso lo ven solo durante una emergencia o un simulacro, y solo si usted queda marcado como no ubicado, con necesidad de apoyo o de asistencia (los de otro piso, además, solo si lo piden, y queda registrado). Va cifrado.</p>
     ${listo && (!hay || (c && c.abierto)) ? `<button class="btn btn-secundario" type="button" id="corregir-contacto">${c ? 'Corregir mi contacto' : 'Registrar mi contacto'}</button>` : ''}
   </section>`;
 }
