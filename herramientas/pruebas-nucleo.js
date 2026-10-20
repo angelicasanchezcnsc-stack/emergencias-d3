@@ -636,9 +636,10 @@ prueba(E, 'Una asesora no puede cerrar ni una emergencia real ni un simulacro', 
   rechazo(cerrar(e, 'D3-006', sim), 'PERMISO');
   igual(e.tabla('Emergencias').find(x => x.id === sim).estado, 'activa');
 });
-prueba(E, 'Una brigadista no puede iniciar un simulacro, pero sí una emergencia real', () => {
+prueba(E, 'Una brigadista inicia un simulacro y también una emergencia real (v0.13, D5)', () => {
   const e = escenarioEmergencia();
-  rechazo(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: true }, e.t['D3-002']), 'PERMISO');
+  const sim = exito(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: true }, e.t['D3-002'])).emergencia.id;
+  exito(cerrar(e, 'D3-002', sim));
   exito(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: false }, e.t['D3-002']));
 });
 prueba(E, 'El administrador inicia un simulacro; una asesora no activa nada', () => {
@@ -791,8 +792,9 @@ prueba(G3, 'Ignora roles desconocidos (no dan acceso)', () => {
 });
 prueba(G3, 'Solo el administrador cambia roles', () => {
   const e = escenario();
+  const coord = e.entrar('D3-002');   // ingresar migra la huella del correo (v0.13): se toma la foto después
   const antes = e.snapshot();
-  rechazo(e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-003', roles: ['asesor'] }] }, e.entrar('D3-002')), 'PERMISO');
+  rechazo(e.llamar('guardarRoles', { cambios: [{ codigo: 'D3-003', roles: ['asesor'] }] }, coord), 'PERMISO');
   igual(JSON.parse(e.snapshot()).Personas, JSON.parse(antes).Personas);
 });
 [['5,1,3', '1,3,5'], ['ocasional', 'ocasional'], ['', ''], ['7,6', '6,7'], ['1', '1'], [' 2 , 4 ', '2,4']].forEach(([entrada, esperado]) => {
@@ -2186,6 +2188,275 @@ prueba(CA, 'Mostrar: fecha de carga y quién lo corrigió', () => {
   igual(vcon.textoOrigen({ fuente: 'coordinacion', cargado: '2026-10-20T14:00:00.000Z', actualizado: '2026-10-22T14:00:00.000Z' }),
     'Cargado el 20 de octubre de 2026 · corregido por la coordinación el 22 de octubre de 2026');
   igual(vcon.textoOrigen({ fuente: 'propio', cargado: '', actualizado: '2026-10-22T14:00:00.000Z' }), 'Corregido por la persona el 22 de octubre de 2026');
+});
+
+// ---------- v0.13, fase 1: detalle nominal de las emergencias cerradas ----------
+
+const D1 = 'Fase 1 v0.13: detalle nominal';
+// Escenario de contactos: 1 admin, 2 coordinador, 3 suplente, 4 brigadista del piso 2, 5 brigadista del piso 6,
+// 6 asesora; 7, 8 y 10 sin acceso; 9 inactiva. El 19/10/2026 (lunes) están previstas todas las activas.
+const conMarcas = (e, simulacro = true) => {
+  const id = activar(e, 'D3-001', simulacro);
+  exito(marcar(e, 'D3-004', id, 'D3-007', 'evacuado', { llegada: '09:05' }));
+  exito(marcar(e, 'D3-004', id, 'D3-004', 'no_ubicado'));
+  exito(marcar(e, 'D3-005', id, 'D3-008', 'no_estaba'));
+  exito(e.llamar('marcarEmergencia', { ops: [{ id: 'c1', emergencia: id, momento: e.ahora() + 1000, tipo: 'conteo', piso: 7, campos: { evacuados: 1, noUbicados: 0, apoyo: 0 } }] }, e.t['D3-005']));
+  return id;
+};
+const detalle = (e, quien, id) => e.llamar('detalleEmergencia', { id }, e.t[quien]);
+const otroDia = (e, dias) => {   // avanza el reloj y vuelve a ingresar (las sesiones duran 30 días); ingresar purga una vez al día
+  const base = Date.parse('2026-10-19T09:00:00-05:00') + dias * 86400000;
+  const f = new Date(base - 5 * 3600000).toISOString().slice(0, 10);
+  e.fijarFecha(f);
+  ['D3-001', 'D3-002', 'D3-004', 'D3-005', 'D3-006'].forEach(c => { e.t[c] = e.entrar(c); });
+};
+
+prueba(D1, 'Al cerrar, las marcas, los conteos y la foto de esperados se conservan', () => {
+  const e = escenarioContactos(); const id = conMarcas(e);
+  exito(cerrar(e, 'D3-004', id));
+  igual(e.tabla('MarcasEmergencia').filter(m => m.emergencia === id).length, 3);
+  igual(e.tabla('ConteosEmergencia').filter(c => c.emergencia === id).length, 1);
+  const f = e.tabla('Emergencias').find(x => x.id === id);
+  afirmar(f.esperados && f.esperados !== '{}', 'La foto de esperados debía quedar en la fila');
+  afirmar(JSON.parse(f.resumen).total, 'Debía guardar el resumen');
+});
+prueba(D1, 'detalleEmergencia: administrador, coordinador y suplente lo reciben; brigadista y asesora no; sin sesión, SESION', () => {
+  const e = escenarioContactos(); const id = conMarcas(e);
+  exito(cerrar(e, 'D3-001', id));
+  ['D3-001', 'D3-002', 'D3-003'].forEach(c => igual(exito(detalle(e, c, id)).marcas.length, 3, c));
+  rechazo(detalle(e, 'D3-004', id), 'PERMISO');
+  rechazo(detalle(e, 'D3-006', id), 'PERMISO');
+  rechazo(e.llamar('detalleEmergencia', { id }), 'SESION');
+});
+prueba(D1, 'detalleEmergencia trae la foto, las horas de cada marca y los conteos', () => {
+  const e = escenarioContactos(); const id = conMarcas(e);
+  exito(cerrar(e, 'D3-001', id));
+  const d = exito(detalle(e, 'D3-002', id));
+  igual(d.emergencia.estado, 'cerrada');
+  afirmar(Object.keys(d.emergencia.esperados).length > 0, 'Debía traer la foto de esperados');
+  const m = d.marcas.find(x => x.codigo === 'D3-007');
+  igual([m.estado, m.llegada, m.reportadoPor], ['evacuado', '09:05', 'D3-004']);
+  afirmar(m.momentoEstado > 0 && m.momentoLlegada > 0, 'Debía traer la hora del estado y de la llegada');
+  igual(d.conteos.map(c => [c.piso, c.evacuados]), [[7, 1]]);
+});
+prueba(D1, 'detalleEmergencia deja bitácora con el id de la emergencia y sin códigos de personas', () => {
+  const e = escenarioContactos(); const id = conMarcas(e);
+  exito(cerrar(e, 'D3-001', id));
+  exito(detalle(e, 'D3-003', id));
+  igual(e.tabla('Bitacora').filter(b => b.accion === 'detalle-emergencia').map(b => [b.codigo, b.detalle]), [['D3-003', id]]);
+  afirmar(e.usaBloqueo('detalleEmergencia'), 'Escribe la bitácora: debía tomar el candado');
+});
+prueba(D1, 'detalleEmergencia de una emergencia activa o de un id inexistente responde NO_EXISTE', () => {
+  const e = escenarioContactos(); const id = conMarcas(e);
+  rechazo(detalle(e, 'D3-001', id), 'NO_EXISTE');
+  rechazo(detalle(e, 'D3-001', 'E-no-existe'), 'NO_EXISTE');
+});
+prueba(D1, '«emergencia» con el id de una cerrada: la coordinación recibe marcas; la brigadista, solo que está cerrada', () => {
+  const e = escenarioContactos(); const id = conMarcas(e);
+  exito(cerrar(e, 'D3-001', id));
+  igual(exito(e.llamar('emergencia', { id }, e.t['D3-002'])).marcas.length, 3);
+  const b = exito(e.llamar('emergencia', { id }, e.t['D3-004']));
+  igual([b.emergencia.estado, b.marcas, b.conteos, b.emergencia.esperados], ['cerrada', [], [], {}]);
+  const a = exito(e.llamar('emergencia', { id }, e.t['D3-006']));
+  igual([a.emergencia.estado, a.marcas], ['cerrada', []]);
+});
+prueba(D1, 'historial: «detalleDisponible» es verdadero para la coordinación y falso para la brigadista', () => {
+  const e = escenarioContactos(); const id = conMarcas(e);
+  exito(cerrar(e, 'D3-001', id));
+  igual(exito(e.llamar('historial', {}, e.t['D3-002'])).emergencias.find(x => x.id === id).detalleDisponible, true);
+  igual(exito(e.llamar('historial', {}, e.t['D3-004'])).emergencias.find(x => x.id === id).detalleDisponible, false);
+});
+prueba(D1, 'Purga: 91 días después, el simulacro pierde su detalle (VENCIDO) y la emergencia real del mismo día lo conserva', () => {
+  const e = escenarioContactos();
+  const sim = conMarcas(e, true); exito(cerrar(e, 'D3-001', sim));
+  const real = conMarcas(e, false); exito(cerrar(e, 'D3-001', real));
+  otroDia(e, 91);
+  const fs = e.tabla('Emergencias').find(x => x.id === sim);
+  igual(fs.esperados, '{}');
+  igual(e.tabla('MarcasEmergencia').filter(m => m.emergencia === sim).length, 0);
+  igual(e.tabla('ConteosEmergencia').filter(c => c.emergencia === sim).length, 0);
+  rechazo(detalle(e, 'D3-001', sim), 'VENCIDO');
+  igual(exito(detalle(e, 'D3-001', real)).marcas.length, 3);
+  afirmar(JSON.parse(fs.resumen).total, 'El informe de totales se conserva');
+  igual(e.tabla('Bitacora').filter(b => b.accion === 'detalle-purgado').map(b => b.detalle), ['1 emergencia(s)']);
+  igual(exito(e.llamar('historial', {}, e.t['D3-002'])).emergencias.find(x => x.id === sim).detalleDisponible, false);
+});
+prueba(D1, 'La purga no toca la emergencia activa ni las cerradas vigentes', () => {
+  const e = escenarioContactos();
+  const viejo = conMarcas(e, true); exito(cerrar(e, 'D3-001', viejo));
+  otroDia(e, 60);
+  const vigente = conMarcas(e, false); exito(cerrar(e, 'D3-001', vigente));
+  const activa = conMarcas(e, true);
+  otroDia(e, 91);
+  igual(e.tabla('MarcasEmergencia').filter(m => m.emergencia === viejo).length, 0);
+  igual(e.tabla('MarcasEmergencia').filter(m => m.emergencia === vigente).length, 3);
+  igual(e.tabla('MarcasEmergencia').filter(m => m.emergencia === activa).length, 3);
+  igual(e.tabla('Emergencias').find(x => x.id === activa).estado, 'activa');
+  afirmar(e.tabla('Emergencias').find(x => x.id === activa).esperados !== '{}', 'La activa conserva su foto');
+});
+prueba(D1, 'guardarConfig acepta y recorta los dos plazos; base los entrega', () => {
+  const e = escenarioContactos();
+  igual((({ diasDetalleSimulacro, diasDetalleEmergencia }) => [diasDetalleSimulacro, diasDetalleEmergencia])(exito(e.llamar('base', {}, e.token)).config), [90, 365]);
+  exito(e.llamar('guardarConfig', { diasDetalleSimulacro: 3, diasDetalleEmergencia: 9999 }, e.token));
+  let c = exito(e.llamar('base', {}, e.token)).config;
+  igual([c.diasDetalleSimulacro, c.diasDetalleEmergencia], [7, 1825]);
+  exito(e.llamar('guardarConfig', { diasDetalleSimulacro: 120, diasDetalleEmergencia: 400 }, e.token));
+  c = exito(e.llamar('base', {}, e.token)).config;
+  igual([c.diasDetalleSimulacro, c.diasDetalleEmergencia], [120, 400]);
+});
+prueba(D1, 'Compatibilidad con la app v0.12: cerrarEmergencia sigue devolviendo el estado y la brigadista recibe «cerrada»', () => {
+  const e = escenarioContactos(); const id = conMarcas(e);
+  const d = exito(cerrar(e, 'D3-004', id));
+  igual([d.emergencia.id, d.emergencia.estado, d.marcas], [id, 'cerrada', []]);
+  const c = exito(e.llamar('emergencia', {}, e.t['D3-004']));
+  igual(c.emergencia, null, 'Sin emergencia activa, «emergencia» sin id responde vacío');
+});
+
+// ---------- v0.13, fase 4: roles, destinatarios, sesiones y huella del correo ----------
+
+const R4 = 'Fase 4 v0.13: simulacros y emergencias por los cuatro roles';
+prueba(R4, 'La suplente inicia un simulacro', () => {
+  const e = escenarioContactos();
+  igual(exito(e.llamar('activarEmergencia', { tipo: 'incendio', simulacro: true }, e.t['D3-003'])).emergencia.simulacro, true);
+});
+prueba(R4, 'Una brigadista inicia un simulacro', () => {
+  const e = escenarioContactos();
+  igual(exito(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: true }, e.t['D3-004'])).emergencia.simulacro, true);
+});
+prueba(R4, 'La asesora sigue sin poder iniciar un simulacro (PERMISO, con el texto nuevo)', () => {
+  const e = escenarioContactos();
+  const r = e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: true }, e.t['D3-006']);
+  rechazo(r, 'PERMISO');
+  igual(r.error, 'Solo los brigadistas, la coordinación o el administrador pueden iniciar un simulacro.');
+});
+prueba(R4, 'Administración, coordinación, suplente y brigadista cierran un simulacro y una emergencia real', () => {
+  const e = escenarioContactos();
+  ['D3-001', 'D3-002', 'D3-003', 'D3-004'].forEach(c => {
+    [true, false].forEach(sim => {
+      const id = exito(e.llamar('activarEmergencia', { tipo: 'sismo', simulacro: sim }, e.t[c])).emergencia.id;
+      exito(cerrar(e, c, id), c + (sim ? ' simulacro' : ' real'));
+    });
+  });
+});
+
+const R4D = 'Fase 4 v0.13: destinatarios del detalle';
+// La brigadista D3-004 diligencia su propia caracterización: detalle para la coordinación, apoyo además para la brigada.
+const caracPropia = (extra = {}) => ({
+  datos: 'cif-datos', apoyo: 'cif-apoyo', claves: sobres(['D3-001', 'D3-002', 'D3-003', 'D3-004']),
+  clavesApoyo: sobres(['D3-001', 'D3-002', 'D3-003', 'D3-004', 'D3-005']), consentimiento: { v: 'v1' }, ...extra
+});
+prueba(R4D, 'reenvolver no deja agregar a una brigadista en el detalle (claves) y no escribe', () => {
+  const e = escenarioContactos();
+  exito(e.llamar('guardarCaracterizacion', caracPropia(), e.t['D3-004']));
+  e.reiniciarEscrituras();
+  const r = e.llamar('reenvolver', { cambios: [{ codigo: 'D3-004', agregar: sobres(['D3-005']) }] }, e.t['D3-002']);
+  rechazo(r, 'ERROR');
+  igual(r.error, 'Envoltorios no válidos.');
+  afirmar(!e.escrituras().includes('Caracterizaciones'), 'No debía escribir');
+});
+prueba(R4D, 'reenvolver sí acepta a una brigadista o a la asesora en el apoyo (clavesApoyo)', () => {
+  const e = escenarioContactos();
+  exito(e.llamar('guardarCaracterizacion', caracPropia(), e.t['D3-004']));
+  exito(e.llamar('reenvolver', { cambios: [{ codigo: 'D3-004', agregarApoyo: sobres(['D3-006']) }] }, e.t['D3-002']));
+  afirmar(JSON.parse(e.tabla('Caracterizaciones')[0].clavesApoyo)['D3-006'], 'Debía agregar el envoltorio del apoyo');
+});
+prueba(R4D, 'reenvolver sigue aceptando a un nuevo lector y a la persona dueña en el detalle', () => {
+  const e = escenarioContactos();
+  exito(e.llamar('guardarCaracterizacion', caracPropia({ claves: sobres(['D3-001', 'D3-004']) }), e.t['D3-004']));
+  exito(e.llamar('reenvolver', { cambios: [{ codigo: 'D3-004', agregar: sobres(['D3-002', 'D3-003', 'D3-004']) }] }, e.t['D3-001']));
+  igual(Object.keys(JSON.parse(e.tabla('Caracterizaciones')[0].claves)).sort(), ['D3-001', 'D3-002', 'D3-003', 'D3-004']);
+});
+prueba(R4D, 'guardarCaracterizacion con la asesora en el detalle: DATOS', () => {
+  const e = escenarioContactos();
+  const r = e.llamar('guardarCaracterizacion', caracPropia({ claves: sobres(['D3-001', 'D3-004', 'D3-006']) }), e.t['D3-004']);
+  rechazo(r, 'DATOS');
+  igual(r.error, 'El detalle de la caracterización solo puede compartirse con la coordinación.');
+  igual(e.tabla('Caracterizaciones').length, 0);
+});
+prueba(R4D, 'Caracterización asistida con una brigadista en el detalle: DATOS', () => {
+  const e = escenarioContactos();
+  const datos = { codigo: 'D3-007', datos: 'x', apoyo: 'y', claves: sobres(['D3-002', 'D3-004']), clavesApoyo: sobres(['D3-002', 'D3-004']),
+    consentimiento: { v: 'v1', fisico: true, fechaFirma: '2026-10-15' } };
+  rechazo(e.llamar('guardarCaracterizacionAsistida', datos, e.t['D3-002']), 'DATOS');
+  datos.claves = sobres(['D3-001', 'D3-002', 'D3-003']);
+  exito(e.llamar('guardarCaracterizacionAsistida', datos, e.t['D3-002']), 'Con solo la coordinación en el detalle debía aceptarse');
+});
+prueba(R4D, 'Los casos válidos siguen: la persona y la coordinación en el detalle, la brigada en el apoyo', () => {
+  const e = escenarioContactos();
+  igual(exito(e.llamar('guardarCaracterizacion', caracPropia(), e.t['D3-004'])).version, 1);
+  const ap = exito(e.llamar('apoyos', {}, e.t['D3-005'])).apoyos;
+  igual(ap.length, 0, 'La brigadista del piso 6 no recibe el apoyo de alguien del piso 2');
+});
+
+const R4S = 'Fase 4 v0.13: sesiones';
+prueba(R4S, '«Cerrar mis otras sesiones»: la otra sesión de la misma persona responde SESION y la actual sigue', () => {
+  const e = escenarioContactos();
+  const otra = e.entrar('D3-002');
+  igual(exito(e.llamar('cerrarOtrasSesiones', {}, e.t['D3-002'])).cerradas, 1);
+  rechazo(e.llamar('base', {}, otra), 'SESION');
+  exito(e.llamar('base', {}, e.t['D3-002']));
+  exito(e.llamar('base', {}, e.t['D3-001']), 'Las sesiones de otras personas no se tocan');
+});
+prueba(R4S, 'El administrador cierra las sesiones de otra persona sin tocar su contraseña ni su llave', () => {
+  const e = escenarioContactos();
+  const antes = e.tabla('Personas').find(x => x.codigo === 'D3-004');
+  exito(e.llamar('cerrarSesionesDe', { codigo: 'D3-004' }, e.token));
+  rechazo(e.llamar('base', {}, e.t['D3-004']), 'SESION');
+  const despues = e.tabla('Personas').find(x => x.codigo === 'D3-004');
+  igual([despues.verificador, despues.pub, despues.sobres], [antes.verificador, antes.pub, antes.sobres]);
+  exito(e.llamar('base', {}, e.entrar('D3-004')), 'Puede volver a ingresar con su contraseña');
+  igual(e.tabla('Bitacora').filter(b => b.accion === 'cierre-sesiones').map(b => [b.codigo, b.detalle]), [['D3-001', 'D3-004']]);
+});
+prueba(R4S, 'Una brigadista no puede cerrar las sesiones de otra persona (PERMISO)', () => {
+  const e = escenarioContactos();
+  rechazo(e.llamar('cerrarSesionesDe', { codigo: 'D3-005' }, e.t['D3-004']), 'PERMISO');
+  exito(e.llamar('base', {}, e.t['D3-005']));
+});
+prueba(R4S, 'cerrarSesionesDe con un código que no existe: DATOS', () => {
+  const e = escenarioContactos();
+  rechazo(e.llamar('cerrarSesionesDe', { codigo: 'D3-999' }, e.token), 'DATOS');
+});
+
+const R4H = 'Fase 4 v0.13: huella del correo con pimienta';
+prueba(R4H, 'Un ingreso con la huella anterior la migra a «p1:» y el siguiente ingreso entra por la nueva', () => {
+  const e = escenarioContactos();
+  igual(e.tabla('Personas').find(x => x.codigo === 'D3-007').hashCorreo, 'hc-D3-007');
+  const h = e.tabla('Personas').find(x => x.codigo === 'D3-002').hashCorreo;
+  afirmar(h.startsWith('p1:') && !h.includes('hc-D3-002'), 'Debía quedar en el formato nuevo: ' + h);
+  exito(e.llamar('ingresar', { hashCorreo: 'hc-D3-002', verificador: 'v-D3-002' }), 'El segundo ingreso entra por la huella nueva');
+  igual(e.tabla('Personas').find(x => x.codigo === 'D3-002').hashCorreo, h);
+});
+prueba(R4H, 'Una persona nueva queda con la huella nueva y puede ingresar', () => {
+  const e = escenarioContactos();
+  exito(e.llamar('guardarPadron', { personas: [{ codigo: 'D3-011', piso: 7, puesto: 3, estado: 'activo', roles: ['brigadista'], hashCorreo: 'hc-D3-011', verificador: 'v-D3-011' }] }, e.token));
+  afirmar(e.tabla('Personas').find(x => x.codigo === 'D3-011').hashCorreo.startsWith('p1:'), 'Debía guardarse con «p1:»');
+  exito(e.llamar('ingresar', { hashCorreo: 'hc-D3-011', verificador: 'v-D3-011' }));
+});
+prueba(R4H, 'Dos personas con el mismo correo, una con huella anterior y otra nueva, se detectan como duplicado', () => {
+  const e = escenarioContactos();   // D3-007 nunca ha ingresado: conserva la huella anterior
+  const r = e.llamar('guardarPadron', { personas: [{ codigo: 'D3-011', piso: 7, puesto: 3, estado: 'activo', hashCorreo: 'hc-D3-007', verificador: 'v-x' }] }, e.token);
+  rechazo(r, 'ERROR');
+  afirmar(/mismo correo/.test(r.error), r.error);
+});
+prueba(R4H, 'Una huella equivocada sigue dando CREDENCIALES; restablecerClave guarda la huella nueva', () => {
+  const e = escenarioContactos();
+  rechazo(e.llamar('ingresar', { hashCorreo: 'hc-otra', verificador: 'v-D3-002' }), 'CREDENCIALES');
+  rechazo(e.llamar('ingresar', { verificador: 'v-D3-002' }), 'CREDENCIALES');
+  exito(e.llamar('restablecerClave', { codigo: 'D3-007', verificador: 'v-nueva', hashCorreo: 'hc-D3-007' }, e.token));
+  afirmar(e.tabla('Personas').find(x => x.codigo === 'D3-007').hashCorreo.startsWith('p1:'), 'restablecerClave debía guardar «p1:»');
+});
+
+// ---------- v0.13, fase 5: escritura mínima ----------
+
+prueba('Fase 5 v0.13: escritura mínima', 'Reenviar una marca idéntica no escribe ninguna hoja ni sube la versión', () => {
+  const e = escenarioContactos(); const id = activar(e);
+  const op = { id: 'op-fija', emergencia: id, momento: e.ahora() + 1000, tipo: 'persona', codigo: 'D3-007', campos: { estado: 'evacuado' } };
+  exito(e.llamar('marcarEmergencia', { ops: [op] }, e.t['D3-004']));
+  const version = e.tabla('Emergencias')[0].version;
+  e.reiniciarEscrituras();
+  exito(e.llamar('marcarEmergencia', { ops: [op] }, e.t['D3-004']));
+  igual(e.escrituras(), []);
+  igual(e.tabla('Emergencias')[0].version, version);
 });
 
 // ---------- Ejecución y resultado ----------

@@ -146,6 +146,32 @@ function limpiarRegistroHorario() {
   Logger.log('Registro horario borrado.');
 }
 
+/**
+ * Copia de respaldo de la hoja de datos en la carpeta «Respaldos EMERGENCIAS D3» de la misma cuenta
+ * de Google. Conserva las 8 copias más recientes de esta hoja y manda las demás a la papelera (las
+ * copias de otra hoja, por ejemplo la de pruebas, no cuentan). Para que corra sola cada semana, cree
+ * un activador de tiempo que llame a respaldar() (ver docs/INSTALACION.md).
+ * Las copias tienen lo mismo que la hoja: solo códigos, huellas y sobres cifrados.
+ */
+function respaldar() {
+  var CARPETA = 'Respaldos EMERGENCIAS D3', CONSERVAR = 8;
+  var libro = SpreadsheetApp.getActive();
+  var prefijo = 'Respaldo ' + libro.getName() + ' ';
+  var encontradas = DriveApp.getFoldersByName(CARPETA);
+  var carpeta = encontradas.hasNext() ? encontradas.next() : DriveApp.createFolder(CARPETA);
+  var fecha = Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd HH.mm');
+  DriveApp.getFileById(libro.getId()).makeCopy(prefijo + fecha, carpeta);
+  var copias = [];
+  var archivos = carpeta.getFiles();
+  while (archivos.hasNext()) {
+    var f = archivos.next();
+    if (f.getName().indexOf(prefijo) === 0) copias.push(f);
+  }
+  copias.sort(function (a, b) { return b.getDateCreated().getTime() - a.getDateCreated().getTime(); });
+  copias.slice(CONSERVAR).forEach(function (f) { f.setTrashed(true); });
+  Logger.log('Respaldo listo: ' + Math.min(copias.length, CONSERVAR) + ' copia(s) en «' + CARPETA + '».');
+}
+
 /** Muestra de nuevo el código de instalación, por si se perdió. */
 function verCodigoInstalacion() {
   Logger.log(PropertiesService.getScriptProperties().getProperty('CODIGO_INSTALACION'));
