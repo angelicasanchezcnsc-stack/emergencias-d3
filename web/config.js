@@ -2,13 +2,14 @@
 // Es el único archivo que se ajusta al publicar o al migrar a otro servidor.
 // No contiene datos personales ni claves secretas: este repositorio es público.
 
-// En el computador local (localhost) siempre se usa el servidor simulado, con datos
-// ficticios que quedan solo en ese navegador. En GitHub Pages siempre se usa el real.
+// En el computador local (localhost) se usa el servidor simulado, con datos ficticios que quedan solo en
+// ese navegador, salvo que se elija a propósito el servidor de prueba (?servidor=prueba). En local nunca
+// se usa el servidor real. En GitHub Pages se usa el real, o el de prueba con ?servidor=prueba.
 const ES_LOCAL = ['localhost', '127.0.0.1'].includes(location.hostname);
 
 // Servidor de Google: el real y, aparte, uno de prueba con datos ficticios (vacío = no hay).
 export const URL_REAL = 'https://script.google.com/macros/s/AKfycbwBfQegdLhwvuJ616854yJoBTjbLDIBpj1vUE13pUcTMOkt1j6pJoU9eyti0QiAyLob/exec';
-const URL_SERVIDOR_PRUEBA = 'https://script.google.com/macros/s/AKfycbzUhf5v8sr9iF9H0Nxy8SMumoZjDWlmItXcxflJI48eKQB5C6eTaKxhPD0P-XVbKH0x/exec';
+const URL_SERVIDOR_PRUEBA = 'https://script.google.com/macros/s/AKfycbzJUyre_woShSgL47tGrj4SYJwH2U11idaYfPlfGgyonj6ruZznxD6_QK0feo95XrKjfg/exec';
 
 // 'prueba' si este navegador se abrió con ?servidor=prueba (lo recuerda) y hay servidor de prueba;
 // si no, 'real'. Para volver al real se abre la app con ?servidor=real.
@@ -26,7 +27,7 @@ export const CONFIG = {
 
   // 'simulado': servidor de prueba dentro del navegador (datos solo en este equipo).
   // 'apps-script': servidor real en Google Apps Script.
-  MODO_SERVIDOR: ES_LOCAL ? 'simulado' : 'apps-script',
+  MODO_SERVIDOR: ES_LOCAL && servidorElegido() !== 'prueba' ? 'simulado' : 'apps-script',
   // URL de la aplicación web de Apps Script (termina en /exec). Se cambia arriba, en URL_REAL.
   URL_SERVIDOR: servidorElegido() === 'prueba' ? URL_SERVIDOR_PRUEBA : URL_REAL,
   URL_SERVIDOR_PRUEBA,

@@ -86,7 +86,7 @@ Es un segundo servidor, igual al real pero con **datos ficticios**, para probar 
    - un **Excel ficticio** (nombres y correos inventados, mismo formato que el real). Nunca el Excel real.
 6. Para volver al servidor real abra la app con `?servidor=real`. Al cambiar de servidor la app cierra la sesión de ese navegador, porque cada servidor tiene sus propias cuentas.
 
-El navegador recuerda la elección. En `localhost` la app sigue usando el servidor simulado. Cada cambio de `Nucleo.gs` se pega y se publica primero en el servidor de prueba, se prueba con `?servidor=prueba` y solo después se publica en el real.
+El navegador recuerda la elección. En `localhost` la app usa el servidor simulado, salvo que se abra con `?servidor=prueba` (`http://localhost:8090/web/?servidor=prueba`): así se puede preparar y probar el servidor de prueba sin publicar la web. En `localhost` nunca se usa el servidor real. Cada cambio de `Nucleo.gs` se pega y se publica primero en el servidor de prueba, se prueba con `?servidor=prueba` y solo después se publica en el real.
 
 ## B3. Respaldo semanal de la hoja (desde la v0.13)
 
