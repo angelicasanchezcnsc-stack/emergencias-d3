@@ -56,6 +56,7 @@ export function panelContactos(panel, abrir) {
     const p = previa;
     const cargables = p.emparejadas.filter(e => tieneDatos(e.registro));
     const conAlertas = p.emparejadas.concat(p.nuevas).filter(x => x.registro.alertas.length).length;
+    const deshacen = cargables.filter(e => e.corregido).length;
     const altas = p.nuevas.filter(n => n.agregar);
     $('#previa').innerHTML = `
       <div class="fila" style="margin-bottom:.8rem">
@@ -66,11 +67,12 @@ export function panelContactos(panel, abrir) {
         ${p.ausentes.length ? insignia(`En la app y no en el archivo: ${p.ausentes.length}`, 'gris') : ''}
         ${conAlertas ? insignia(`Para revisar: ${conAlertas}`, 'ambar') : ''}
       </div>
+      ${deshacen ? `<div class="nota nota-adv">${icono('alerta')}<span>${deshacen} contacto(s) se corrigieron en la app después de la última carga (por la persona o por la coordinación). Si carga el archivo, esas correcciones se reemplazan por lo que trae el archivo: revíselas en la tabla («Reemplaza una corrección hecha en la app»).</span></div>` : ''}
       ${avisos.length ? `<div class="nota nota-adv"><div>${avisos.map(a => `<div>• ${esc(a)}</div>`).join('')}</div></div>` : ''}
       ${p.emparejadas.length ? seccion('Se cargará su contacto', 'El correo del archivo coincide con una persona de la app.',
         ['Persona', 'Ubicación', 'Contacto', 'Revisar'], p.emparejadas.map(e => `<tr>
           <td>${persona(e.nombre, e.registro.correo)}</td><td class="mono">${rotulo(e.piso, e.puesto)}</td>
-          <td>${!tieneDatos(e.registro) ? insignia('Sin datos: no se carga', 'gris') : e.reemplaza ? insignia('Reemplaza el cargado', 'azul') : insignia('Nuevo', 'verde')}</td>
+          <td>${!tieneDatos(e.registro) ? insignia('Sin datos: no se carga', 'gris') : e.corregido ? insignia('Reemplaza una corrección hecha en la app', 'ambar') : e.reemplaza ? insignia('Reemplaza el cargado', 'azul') : insignia('Nuevo', 'verde')}</td>
           <td>${revisar(e.registro)}</td></tr>`).join('')) : ''}
       ${p.nuevas.length ? seccion('Personas nuevas', 'Están en el archivo y no en la app. Las marcadas se agregan sin rol (sin acceso), como en «Agregar persona», y se carga su contacto. Elija el puesto de cada una; desmarque a quien ya no esté en el Despacho.',
         ['Agregar', 'Persona', 'Puesto', 'Revisar'], p.nuevas.map((n, i) => `<tr${n.agregar ? '' : ' class="sutil"'}>
@@ -100,7 +102,7 @@ export function panelContactos(panel, abrir) {
       const r = await contacto.leerArchivo(archivo);
       const e = await consulta;
       avisos = r.avisos.concat(e ? [] : ['No se pudo saber quién tiene ya un contacto cargado: todos figuran como «Nuevo».']);
-      previa = conciliar(r.registros, llave.personas(), e ? e.cargados : new Set());
+      previa = conciliar(r.registros, llave.personas(), e ? e.cargados : new Set(), e ? e.corregidos : new Set());
       pintar();
     } catch (err) { aviso('No se pudo leer el archivo: ' + err.message, 'error'); }
   });

@@ -122,14 +122,15 @@ export function interpretarContactos(filas) {
 }
 
 // Compara los registros del archivo con las personas de la llave ({ codigo, nombre, correo, estado, piso, puesto }).
-// «conContacto»: códigos que ya tienen un contacto cargado (la carga lo reemplaza).
+// «conContacto»: códigos que ya tienen un contacto cargado (la carga lo reemplaza). «corregidos»: los que se
+// corrigieron en la app después de la última carga (la carga deshace esa corrección: se avisa en la previa).
 // Devuelve:
 //   emparejadas:    el correo coincide con una persona activa: se le asigna el contacto.
 //   nuevas:         no están en la app: se pueden agregar (sin rol) eligiendo su puesto.
 //   retiradas:      el correo es de una persona retirada en la app: se reactiva a mano, si volvió.
 //   correoCambiado: el nombre coincide con una persona activa cuyo correo no está en el archivo: se resuelve a mano.
 //   ausentes:       personas activas de la app que no están en el archivo: solo se avisa, no se retira a nadie.
-export function conciliar(registros, personas, conContacto = new Set()) {
+export function conciliar(registros, personas, conContacto = new Set(), corregidos = new Set()) {
   const porCorreo = new Map((personas || []).map(p => [normalizarCorreo(p.correo), p]));
   const activas = (personas || []).filter(p => p.estado === 'activo');
   const correosArchivo = new Set(registros.map(r => r.correo));
@@ -142,7 +143,7 @@ export function conciliar(registros, personas, conContacto = new Set()) {
     const p = porCorreo.get(reg.correo);
     if (p && p.estado === 'activo') {
       usadas.add(p.codigo);
-      r.emparejadas.push({ registro: reg, codigo: p.codigo, nombre: p.nombre, piso: p.piso, puesto: p.puesto, reemplaza: conContacto.has(p.codigo) });
+      r.emparejadas.push({ registro: reg, codigo: p.codigo, nombre: p.nombre, piso: p.piso, puesto: p.puesto, reemplaza: conContacto.has(p.codigo), corregido: corregidos.has(p.codigo) });
     } else if (p) {
       r.retiradas.push({ registro: reg, codigo: p.codigo, nombre: p.nombre });
     } else {

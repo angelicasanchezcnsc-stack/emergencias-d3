@@ -2012,6 +2012,67 @@ prueba(CE, 'Antes de ejecutar «instalar» (sin hoja Contactos): base, contactos
   igual(guardado.Personas.find(x => x.codigo === 'D3-010').estado, 'inactivo');
 });
 
+// Núcleo sobre las tablas de un escenario, con un adaptador que falla como Google cuando «falla(tabla, operacion)»
+// devuelve un mensaje. Las escrituras quedan en «guardado» (solo las tablas que se escribieron).
+function nucleoQueFalla(e, falla) {
+  const guardado = {};
+  const lanzar = (t, op) => { const m = falla(t, op); if (m) throw new Error(m); };
+  const dep = {
+    leer: t => { lanzar(t, 'leer'); return copia(guardado[t] || e.tabla(t)); },
+    escribir: (t, f) => { lanzar(t, 'escribir'); guardado[t] = copia(f); },
+    agregar: (t, f) => { lanzar(t, 'escribir'); guardado[t] = (guardado[t] || e.tabla(t)).concat([copia(f)]); },
+    agregarVarias: (t, f) => { lanzar(t, 'escribir'); guardado[t] = (guardado[t] || e.tabla(t)).concat(copia(f)); },
+    prop: n => (n === 'PIMIENTA' ? 'pimienta-de-prueba' : ''), uuid: () => crypto.randomUUID(), ahora: () => e.ahora(), hoy: () => '2026-10-19', bloqueo: fn => fn()
+  };
+  const n = N.crearNucleo(dep);
+  const tokenDe = c => n.procesar({ accion: 'ingresar', hashCorreo: 'hc-' + c, verificador: 'v-' + c }).datos.token;
+  return { n, guardado, tokenDe };
+}
+const PASAJERO = (t, op) => (t === 'Contactos' && op === 'leer' ? 'Service Spreadsheets failed while accessing document' : '');
+
+prueba(CE, 'Un fallo pasajero al leer la hoja no borra los contactos: la carga y la corrección responden error y no escriben', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-008')]));
+  const { n, guardado, tokenDe } = nucleoQueFalla(e, PASAJERO);
+  const t = tokenDe('D3-001');
+  rechazo(n.procesar({ accion: 'cargarContactos', token: t, ops: [contacto('D3-010')] }), 'ERROR');
+  rechazo(n.procesar({ accion: 'guardarContactoDe', token: t, ...contacto('D3-010'), versionBase: 0 }), 'ERROR');
+  rechazo(n.procesar({ accion: 'reenvolver', token: t, registro: 'contactos', cambios: [{ codigo: 'D3-007', quitar: ['D3-002'] }] }), 'ERROR');
+  afirmar(!('Contactos' in guardado), 'No debía escribir la hoja Contactos');
+  igual(e.tabla('Contactos').length, 2);
+});
+prueba(CE, 'Un fallo pasajero al leer la hoja: «contactos» responde error (el celular conserva su copia) y un retiro sigue funcionando', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007')]));
+  const { n, guardado, tokenDe } = nucleoQueFalla(e, PASAJERO);
+  const t = tokenDe('D3-001');
+  rechazo(n.procesar({ accion: 'contactos', token: t }), 'ERROR');
+  const g = n.procesar({ accion: 'guardarPadron', token: t, personas: [{ codigo: 'D3-007', estado: 'inactivo' }] });
+  afirmar(g.ok, 'guardarPadron debía responder: ' + g.error);
+  igual(guardado.Personas.find(x => x.codigo === 'D3-007').estado, 'inactivo');
+  afirmar(!('Contactos' in guardado), 'No debía escribir la hoja Contactos');
+});
+prueba(CE, 'Sin la hoja Contactos, cargar o corregir explica que hay que ejecutar «instalar»', () => {
+  const e = escenarioContactos();
+  const { n, tokenDe } = nucleoQueFalla(e, t => (t === 'Contactos' ? 'Falta la hoja "Contactos". Ejecute la función instalar().' : ''));
+  const t = tokenDe('D3-001');
+  const r = n.procesar({ accion: 'cargarContactos', token: t, ops: [contacto('D3-007')] });
+  rechazo(r, 'ERROR'); afirmar(/instalar/.test(r.error), r.error);
+  const r2 = n.procesar({ accion: 'guardarContactoDe', token: t, ...contacto('D3-007') });
+  rechazo(r2, 'ERROR'); afirmar(/instalar/.test(r2.error), r2.error);
+});
+prueba(CE, 'reenvolver con «version» vieja omite el registro (sus envoltorios traen la llave anterior)', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007', { claves: sobres(['D3-001']) })]));
+  exito(cargarC(e, 'D3-001', [contacto('D3-007', { claves: sobres(['D3-001']) })]));   // versión 2
+  const viejo = exito(e.llamar('reenvolver', { registro: 'contactos', cambios: [{ codigo: 'D3-007', version: 1, agregar: sobres(['D3-004']) }] }, e.token));
+  igual([viejo.n, viejo.omitidos], [0, 1]);
+  igual(Object.keys(JSON.parse(filaC(e, 'D3-007').claves)), ['D3-001']);
+  const bien = exito(e.llamar('reenvolver', { registro: 'contactos', cambios: [{ codigo: 'D3-007', version: 2, agregar: sobres(['D3-004']) }] }, e.token));
+  igual([bien.n, bien.omitidos], [1, 0]);
+  igual(Object.keys(JSON.parse(filaC(e, 'D3-007').claves)).sort(), ['D3-001', 'D3-004']);
+});
+
 // ---------- Contactos: lectura del archivo y comparación con la llave (navegador, v0.12 fase 2) ----------
 
 const CA = 'Contactos: lectura del archivo y comparación (navegador)';
@@ -2090,6 +2151,11 @@ prueba(CA, 'conciliar: empareja por correo, separa nuevas, retiradas, correo cam
   igual(c.correoCambiado.map(e => [e.codigo, e.correoApp, e.registro.correo]), [['D3-002', 'dos@ejemplo.test', 'angela.nueva@ejemplo.test']]);
   igual(c.nuevas.map(n => [n.registro.correo, n.agregar, n.piso]), [['seis@ejemplo.test', true, null]]);
   igual(c.ausentes.map(a => a.codigo), ['D3-004', 'D3-005']);
+});
+prueba(CA, 'conciliar: avisa cuando la carga reemplaza una corrección hecha en la app', () => {
+  const regs = arch.interpretarContactos([CAB, filaArchivo('Persona Uno', 'uno@ejemplo.test'), filaArchivo('Ángela Dos', 'dos@ejemplo.test')]).registros;
+  const c = arch.conciliar(regs, llavePrueba(), new Set(['D3-001', 'D3-002']), new Set(['D3-002']));
+  igual(c.emparejadas.map(e => [e.codigo, e.reemplaza, e.corregido]), [['D3-001', true, false], ['D3-002', true, true]]);
 });
 prueba(CA, 'conciliar: un nombre repetido en la app no se usa para adivinar un correo cambiado', () => {
   const llaveRep = llavePrueba().concat([{ codigo: 'D3-009', nombre: 'Persona Cuatro', correo: 'otro.cuatro@ejemplo.test', estado: 'activo', piso: 2, puesto: 9 }]);

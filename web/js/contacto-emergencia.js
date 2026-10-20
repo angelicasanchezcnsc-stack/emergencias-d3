@@ -53,27 +53,33 @@ export async function cifrarContacto(codigo, datos, salud) {
 export async function cargarLote(lista, alAvanzar = () => {}) {
   if (!esCoordinacion()) throw new ErrorApi('Solo la coordinación y la administración pueden cargar contactos.', 'PERMISO');
   if (!listoParaUsar()) throw new ErrorApi('Cierre sesión y vuelva a ingresar para activar la protección de los datos.', 'LLAVE');
-  const ops = [];
-  for (let i = 0; i < lista.length; i++) {
-    ops.push(await cifrarContacto(lista[i].codigo, lista[i].datos, lista[i].salud));
-    alAvanzar(0.8 * (i + 1) / lista.length);
-  }
-  let cargados = 0;
-  for (let i = 0; i < ops.length; i += POR_ENVIO) {
-    try {
-      cargados += (await llamar('cargarContactos', { ops: ops.slice(i, i + POR_ENVIO) })).n;
-    } catch (e) {
-      throw new ErrorApi(`${cargados ? `Se cargaron ${cargados} de ${ops.length} contactos y se detuvo la carga` : 'No se cargó ningún contacto'}: ${e.message}`, e.codigo || 'ERROR');
+  // Mientras dura la carga no se actualizan los accesos: lo harían con llaves que la carga está cambiando.
+  cargandoLote = true;
+  try {
+    const ops = [];
+    for (let i = 0; i < lista.length; i++) {
+      ops.push(await cifrarContacto(lista[i].codigo, lista[i].datos, lista[i].salud));
+      alAvanzar(0.8 * (i + 1) / lista.length);
     }
-    alAvanzar(0.8 + 0.2 * Math.min(ops.length, i + POR_ENVIO) / ops.length);
-  }
-  return cargados;
+    let cargados = 0;
+    for (let i = 0; i < ops.length; i += POR_ENVIO) {
+      try {
+        cargados += (await llamar('cargarContactos', { ops: ops.slice(i, i + POR_ENVIO) })).n;
+      } catch (e) {
+        throw new ErrorApi(`${cargados ? `Se cargaron ${cargados} de ${ops.length} contactos y se detuvo la carga` : 'No se cargó ningún contacto'}: ${e.message}`, e.codigo || 'ERROR');
+      }
+      alAvanzar(0.8 + 0.2 * Math.min(ops.length, i + POR_ENVIO) / ops.length);
+    }
+    return cargados;
+  } finally { cargandoLote = false; }
 }
 
-// Estado de la carga, sin datos personales: { cargados: Set de códigos con contacto, faltan: [códigos] }.
+// Estado de la carga, sin datos personales: { cargados: Set de códigos con contacto, corregidos: Set de los
+// que se corrigieron en la app después de la última carga, faltan: [códigos] }.
 export async function estado() {
   const r = await llamar('contactos');
-  return { cargados: new Set((r.contactos || []).map(c => c.codigo)), faltan: r.faltan || [] };
+  const lista = r.contactos || [];
+  return { cargados: new Set(lista.map(c => c.codigo)), corregidos: new Set(lista.filter(c => c.fuente && c.fuente !== 'carga').map(c => c.codigo)), faltan: r.faltan || [] };
 }
 
 // ---------- Ver, corregir y tener sin conexión ----------
@@ -88,6 +94,9 @@ let conContacto = new Set();      // códigos con contacto en el servidor (la co
 let faltan = [];                  // solo para la coordinación: personas activas sin contacto
 let cargando = null;
 let ultimaCarga = 0;
+let cargandoLote = false;
+// Sube cada vez que termina una emergencia: una respuesta pedida antes (con EPS y ARL) se descarta.
+let generacion = 0;
 
 export const contactoDe = codigo => enMemoria.get(codigo) || null;
 export const hayContacto = codigo => conContacto.has(codigo);
@@ -120,18 +129,25 @@ async function llenar(respuesta) {
 }
 
 // Trae los contactos (o, sin conexión, usa la copia del celular). Sin «forzar», como mucho cada 5 minutos.
+// Con «forzar» y una consulta en curso, se pide otra al terminar: la que va en camino puede ser de antes de
+// un cambio (por ejemplo, del inicio o del fin de una emergencia).
 export function cargar({ forzar = false } = {}) {
   if (!sesion.activa()) return Promise.resolve();
-  if (cargando) return cargando;
+  if (cargando) return forzar ? cargando.then(() => cargar({ forzar: true })) : cargando;
   if (!forzar && ultimaCarga && Date.now() - ultimaCarga < 300000) return Promise.resolve();
+  const gen = generacion;
   cargando = (async () => {
     let r = null;
     if (navigator.onLine) {
-      try { r = await llamar('contactos'); await almacen.guardar(CLAVE_COPIA, r); ultimaCarga = Date.now(); }
-      catch { /* sin servidor: se usa la copia */ }
+      try {
+        r = await llamar('contactos');
+        if (gen !== generacion) return;   // pedida antes de terminar la emergencia: no se guarda
+        await almacen.guardar(CLAVE_COPIA, r);
+        ultimaCarga = Date.now();
+      } catch { r = null; /* sin servidor: se usa la copia */ }
     }
     if (!r) r = await almacen.leer(CLAVE_COPIA);
-    if (r) await llenar(r);
+    if (r && gen === generacion) await llenar(r);
   })().finally(() => { cargando = null; });
   return cargando;
 }
@@ -149,6 +165,7 @@ export async function verOtroPiso(piso) {
 // Al terminar la emergencia: fuera del celular la EPS y la ARL de quien no es de la coordinación y los
 // contactos de otros pisos. Después se vuelve a pedir lo que corresponde.
 async function olvidarEmergencia() {
+  generacion++;
   pisosConsultados.clear();
   for (const [codigo, c] of enMemoria) if (c.otroPiso) enMemoria.delete(codigo);
   if (!esCoordinacion()) {
@@ -188,7 +205,7 @@ const firmaAccesos = () => activos()
 
 export async function reconciliar({ forzar = false } = {}) {
   const priv = sesion.llavePriv();
-  if (!esCoordinacion() || !priv || reconciliando || !navigator.onLine) return 0;
+  if (!esCoordinacion() || !priv || reconciliando || cargandoLote || !navigator.onLine) return 0;
   if (!forzar && Date.now() - ultimaReconciliacion < 60000) return 0;
   const firma = firmaAccesos();
   if (!forzar && firma === revision.firma && Date.now() - revision.cuando < SEIS_HORAS) return 0;
@@ -219,13 +236,17 @@ export async function reconciliar({ forzar = false } = {}) {
       const a = await diferencia(necesarios, reg.huellas || {}, d, ctxDatos(reg.codigo));
       const b = s ? await diferencia(necesarios, reg.huellasSalud || {}, s, ctxSalud(reg.codigo)) : { agregar: {}, quitar: [] };
       if (Object.keys(a.agregar).length || a.quitar.length || Object.keys(b.agregar).length || b.quitar.length) {
-        cambios.push({ codigo: reg.codigo, agregar: a.agregar, quitar: a.quitar, agregarSalud: b.agregar, quitarSalud: b.quitar });
+        // «version»: si el registro cambió mientras tanto (una carga o una corrección), el servidor lo omite.
+        cambios.push({ codigo: reg.codigo, version: reg.version, agregar: a.agregar, quitar: a.quitar, agregarSalud: b.agregar, quitarSalud: b.quitar });
       }
     }
-    if (cambios.length) await llamar('reenvolver', { registro: 'contactos', cambios });
-    revision = { firma, cuando: Date.now() };
-    await almacen.guardar(CLAVE_REVISION, revision);
-    return cambios.length;
+    const res = cambios.length ? await llamar('reenvolver', { registro: 'contactos', cambios }) : { omitidos: 0 };
+    // Con registros omitidos no se da la revisión por hecha: se repite en la siguiente oportunidad.
+    if (!res.omitidos) {
+      revision = { firma, cuando: Date.now() };
+      await almacen.guardar(CLAVE_REVISION, revision);
+    } else ultimaReconciliacion = 0;
+    return cambios.length - (res.omitidos || 0);
   } catch (e) {
     console.warn('No se pudieron actualizar los accesos a los contactos:', e && e.message);
     return 0;

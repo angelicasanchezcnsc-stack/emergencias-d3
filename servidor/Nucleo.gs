@@ -277,13 +277,27 @@ function crearNucleo(dep) {
   // ---------- Contactos de emergencia ----------
 
   // Antes de ejecutar "instalar" la hoja Contactos no existe: la app v0.11.4 no la usa y nada debe romperse.
+  // Solo ese caso cuenta como «sin contactos». Cualquier otro error al leer (Google falla un momento) se
+  // relanza: tratarlo como vacío haría que una escritura borrara la hoja entera.
+  var FALTA_HOJA = /Falta la hoja/;
   function leerContactos() {
-    try { return leer('Contactos'); } catch (e) { return []; }
+    try { return leer('Contactos'); } catch (e) { if (FALTA_HOJA.test(String(e && e.message))) return []; throw e; }
   }
 
+  // Para las acciones que escriben: sin la hoja se explica qué hacer en vez de un error genérico.
+  function leerContactosParaEscribir() {
+    try { return leer('Contactos'); } catch (e) {
+      if (FALTA_HOJA.test(String(e && e.message))) throw ErrorUsuario('El servidor aún no tiene la hoja Contactos. Quien administra el servidor debe ejecutar «instalar» en Apps Script.');
+      throw e;
+    }
+  }
+
+  // Si la lectura falla, no se borra nada ahora: el contacto de quien se retiró ya no se entrega a nadie
+  // (solo se entregan los de personas activas) y se borra en el siguiente cambio del padrón.
   function borrarContactosInactivos(personas) {
     var activos = personas.filter(activa).map(function (x) { return x.codigo; });
-    var filas = leerContactos();
+    var filas;
+    try { filas = leer('Contactos'); } catch (e) { return; }
     var quedan = filas.filter(function (f) { return activos.indexOf(f.codigo) >= 0; });
     if (quedan.length !== filas.length) escribir('Contactos', quedan);
   }
@@ -1135,10 +1149,13 @@ function crearNucleo(dep) {
       var pubs = llavesPublicas();
       var personas = contactos ? leer('Personas') : null;
       var filas = contactos ? leerContactos() : leer('Caracterizaciones');
-      var n = 0;
+      var n = 0, omitidos = 0;
       (d.cambios || []).forEach(function (c) {
         var f = filas.filter(function (x) { return x.codigo === c.codigo; })[0];
         if (!f) return;
+        // Con «version» (la envía la app v0.12): si el registro cambió después de que se calcularon los
+        // envoltorios, traen la llave anterior y no sirven. Se omite y la app lo vuelve a intentar.
+        if (c.version !== undefined && c.version !== null && num(c.version) !== num(f.version)) { omitidos++; return; }
         var permitidos = contactos ? lectoresContacto(personas, f.codigo) : null;
         pares.forEach(function (par) {
           if (contactos && par[0] === 'clavesSalud' && !texto(f.salud)) return;   // sin EPS ni ARL no hay llave que envolver
@@ -1158,7 +1175,7 @@ function crearNucleo(dep) {
         escribir(contactos ? 'Contactos' : 'Caracterizaciones', filas);
         bitacora(p.codigo, contactos ? 'accesos-contactos' : 'accesos', n + ' registro(s)');
       }
-      return ok({ n: n });
+      return ok({ n: n, omitidos: omitidos });
     },
 
     // ---------- Contactos de emergencia ----------
@@ -1170,7 +1187,7 @@ function crearNucleo(dep) {
       if (!Array.isArray(d.ops) || !d.ops.length || d.ops.length > MAX_OPS) return falla('DATOS', 'Cada envío debe traer de 1 a ' + MAX_OPS + ' contactos.');
       var personas = leer('Personas');
       var pubs = llavesPublicas();
-      var filas = leerContactos();
+      var filas = leerContactosParaEscribir();
       var ahora = new Date(dep.ahora()).toISOString();
       var nuevas = {}, orden = [];
       for (var i = 0; i < d.ops.length; i++) {
@@ -1196,7 +1213,7 @@ function crearNucleo(dep) {
       if (!propio && !puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden corregir el contacto de otra persona.');
       var v = validarContacto(d, leer('Personas'), llavesPublicas(), p.codigo);
       if (typeof v === 'string') return falla('DATOS', v);
-      var filas = leerContactos();
+      var filas = leerContactosParaEscribir();
       var actual = filas.filter(function (x) { return x.codigo === d.codigo; })[0];
       if (d.versionBase !== undefined && d.versionBase !== null && num(d.versionBase) !== (actual ? num(actual.version) : 0)) {
         return falla('CONFLICTO', 'Este contacto cambió mientras lo editaba. Recargue e intente de nuevo.');
