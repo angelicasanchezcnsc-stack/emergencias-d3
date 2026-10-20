@@ -228,14 +228,15 @@ export function ventanaCorregir(codigo) {
 
 // ---------- Menú «Más» ----------
 
-// Devuelve 'corregir', 'retirar' o null.
+// Devuelve 'corregir', 'sesiones', 'retirar' o null.
 export function ventanaMas(codigo) {
   return modal({
     titulo: `Más acciones: ${nombreVisible(codigo)}`,
-    cuerpo: '<p class="sutil">Elija qué quiere hacer con esta persona.</p>',
+    cuerpo: '<p class="sutil">Elija qué quiere hacer con esta persona. «Cerrar sus sesiones» la saca del aplicativo en todos sus equipos (por ejemplo, si perdió el celular) sin cambiar su contraseña.</p>',
     acciones: [
       { texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
       { texto: 'Corregir nombre o correo', valor: 'corregir', clase: 'btn-secundario' },
+      { texto: 'Cerrar sus sesiones', valor: 'sesiones', clase: 'btn-secundario' },
       { texto: 'Retirar', valor: 'retirar', clase: 'btn-peligro' }
     ]
   });

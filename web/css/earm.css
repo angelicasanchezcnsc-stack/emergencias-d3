@@ -247,7 +247,8 @@ tr:hover td { background: rgba(255, 238, 88, .05); }
 }
 .mp-puesto:disabled { cursor: not-allowed; }
 .mp-num { font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace; font-size: .62rem; font-weight: 700; }
-.mp-txt { font-size: .68rem; font-weight: 700; }
+.mp-txt { font-size: .68rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+@media (max-width: 480px) { .mp-txt { font-size: .62rem; } }
 .mp-sim { margin-right: .15rem; }
 .mp-ref {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .15rem; padding: .2rem;
@@ -449,7 +450,7 @@ details.tarjeta[open] .resumen-plegable { margin-bottom: .5rem; }
 @media (max-width: 640px) {
   .resumen-grande { grid-template-columns: repeat(2, 1fr); }
   .fila-marca { grid-template-columns: 1fr; }
-  .marca-btns { display: grid; grid-template-columns: repeat(2, 1fr); }
+  .marca-btns { display: grid; grid-template-columns: 2fr 1fr; }
   .btn-estado { justify-content: center; }
   .fila-dia { grid-template-columns: 3.2rem 1fr auto; }
   .fila-dia [data-novedad] { grid-column: 2 / -1; justify-self: start; min-height: 2rem; padding: .25rem .5rem; }
@@ -470,9 +471,45 @@ details.tarjeta[open] .resumen-plegable { margin-bottom: .5rem; }
   #nav { flex-wrap: nowrap; overflow-x: visible; gap: .15rem; padding-bottom: .4rem; }
   #nav .pestana { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: flex-start; gap: .15rem; padding: .4rem .15rem; font-size: .65rem; line-height: 1.15; text-align: center; white-space: normal; }
   .insignia-prueba { display: none; }
+  /* El servidor de prueba sí se avisa en el celular, en corto: «Prueba». */
+  .insignia-servidor-prueba { display: inline-flex; padding: 2px 6px; }
+  .insignia-servidor-prueba .txt-largo { display: none; }
   main { padding-top: 1rem; }
   td, th { padding: .6rem .7rem; }
 }
+
+/* ---------- Emergencia por rol (v0.13) ---------- */
+/* Un botón principal por persona («Evacuado») y «Más» para los demás estados. */
+.btn-estado.btn-principal { min-height: 48px; min-width: 9rem; justify-content: center; font-size: .85rem; }
+.btn-mas { min-height: 48px; }
+.hoja-acciones { display: grid; gap: .5rem; }
+.hoja-acciones .casilla { margin: .25rem 0; }
+/* Tablero compacto en el celular: seis columnas; «Ver todas las columnas» muestra las nueve. */
+.solo-celular { display: none; }
+@media (max-width: 720px) {
+  .tablero:not(.completo) .col-extra { display: none; }
+  .solo-celular { display: inline-flex; }
+}
+/* Secciones plegables de la emergencia y «Qué hacer ahora». */
+details.tablero-plegado { margin-top: .5rem; }
+details.tablero-plegado > summary { cursor: pointer; font-weight: 700; color: var(--corp-dark); }
+.que-hacer + .que-hacer { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--corp-light); }
+.que-hacer-titulo { margin: .25rem 0 .25rem; }
+.que-hacer ol, .recom-cuerpo ol { margin-top: .25rem; }
+.recom-origen { font-size: .75rem; color: var(--texto-60); font-style: italic; margin: 0 0 .5rem; }
+.antes-plegado { margin: .5rem 0; border: 1px dashed var(--corp-light); border-radius: var(--radio); padding: .4rem .75rem; }
+.antes-plegado > summary { cursor: pointer; color: var(--texto-60); font-weight: 700; }
+/* Barra fija de acciones (punto de encuentro y conteo): siempre abajo, por debajo de las ventanas. */
+.barra-fija {
+  position: sticky; bottom: 0; z-index: 40; display: flex; gap: .5rem; justify-content: center;
+  margin: 1rem -1rem -2rem; padding: .6rem 1rem calc(.6rem + env(safe-area-inset-bottom));
+  background: var(--vidrio); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-top: 1px solid var(--corp-light);
+}
+.barra-fija .btn { flex: 1; max-width: 16rem; justify-content: center; }
+/* Acta nominal */
+.acta-piso { margin-top: 1rem; }
+.acta-piso h4 { margin: .75rem 0 .25rem; }
+.tabla-acta td, .tabla-acta th { font-size: .82rem; }
 
 @media print {
   body.censo-activo > *:not(#censo-impreso) { display: none !important; }

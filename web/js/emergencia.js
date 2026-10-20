@@ -19,9 +19,9 @@ export const TIPOS = {
 export const PROTOCOLO = { sismo: 'sismo', incendio: 'incendio', estructural: 'estructural', 'riesgo-publico': 'riesgo-publico', atentado: 'atentado', otro: 'evacuacion' };
 
 export const ROLES_ACTIVAR = ['admin', 'coordinador', 'suplente', 'brigadista'];
-// Mismas listas que el servidor. Iniciar un simulacro sigue reservado a administración y coordinación;
-// cerrar (emergencia real o simulacro) lo hacen también los brigadistas.
-export const ROLES_SIMULACRO_INICIAR = ['admin', 'coordinador'];
+// Mismas listas que el servidor. Desde la v0.13 administración, coordinación, suplente y brigadistas
+// inician y cierran tanto simulacros como emergencias reales.
+export const ROLES_SIMULACRO_INICIAR = ROLES_ACTIVAR;
 export const ROLES_CERRAR = ['admin', 'coordinador', 'suplente', 'brigadista'];
 export const ROLES_REPORTAR = ['admin', 'coordinador', 'suplente', 'brigadista', 'asesor'];
 export const tiene = roles => roles.some(r => sesion.tieneRol(r));
@@ -33,6 +33,10 @@ let estado = null;   // { emergencia, marcas, conteos }
 let cola = [];
 let enviando = false;
 let temporizador = null;
+// Consultas fallidas seguidas: alargan la pausa entre consultas (hasta 4 veces) para no saturar al servidor
+// cuando muchos celulares preguntan a la vez. Se exporta solo para revisarlo en la consola.
+let fallos = 0;
+export const consultasFallidas = () => fallos;
 
 const avisar = () => dispatchEvent(new CustomEvent('emergencia-cambio'));
 export const pendientes = () => cola.length;
@@ -94,9 +98,13 @@ export async function iniciar() {
   programar();
 }
 
+// Cada celular espera entre el 80 % y el 120 % del intervalo (así no consultan todos en el mismo segundo) y,
+// tras fallos seguidos, el doble, el cuádruple... hasta 4 veces el intervalo.
 function programar() {
   clearTimeout(temporizador);
-  temporizador = setTimeout(async () => { await consultar(); programar(); }, actual() ? INTERVALO_EMERGENCIA : INTERVALO_NORMAL);
+  const base = actual() ? INTERVALO_EMERGENCIA : INTERVALO_NORMAL;
+  const pausa = base * (0.8 + Math.random() * 0.4) * Math.min(4, 2 ** fallos);
+  temporizador = setTimeout(async () => { await consultar(); programar(); }, pausa);
 }
 
 // Pregunta al servidor si hay cambios (consulta liviana) y, si los hay, trae el estado completo.
@@ -106,10 +114,11 @@ export async function consultar() {
   enviar();
   try {
     const r = await llamar('pulso');
+    fallos = 0;
     const a = actual();
     const cambio = (r.activa ? r.activa.id : null) !== (a ? a.emergencia.id : null) || (r.activa && a && r.activa.version !== a.emergencia.version);
     if (cambio) await traer();
-  } catch { /* sin conexión: se usa lo último conocido */ }
+  } catch { fallos++; /* sin conexión o servidor ocupado: se usa lo último conocido */ }
 }
 
 export async function traer() {
@@ -122,8 +131,15 @@ export async function traer() {
       const v = await llamar('emergencia', { id: a.emergencia.id });
       if (v && v.emergencia && v.emergencia.estado === 'activa') r = v;
     }
+    fallos = 0;
     adoptar(r); programar(); return true;
-  } catch { return false; }
+  } catch { fallos++; return false; }
+}
+
+// Acta nominal de una emergencia cerrada (v0.13): solo la coordinación, con internet. No se guarda en el
+// celular: el detalle con nombres se arma en pantalla y se olvida al salir.
+export async function detalle(id) {
+  return llamar('detalleEmergencia', { id });
 }
 
 export async function activar(tipo, descripcion, simulacro) {
@@ -213,6 +229,23 @@ export function marcarPersona(codigo, campos) {
   if (!a) return;
   const texto = Object.fromEntries(Object.entries(campos).map(([k, v]) => [k, String(v)]));
   return encolar({ id: crypto.randomUUID(), emergencia: a.emergencia.id, tipo: 'persona', codigo, momento: Date.now(), campos: texto });
+}
+
+// «Todos los pendientes de este piso salieron» (v0.13): varias marcas en un solo envío al servidor, con el
+// mismo momento. Devuelve cuántas se encolaron.
+export async function marcarVarios(codigos, campos) {
+  const a = actual();
+  if (!a || !codigos.length) return 0;
+  const texto = Object.fromEntries(Object.entries(campos).map(([k, v]) => [k, String(v)]));
+  const momento = Date.now();
+  const ops = codigos.map(codigo => ({ id: crypto.randomUUID(), emergencia: a.emergencia.id, tipo: 'persona', codigo, momento, campos: { ...texto } }));
+  ops.forEach(aplicarLocal);
+  cola.push(...ops);
+  await almacen.guardar('colaEmergencia', cola);
+  await almacen.guardar('emergencia', estado);
+  avisar();
+  enviar();
+  return ops.length;
 }
 
 export function marcarConteo(piso, campos) {

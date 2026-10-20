@@ -17,10 +17,10 @@ const POR_FILA_AUTOMATICA = 6;
 const CLAVE_VISTA = 'd3e-vista-mapa';
 
 // Clases de estado. Todas llevan texto o símbolo además del color. «texto» es lo que se ve bajo el número
-// cuando la pantalla no entrega otra etiqueta (si es null, se ven las iniciales de quien ocupa el puesto).
+// cuando la pantalla no entrega otra etiqueta (si es null, se ve el nombre corto de quien ocupa el puesto: nombreCorto).
 export const CLASES = {
   libre:          { nombre: 'Libre', simbolo: '', texto: 'Libre', senal: 'texto «Libre»' },
-  ocupado:        { nombre: 'Ocupado', simbolo: '', texto: null, senal: 'iniciales' },
+  ocupado:        { nombre: 'Ocupado', simbolo: '', texto: null, senal: 'primer nombre e iniciales' },
   compartido:     { nombre: 'Compartido', simbolo: '', texto: null, senal: '«+1» y borde doble' },
   actual:         { nombre: 'Puesto actual', simbolo: '', texto: 'Actual', senal: 'borde grueso y «Actual»' },
   elegido:        { nombre: 'Elegido', simbolo: '✓', texto: null, senal: '✓ y contorno' },
@@ -60,6 +60,16 @@ export function iniciales(persona) {
   const palabras = nombre.split(/\s+/).filter(Boolean);
   const mayus = palabras.filter(w => w[0] !== w[0].toLowerCase());
   return (mayus.length ? mayus : palabras).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+}
+
+// Nombre legible en una casilla (v0.13): el primer nombre completo y la inicial de las demás palabras que empiezan
+// en mayúscula (se omiten «de», «del», «la», «los»...). «Juan Carlos Pérez Ruiz» → «Juan C. P. R.»;
+// «María de los Ángeles Gómez» → «María Á. G.». Con una sola palabra (o solo el código) la devuelve tal cual.
+export function nombreCorto(persona) {
+  const palabras = String((persona && (persona.nombre || persona.codigo)) || '').trim().split(/\s+/).filter(Boolean);
+  if (palabras.length <= 1) return palabras.join('');
+  const resto = palabras.slice(1).filter(w => w[0] !== w[0].toLowerCase()).map(w => w[0].toUpperCase() + '.');
+  return [palabras[0], ...resto].join(' ');
 }
 
 const nombreDe = persona => String((persona && (persona.nombre || persona.codigo)) || 'persona sin nombre');
@@ -138,7 +148,7 @@ export function mapaPiso(opciones) {
     // Un puesto que no se puede asignar y está sin nadie siempre se dibuja como tal.
     if (p.asignable === false && !gente.length) clase = 'no-asignable';
     const c = CLASES[clase];
-    const ini = gente.length ? iniciales(gente[0]) + (gente.length > 1 ? ` +${gente.length - 1}` : '') : '';
+    const ini = gente.length ? nombreCorto(gente[0]) + (gente.length > 1 ? ` +${gente.length - 1}` : '') : '';
     const etiqueta = dado.etiqueta !== undefined && dado.etiqueta !== null ? String(dado.etiqueta) : (c.texto !== null ? c.texto : (ini || c.nombre));
     const nombres = gente.map(nombreDe);
     let texto = dado.texto;

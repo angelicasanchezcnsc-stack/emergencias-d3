@@ -12,7 +12,7 @@ Sirve para saber quién está en la sede, en qué piso y en qué puesto; para qu
 | Lógica | `servidor/Nucleo.gs` | Todas las reglas del servidor. No depende de Google. |
 | Adaptador | `servidor/Codigo.gs` | Conecta el núcleo con Google Sheets mediante Apps Script. |
 | Configuración | `web/config.js` | Único archivo que cambia al publicar o migrar. |
-| Herramientas | `herramientas/` | Servidor local para probar en el computador. |
+| Herramientas | `herramientas/` | Servidor local para probar en el computador, bancos de pruebas y prueba de carga contra el servidor de prueba. |
 | Documentación | `docs/` | Arquitectura, instalación y migración. |
 
 ## Protección de datos (Ley 1581 de 2012)
@@ -27,7 +27,7 @@ Sirve para saber quién está en la sede, en qué piso y en qué puesto; para qu
 
 ## Estado
 
-Etapa actual: **10, piloto**. La app está publicada en GitHub Pages y conectada al servidor real. Para trabajar en el código: [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) y las reglas del equipo en [CLAUDE.md](CLAUDE.md).
+Etapa actual: **10, piloto**. Versión **v0.13.0**. La app está publicada en GitHub Pages y conectada al servidor real. Para trabajar en el código: [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) y las reglas del equipo en [CLAUDE.md](CLAUDE.md). Para usarla en un simulacro: [docs/GUIA-ROLES.md](docs/GUIA-ROLES.md), una página por rol.
 
 - [x] Acceso con correo y contraseña, bloqueo tras 5 intentos fallidos
 - [x] Llave maestra cifrada y carga seudonimizada del Excel de puestos (con recarga y comparación de cambios)
@@ -40,14 +40,16 @@ Etapa actual: **10, piloto**. La app está publicada en GitHub Pages y conectada
 - [x] Contactos de emergencia editables (con «Pendiente» y «Por verificar»), brigada y coordinación del Despacho
 - [x] Rutas de evacuación, punto de encuentro y planos por piso, guardados cifrados y descargados al celular
 - [x] Recomendaciones por tipo de emergencia, editables por el administrador
-- [x] Activar emergencia o simulacro (según rol), franja de aviso en todas las pantallas y tablero por piso
+- [x] Activar emergencia o simulacro (administración, coordinación, suplente o brigadista), franja de aviso en todas las pantallas y tablero por piso
+- [x] Pantalla de emergencia ordenada por rol (v0.13): el brigadista ve primero su piso; la coordinación, el tablero; un botón «Evacuado» por persona y «Más» para los demás estados; «Todos los pendientes de este piso salieron»; «Qué hacer ahora» con el protocolo del brigadista y el del tipo de evento
 - [x] Reporte propio («Ya salí», «Necesito ayuda») y reporte del brigadista por persona o por conteo, con cola sin conexión
 - [x] Atención prioritaria: no ubicados, quienes piden apoyo y personas con discapacidad que necesitan asistencia
 - [x] Punto de encuentro: registro de llegadas (también «Llegué» desde el celular propio), búsqueda, filtro por piso y pantalla para pleno sol
 - [x] Conciliación piso–punto de encuentro y lista de ausentes con piso, puesto y última ubicación (imprimible y copiable)
 - [x] Emergencia activada sin conexión en el celular, con unión automática a la del servidor al volver la señal
 - [x] Cierre con observaciones e informe de totales y tiempos por piso (línea de tiempo con la estructura del Anexo 7 del plan), imprimible o en PDF
-- [x] Histórico de simulacros y emergencias, sin nombres; al cerrar se borra el detalle por persona
+- [x] Histórico de simulacros y emergencias, sin nombres; acta nominal (llegaron, no llegaron, no estaban) durante la emergencia y, para la coordinación, después del cierre: el detalle por persona se conserva 90 días (simulacros) o 365 (emergencias) y cada consulta queda registrada (v0.13)
+- [x] Cierre remoto de sesiones (propias y, para el administrador, las de otra persona), huella del correo con la pimienta del servidor, servidor de prueba y prueba de carga (v0.13)
 - [x] Caracterización individual voluntaria, con autorización informada (texto editable y versionado), cifrada de extremo a extremo: solo la persona, el administrador y la coordinación abren el detalle
 - [x] Apoyo para evacuar visible, solo durante una emergencia, para los brigadistas de su piso, la coordinación y el acompañante que la persona designe
 - [x] Revocación y borrado por la propia persona; el registro se borra si la persona se retira del Despacho
@@ -56,7 +58,7 @@ Etapa actual: **10, piloto**. La app está publicada en GitHub Pages y conectada
 - [x] Mapa esquemático de cada piso, tipo sala de cine, en Planta física, Hoy en la sede, Emergencia y Ausencia o cambio de lugar, siempre con su vista de lista equivalente
 - [x] El personal se gestiona desde la app (mover, intercambiar, compartir puesto, agregar, corregir, retirar y reactivar) con historial de cambios; el Excel queda para la carga inicial y se puede exportar el personal en CSV
 - [x] Distribución de pisos diseñable desde Administración
-- [x] Contactos de emergencia de todo el Despacho cargados desde el archivo del área de personal (Excel o CSV), con comparación previa, altas de personas nuevas, corrección por la coordinación o por la persona, copia sin conexión y fichas anuales de verificación por persona (v0.12, sin publicar)
+- [x] Contactos de emergencia de todo el Despacho cargados desde el archivo del área de personal (Excel o CSV), con comparación previa, altas de personas nuevas, corrección por la coordinación o por la persona, copia sin conexión y fichas anuales de verificación por persona (v0.12)
 - [ ] Pruebas con el equipo, piloto en un piso y ajustes finales (etapas 10 y 11)
 
 ## Probar y publicar

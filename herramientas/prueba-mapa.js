@@ -64,6 +64,24 @@ prueba(G0, 'iniciales: dos primeras palabras con mayúscula, o el código si no 
   igual(M.iniciales({ codigo: 'D3-001' }), 'D');
   igual(M.iniciales(null), '');
 });
+prueba(G0, 'nombreCorto (v0.13): primer nombre completo e iniciales del resto, sin partículas en minúscula', () => {
+  igual(M.nombreCorto({ nombre: 'Ana' }), 'Ana');
+  igual(M.nombreCorto({ nombre: 'Laura Prueba' }), 'Laura P.');
+  igual(M.nombreCorto({ nombre: 'Juan Carlos Pérez Ruiz' }), 'Juan C. P. R.');
+  igual(M.nombreCorto({ nombre: 'José Luis Andrés Felipe Ejemplo Muestra' }), 'José L. A. F. E. M.');
+  igual(M.nombreCorto({ nombre: 'María de los Ángeles Gómez' }), 'María Á. G.');
+  igual(M.nombreCorto({ codigo: 'D3-001' }), 'D3-001');
+  igual(M.nombreCorto(null), '');
+});
+prueba(G0, 'nombreCorto en un puesto compartido: el nombre corto de la primera persona y «+1»', () => {
+  const caja = document.createElement('div');
+  const m = M.mapaPiso({ piso: 2, puestos: [{ piso: 2, puesto: 1, col: 1, fila: 1, asignable: true }], referencias: [],
+    ocupantes: new Map([['2-1', [{ codigo: 'D3-001', nombre: 'María de los Ángeles Gómez' }, { codigo: 'D3-002', nombre: 'Ana' }]]]), modo: 'ver', idBase: 'nc', vista: 'mapa' });
+  caja.innerHTML = m.html;
+  const b = caja.querySelector('[data-mp-puesto="2-1"]');
+  igual(b.querySelector('.mp-txt').textContent.trim(), 'María Á. G. +1');
+  afirmar(/María de los Ángeles Gómez/.test(b.getAttribute('aria-label')), 'El nombre completo debe seguir en la etiqueta accesible');
+});
 prueba(G0, 'ubicar respeta lo ubicado y pone el resto 6 por fila, por número, después de lo ya ubicado', () => {
   const sueltos = [14, 3, 1, 2, 5, 4, 6, 7, 8, 9, 10, 11, 12, 13].map(puesto => ({ piso: 2, puesto, col: null, fila: null }));
   const r = M.ubicar(sueltos, []);
@@ -96,11 +114,11 @@ prueba(G1, 'El aria-label dice el puesto y quién lo ocupa', () => {
   igual(etiqueta('2-5'), 'Puesto P2-5, libre');
   igual(etiqueta('2-10'), 'Puesto P2-10, no asignable');
 });
-prueba(G1, 'Cada casilla muestra el número arriba y, debajo, las iniciales, «PD +1» o «Libre»', () => {
+prueba(G1, 'Cada casilla muestra el número arriba y, debajo, el nombre corto, «Persona D. +1» o «Libre»', () => {
   const { caja } = dibujar();
   const texto = k => porClave(caja, k).querySelector('.mp-txt').textContent.trim();
-  igual(texto('2-3'), 'PD');
-  igual(texto('2-4'), 'PD +1');
+  igual(texto('2-3'), 'Persona D.');
+  igual(texto('2-4'), 'Persona D. +1');
   igual(texto('2-5'), 'Libre');
   igual(porClave(caja, '2-3').querySelector('.mp-num').textContent, 'P2-3');
 });
@@ -209,7 +227,7 @@ prueba(G1, 'La pantalla puede definir etiqueta y texto de cada puesto con estado
   afirmar(uno.classList.contains('mp-no-ubicado'));
   igual(uno.getAttribute('aria-label'), 'Puesto P2-1, Persona Demo 01, no ubicada');
   igual(uno.querySelector('.mp-sim').textContent, '!');
-  igual(porClave(caja, '2-2').querySelector('.mp-txt').textContent.trim(), '✚PD');
+  igual(porClave(caja, '2-2').querySelector('.mp-txt').textContent.trim(), '✚Persona D.');
 });
 
 // ---------- Lista equivalente ----------

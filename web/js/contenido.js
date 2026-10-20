@@ -5,7 +5,7 @@ import * as cripto from './cripto.js';
 import * as almacen from './almacen.js';
 import * as sesion from './sesion.js';
 import { llamar, ErrorApi } from './api.js';
-import { contactosIniciales, rutasIniciales, recomendacionesIniciales, consentimientoInicial, PROTOCOLOS_INDIVIDUALES } from './contenido-inicial.js';
+import { contactosIniciales, rutasIniciales, recomendacionesIniciales, consentimientoInicial, PROTOCOLOS_INDIVIDUALES, PROTOCOLO_BRIGADISTA } from './contenido-inicial.js';
 
 const TAM_PARTE = 40000;          // caracteres por celda de Google Sheets (límite: 50.000)
 const MAX_PDF = 800 * 1024;
@@ -20,10 +20,10 @@ export const existeSobre = n => !!cont().sobres[n];
 
 export const SEMILLAS = {
   contactos: contactosIniciales,
-  // Los protocolos generales del plan más los protocolos individuales de la caracterización.
+  // Los protocolos generales del plan, el del brigadista y los protocolos individuales de la caracterización.
   recomendaciones: () => {
     const r = recomendacionesIniciales();
-    r.protocolos.push(...PROTOCOLOS_INDIVIDUALES());
+    r.protocolos.push(PROTOCOLO_BRIGADISTA(), ...PROTOCOLOS_INDIVIDUALES());
     return r;
   },
   rutas: rutasIniciales,

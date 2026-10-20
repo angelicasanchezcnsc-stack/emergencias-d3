@@ -1,6 +1,6 @@
 // Trabajador de servicio: guarda la aplicación en el celular para que abra sin internet.
 // Al publicar una versión nueva, cambie VERSION para renovar la copia guardada.
-const VERSION = 'd3e-v0.12.0';
+const VERSION = 'd3e-v0.13.0';
 
 const ARCHIVOS = [
   './', 'index.html', 'config.js', 'manifest.webmanifest', 'css/earm.css',
@@ -10,7 +10,7 @@ const ARCHIVOS = [
   'js/vistas/admin.js', 'js/vistas/comun.js', 'js/vistas/cuenta.js', 'js/vistas/ingreso.js',
   'js/vistas/inicio.js', 'js/vistas/instalacion.js', 'js/vistas/planta.js', 'js/vistas/hoy.js',
   'js/vistas/contactos.js', 'js/vistas/rutas.js', 'js/vistas/recomendaciones.js',
-  'js/emergencia.js', 'js/vistas/emergencia.js', 'js/vistas/punto.js', 'js/vistas/historico.js',
+  'js/emergencia.js', 'js/vistas/emergencia.js', 'js/vistas/punto.js', 'js/vistas/historico.js', 'js/vistas/acta.js',
   'js/caracterizacion.js', 'js/vistas/caracterizacion.js', 'js/vistas/caracterizaciones.js', 'js/vistas/form-caracterizacion.js',
   'js/archivo-contactos.js', 'js/contacto-emergencia.js', 'js/vistas/admin-contactos.js', 'js/vistas/ventana-contacto.js', 'js/vistas/verificacion-contactos.js'
 ];

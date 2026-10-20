@@ -31,7 +31,11 @@ async function remoto(accion, datos) {
     // La respuesta de la consulta simple (doGet) significa que Google perdió la de esta acción.
     const perdida = !res || (res.ok && res.datos && res.datos.servicio && !('inicializado' in res.datos));
     if (!perdida) return res;
+    // 429 (demasiadas peticiones) o 5xx: Google está ocupado. Se reintenta con las mismas pausas y, si sigue
+    // así, se avisa «ocupado» (hay conexión: no se marca el servidor como caído).
+    const ocupado = r.status === 429 || r.status >= 500;
     if (intento >= pausas.length) {
+      if (ocupado) throw new ErrorApi('El servidor está ocupado. Intente de nuevo en unos segundos.', 'OCUPADO');
       throw new ErrorApi(r.ok ? 'El servidor no respondió como se esperaba. Intente de nuevo en unos segundos.'
         : 'El servidor respondió con un error (' + r.status + '). Intente de nuevo en unos segundos.', 'RED');
     }

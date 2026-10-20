@@ -54,9 +54,11 @@ export const rutasIniciales = () => ({
 });
 
 const P = (id, titulo, secciones) => ({ id, titulo, secciones: secciones.map(([t, items]) => ({ titulo: t, items })) });
+// Origen de cada protocolo (v0.13): 'plan' (plan de emergencias de la sede) o 'despacho' (redactado por el Despacho 3).
+const conOrigen = (origen, lista) => lista.map(p => ({ ...p, origen }));
 
 export const recomendacionesIniciales = () => ({
-  protocolos: [
+  protocolos: conOrigen('plan', [
     P('evacuacion', 'Protocolo general de evacuación', [
       ['Pasos', [
         'Espere la señal de alarma o la orden de los brigadistas.',
@@ -246,8 +248,37 @@ export const recomendacionesIniciales = () => ({
         'Informe a la institución sobre su estado de salud y sobre lo ocurrido.'
       ]]
     ])
-  ]
+  ])
 });
+
+// ---------- Protocolo del brigadista (v0.13) ----------
+// Tomado del numeral 8 («Preparación» y «Normas de evacuación») y del Anexo 6 («Procedimiento coordinador») del plan
+// de emergencias de la sede, adaptado a las acciones del aplicativo.
+export const PROTOCOLO_BRIGADISTA = () => ({ ...P('brigadista', 'Brigadista: paso a paso en una evacuación', [
+  ['Al sonar la alarma (preparación)', [
+    'Dé la orden de salida en su piso y recuérdeles el punto de encuentro.',
+    'Pida que apaguen equipos, tomen carné, cartera y celular, y que lleven consigo a sus visitantes.',
+    'Verifique quiénes y cuántas personas hay en el piso: abra Emergencia → Reporte del piso.',
+    'Identifique a quienes requieren ayuda por una condición física o de salud: aparecen en «Atención prioritaria» y con el chip «Necesita apoyo».',
+    'Reduzca riesgos nuevos si es seguro hacerlo (cierre puertas, aleje objetos del paso).'
+  ]],
+  ['Durante la salida', [
+    'Dirija la salida por la ruta señalizada; nadie corre, nadie grita, nadie se devuelve.',
+    'Use el lado de la pared de la escalera y, con humo, desplácese agachado.',
+    'Marque en la app a cada persona que sale («Evacuado») o, si no hay tiempo, use «Todos los pendientes de este piso salieron» y corrija después.',
+    'Marque «No ubicado» a quien no encuentre y «Requiere apoyo» a quien necesite ayuda. Si no puede ayudar, informe a la brigada del edificio o a los organismos de socorro.',
+    'Sea la última persona en salir del piso y cierre la puerta.'
+  ]],
+  ['En el punto de encuentro', [
+    'Abra Punto de encuentro y registre a cada persona que llega («Llegó»).',
+    'Haga el censo de su piso: presentes, ausentes y heridos. Entregue la lista de ausentes a la brigada del edificio o a los bomberos, con la última ubicación reportada.',
+    'No permita que nadie regrese al edificio hasta que lo autoricen.'
+  ]],
+  ['Al terminar', [
+    'Cuando la brigada del edificio o la autoridad lo indique, cierre la emergencia en la app con las observaciones del piso.',
+    'Si hubo personas no ubicadas o heridas, avise a la coordinación del Despacho para el seguimiento con Seguridad y Salud en el Trabajo.'
+  ]]
+]), origen: 'plan' });
 
 // ---------- Autorización de tratamiento de datos (caracterización individual) ----------
 // Texto estándar basado en la Ley 1581 de 2012 y el Decreto 1377 de 2013 (compilado en el
@@ -299,7 +330,7 @@ export const AVISO_CONTACTOS_CORTO = 'Para qué se usa: para avisar a su familia
 
 // ---------- Protocolos individuales (derivados de la caracterización) ----------
 // Texto general y prudente. Debe revisarlo el Área de Seguridad y Salud en el Trabajo.
-const PI = (id, titulo, secciones) => P(id, 'Protocolo individual: ' + titulo, secciones);
+const PI = (id, titulo, secciones) => ({ ...P(id, 'Protocolo individual: ' + titulo, secciones), origen: 'despacho' });
 const REVISAR = 'Este protocolo es una guía general: revíselo con el Área de Seguridad y Salud en el Trabajo y con su médico si es necesario.';
 
 export const PROTOCOLOS_INDIVIDUALES = () => [

@@ -5,7 +5,7 @@ import * as sesion from '../sesion.js';
 import * as novedades from '../novedades.js';
 import { ubicacionHoy } from '../presencia.js';
 import { esc, icono, insignia, aviso, confirmar, modal } from '../ui.js';
-import { mapaPiso, rotulo, iniciales } from '../mapa-piso.js';
+import { mapaPiso, rotulo, nombreCorto } from '../mapa-piso.js';
 import { fechaLegible, fechaBogota } from '../tiempo.js';
 import { insigniaPresencia, formularioNovedad, textoNovedad } from './comun.js';
 
@@ -61,7 +61,7 @@ export function vistaHoy(vista) {
       if (!lista.length) return {};
       const texto = lista.map(({ x, tipo, info }) => `${x.nombre}, ${tipo === 'prevista' ? 'prevista hoy' : tipo === 'no-asiste' ? 'no asiste hoy' : 'hoy en otro lugar'}${info ? ' (' + info + ')' : ''}`).join('; ');
       const mas = lista.length > 1 ? ` +${lista.length - 1}` : '';
-      const ini = iniciales({ nombre: lista[0].x.nombre });
+      const ini = nombreCorto({ nombre: lista[0].x.nombre });
       if (lista.some(e => e.tipo === 'prevista')) return { clase: 'prevista', etiqueta: `${ini}${mas} Prevista`, texto };
       const otro = lista.find(e => e.tipo === 'otro-lugar');
       if (otro) return { clase: 'otro-lugar', etiqueta: 'Hoy en ' + (otro.x.r.puesto ? rotulo(otro.x.r.piso, otro.x.r.puesto) : 'sala'), texto };

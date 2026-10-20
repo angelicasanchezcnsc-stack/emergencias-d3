@@ -1,15 +1,21 @@
 // Emergencia: activar o simular, reporte propio, reporte de brigadistas (por
 // persona o por conteo), tablero consolidado por piso y cierre.
+// Desde la v0.13 la pantalla se ordena según quién la mira (perfil de vista): el brigadista ve primero su piso,
+// la coordinación el tablero, el asesor el reporte; cada sección es una función que devuelve su HTML.
 import { CONFIG } from '../../config.js';
 import * as sesion from '../sesion.js';
 import * as emergencia from '../emergencia.js';
 import * as carac from '../caracterizacion.js';
 import * as contacto from '../contacto-emergencia.js';
+import * as contenido from '../contenido.js';
 import { fichaContacto } from './ventana-contacto.js';
 import { esc, icono, aviso, insignia, confirmar, modal } from '../ui.js';
 import { horaLegible, horaBogota } from '../tiempo.js';
 import { enSedeDe, ubicacionHoy } from '../presencia.js';
-import { mapaPiso, iniciales, rotulo } from '../mapa-piso.js';
+import { mapaPiso, nombreCorto, rotulo } from '../mapa-piso.js';
+import { armarActa, imprimirActa } from './acta.js';
+import { textoConservacion } from './historico.js';
+import { seccionesHtml, enlazarRemisiones } from './recomendaciones.js';
 
 const { TIPOS, PROTOCOLO, ROLES_ACTIVAR, ROLES_SIMULACRO_INICIAR, ROLES_CERRAR, ROLES_REPORTAR, tiene } = emergencia;
 
@@ -23,10 +29,17 @@ const hora = ms => horaLegible(horaBogota(new Date(ms)));
 const CLAVE_VISTA_EMERGENCIA = 'd3e-vista-emergencia';
 const leerVistaReporte = () => { try { return localStorage.getItem(CLAVE_VISTA_EMERGENCIA) === 'mapa' ? 'mapa' : 'lista'; } catch (e) { return 'lista'; } };
 const guardarVistaReporte = v => { try { localStorage.setItem(CLAVE_VISTA_EMERGENCIA, v); } catch (e) { /* no se recuerda */ } };
+const CLAVE_TABLERO = 'd3e-tablero-completo';
+const leerTableroCompleto = () => { try { return localStorage.getItem(CLAVE_TABLERO) === '1'; } catch (e) { return false; } };
+const guardarTableroCompleto = v => { try { localStorage.setItem(CLAVE_TABLERO, v ? '1' : '0'); } catch (e) { /* no se recuerda */ } };
 // Clase del mapa según la marca de la emergencia; si hay varias personas en el puesto manda la más urgente.
 const CLASE_MARCA = { evacuado: 'evacuado', no_ubicado: 'no-ubicado', apoyo: 'apoyo', no_estaba: 'no-estaba', '': 'sin-marcar' };
 const URGENCIA = ['no_ubicado', 'apoyo', '', 'evacuado', 'no_estaba'];
 const normalizar = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+// Quién mira la pantalla: decide el orden de las secciones.
+const perfilVista = () => contacto.esCoordinacion() ? 'coordinacion' : sesion.tieneRol('brigadista') ? 'brigadista'
+  : sesion.tieneRol('asesor') ? 'asesor' : 'persona';
 
 function insigniaMarca(m) {
   if (!m || !m.estado) return insignia('Sin marcar', 'gris');
@@ -70,18 +83,49 @@ function textoOtraBrigada(m, pisoVista) {
   return autor && autor.pisoBrigada && autor.pisoBrigada !== pisoVista ? ` · marcado por la brigada del piso ${autor.pisoBrigada}` : '';
 }
 
+// Fila de una persona (v0.13): un botón principal «Evacuado» y «Más» para los demás estados. Tocar «Evacuado»
+// cuando ya está evacuada no hace nada: quitar una marca es una acción explícita dentro de «Más».
 function filaPersona(codigo, m, extra = '', pisoVista = null) {
-  const activo = s => (m && m.estado === s ? 'activo' : '');
+  const nombre = sesion.nombreDe(codigo);
+  const evacuado = !!(m && m.estado === 'evacuado');
   return `<div class="fila-marca" data-codigo="${esc(codigo)}">
-    <div class="fila-dia-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong><span class="sutil">${extra}${insigniaMarca(m)}${esc(textoOtraBrigada(m, pisoVista))}</span>${chipApoyo(codigo)}${detalleContacto(codigo, m)}</div>
+    <div class="fila-dia-txt"><strong>${esc(nombre)}</strong><span class="sutil">${extra}${insigniaMarca(m)}${m && m.asistencia ? ' ' + insignia('Asistencia por discapacidad', 'azul') : ''}${esc(textoOtraBrigada(m, pisoVista))}</span>${chipApoyo(codigo)}${detalleContacto(codigo, m)}</div>
     <div class="marca-btns">
-      <button class="btn-estado ${activo('evacuado')} e-evacuado" data-estado="evacuado" title="Evacuado">${icono('ok', 'ic-s')}<span>Evacuado</span></button>
-      <button class="btn-estado ${activo('no_ubicado')} e-no" data-estado="no_ubicado" title="No ubicado">${icono('alerta', 'ic-s')}<span>No ubicado</span></button>
-      <button class="btn-estado ${activo('apoyo')} e-apoyo" data-estado="apoyo" title="Requiere apoyo">${icono('persona', 'ic-s')}<span>Apoyo</span></button>
-      <button class="btn-estado ${activo('no_estaba')} e-noestaba" data-estado="no_estaba" title="No estaba hoy en la sede">${icono('cerrar', 'ic-s')}<span>No estaba</span></button>
+      <button class="btn-estado e-evacuado btn-principal ${evacuado ? 'activo' : ''}" data-estado="evacuado" aria-pressed="${evacuado}" aria-label="${esc('Marcar a ' + nombre + ' como persona evacuada')}">${icono('ok', 'ic-s')}<span>Evacuado</span></button>
+      <button class="btn btn-fantasma btn-chico btn-mas" data-mas aria-label="${esc('Más opciones para ' + nombre)}">Más</button>
     </div>
-    <label class="casilla casilla-chica"><input type="checkbox" data-asistencia ${m && m.asistencia ? 'checked' : ''}>Persona con discapacidad que necesita asistencia</label>
   </div>`;
+}
+
+// Hoja de acciones «Más»: los demás estados, la asistencia por discapacidad y «Quitar marca».
+async function hojaMas(codigo) {
+  const marcaAhora = () => { const a = emergencia.actual(); return ((a && a.marcas) || []).find(m => m.codigo === codigo) || null; };
+  const m = marcaAhora();
+  const nombre = sesion.nombreDe(codigo);
+  const boton = (estado, texto, clase, ic) => `<button class="btn ${clase} btn-grande btn-ancho" data-hoja="${estado}" ${m && m.estado === estado ? 'aria-pressed="true"' : ''}>${icono(ic)}${esc(texto)}${m && m.estado === estado ? ' (actual)' : ''}</button>`;
+  const respuesta = modal({
+    titulo: nombre,
+    cuerpo: `<p>Estado actual: ${insigniaMarca(m)}</p>
+      <div class="pila hoja-acciones">
+        ${boton('no_ubicado', 'No ubicado', 'btn-peligro', 'alerta')}
+        ${boton('apoyo', 'Requiere apoyo', 'btn-secundario', 'persona')}
+        ${boton('no_estaba', 'No estaba hoy en la sede', 'btn-secundario', 'cerrar')}
+        <label class="casilla"><input type="checkbox" data-hoja-asistencia ${m && m.asistencia ? 'checked' : ''}>Persona con discapacidad que necesita asistencia</label>
+        ${m && m.estado ? `<button class="btn btn-fantasma btn-ancho" data-hoja="">Quitar marca</button>` : ''}
+      </div>`,
+    acciones: [{ texto: 'Cerrar', valor: null, clase: 'btn-fantasma' }]
+  });
+  const fondo = Array.from(document.querySelectorAll('.modal-fondo')).pop();
+  const cerrar = () => fondo.querySelector('[data-i="0"]').click();
+  fondo.querySelectorAll('[data-hoja]').forEach(b => b.addEventListener('click', async () => {
+    const estado = b.dataset.hoja;
+    const actual = marcaAhora();
+    if (!(actual && actual.estado === estado) || estado === '') await emergencia.marcarPersona(codigo, { estado });
+    cerrar();
+  }));
+  fondo.querySelector('[data-hoja-asistencia]').addEventListener('change', ev => emergencia.marcarPersona(codigo, { asistencia: ev.target.checked }));
+  fondo.querySelector('[data-hoja]')?.focus();
+  await respuesta;
 }
 
 export function vistaEmergencia(vista) {
@@ -91,6 +135,12 @@ export function vistaEmergencia(vista) {
   let terminada = null;
   let pendientePintar = false;
   let vistaReporte = leerVistaReporte();
+  let tableroCompleto = leerTableroCompleto();
+  // Secciones plegables abiertas o cerradas por la persona: se respetan al repintar.
+  const abiertas = new Map();
+  // Protocolos (sobre cifrado guardado en el celular): se leen una vez para «Qué hacer ahora».
+  let protocolos = null;
+  contenido.leerSobre('recomendaciones').then(d => { protocolos = (d && d.protocolos) || []; pintar(); }).catch(() => { protocolos = []; });
 
   // ---------- Sin emergencia ----------
   const pintarInactiva = () => {
@@ -106,7 +156,8 @@ export function vistaEmergencia(vista) {
           <form id="f-activar">
             <div class="campo"><label class="etiqueta" for="tipo">Tipo de evento</label>
               <select id="tipo">${Object.entries(TIPOS).map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></div>
-            <div class="campo"><label class="etiqueta" for="desc">Detalle (opcional)</label><input id="desc" type="text" maxlength="200" placeholder="Ej.: humo en el piso 6" autocomplete="off"></div>
+            <div class="campo"><label class="etiqueta" for="desc">Detalle (opcional)</label><input id="desc" type="text" maxlength="200" placeholder="Ej.: humo en el piso 6" autocomplete="off" aria-describedby="desc-ayuda">
+              <p class="ayuda" id="desc-ayuda">Sin nombres ni datos de salud: este texto queda en el histórico.</p></div>
             ${puedeSim ? '<label class="casilla"><input type="checkbox" id="simulacro">Es un simulacro (no es una emergencia real)</label>' : ''}
             <button class="btn btn-peligro btn-ancho btn-grande" type="submit" id="btn-activar">${icono('alerta')}<span>Activar emergencia</span></button>
           </form>
@@ -143,11 +194,11 @@ export function vistaEmergencia(vista) {
         aviso(esSim ? 'Simulacro iniciado.' : 'Emergencia activada.', 'exito');
       } catch (e) {
         if (e.codigo === 'YA_ACTIVA') { await emergencia.traer(); aviso(e.message, 'advertencia'); return; }
-        if (e.codigo !== 'RED') { aviso(e.message, 'error'); return; }
-        // Sin conexión: se ofrece activarla solo en este celular, con la lista del día guardada.
-        const local = await confirmar('Sin conexión',
-          'No hay conexión con el servidor. ¿Activar en <strong>este celular</strong> para registrar el piso y el punto de encuentro sin internet? ' +
-          'Cuando vuelva la señal se unirá sola a la emergencia del servidor. Dé la alarma también por los medios del edificio.',
+        if (e.codigo !== 'RED' && e.codigo !== 'OCUPADO') { aviso(e.message, 'error'); return; }
+        // Sin conexión (o el servidor no responde): se ofrece activarla solo en este celular, con la lista del día guardada.
+        const local = await confirmar(e.codigo === 'OCUPADO' ? 'El servidor no responde' : 'Sin conexión',
+          'No se pudo llegar al servidor. ¿Activar en <strong>este celular</strong> para registrar el piso y el punto de encuentro sin internet? ' +
+          'Cuando el servidor responda se unirá sola a la emergencia del servidor. Dé la alarma también por los medios del edificio.',
           'Activar sin conexión', !esSim);
         if (!local) return;
         await emergencia.activarLocal(tipo, f.desc.value.trim(), esSim);
@@ -158,16 +209,17 @@ export function vistaEmergencia(vista) {
 
   // ---------- Reporte del piso: filas, mapa y hoja de acciones ----------
 
-  // Botones de cada fila de persona (Evacuado, No ubicado, Apoyo, No estaba y la casilla de asistencia). Sirven igual
-  // en la lista y en la hoja de acciones del mapa. «marcasDe» entrega las marcas más recientes.
+  // Botones de cada fila de persona («Evacuado» y «Más»). Sirven igual en la lista y en la hoja del mapa.
+  // «marcasDe» entrega las marcas más recientes.
   function enlazarFilas(raiz, marcasDe) {
     raiz.querySelectorAll('.fila-marca').forEach(filaEl => {
       const codigo = filaEl.dataset.codigo;
-      filaEl.querySelectorAll('[data-estado]').forEach(b => b.addEventListener('click', () => {
+      filaEl.querySelector('[data-estado]').addEventListener('click', () => {
         const m = marcasDe().get(codigo);
-        emergencia.marcarPersona(codigo, { estado: m && m.estado === b.dataset.estado ? '' : b.dataset.estado });
-      }));
-      filaEl.querySelector('[data-asistencia]').addEventListener('change', ev => emergencia.marcarPersona(codigo, { asistencia: ev.target.checked }));
+        if (m && m.estado === 'evacuado') return;   // ya está evacuada: un segundo toque no borra la marca
+        emergencia.marcarPersona(codigo, { estado: 'evacuado' });
+      });
+      filaEl.querySelector('[data-mas]').addEventListener('click', () => hojaMas(codigo));
     });
   }
 
@@ -198,7 +250,7 @@ export function vistaEmergencia(vista) {
       const mandan = URGENCIA.find(u => estados.includes(u));
       const necesitan = gente.filter(g => textoApoyo(g.codigo));
       const mas = gente.length > 1 ? ` +${gente.length - 1}` : '';
-      const etiqueta = `${necesitan.length && mandan !== 'apoyo' ? '✚' : ''}${iniciales(gente[0])}${mas}`;
+      const etiqueta = `${necesitan.length && mandan !== 'apoyo' ? '✚' : ''}${nombreCorto(gente[0])}${mas}`;
       const texto = gente.map((g, i) => `${g.nombre}: ${estados[i] ? ESTADO[estados[i]]?.[0] || estados[i] : 'sin marcar'}${textoApoyo(g.codigo) ? ', necesita apoyo (' + textoApoyo(g.codigo) + ')' : ''}`).join('; ');
       return { clase: CLASE_MARCA[mandan] || 'sin-marcar', etiqueta, texto };
     };
@@ -214,12 +266,12 @@ export function vistaEmergencia(vista) {
     const caja = fondo.querySelector('#hoja-cuerpo');
     const pintarHoja = () => {
       const activo = document.activeElement;
-      const marca = activo && caja.contains(activo) ? [activo.closest('.fila-marca')?.dataset.codigo, activo.dataset.estado || (activo.hasAttribute('data-asistencia') ? 'asistencia' : '')] : null;
+      const marca = activo && caja.contains(activo) ? [activo.closest('.fila-marca')?.dataset.codigo, activo.hasAttribute('data-mas') ? 'mas' : 'estado'] : null;
       caja.innerHTML = cuerpo();
       enlazarFilas(caja, marcasAhora);
       if (marca && marca[0]) {
         const fila = Array.from(caja.querySelectorAll('.fila-marca')).find(f => f.dataset.codigo === marca[0]);
-        (marca[1] === 'asistencia' ? fila?.querySelector('[data-asistencia]') : fila?.querySelector(`[data-estado="${marca[1]}"]`))?.focus();
+        fila?.querySelector(marca[1] === 'mas' ? '[data-mas]' : '[data-estado]')?.focus();
       }
     };
     enlazarFilas(caja, marcasAhora);
@@ -230,54 +282,134 @@ export function vistaEmergencia(vista) {
     if (clavePuesto) vista.querySelector(`[data-mp-puesto="${clavePuesto}"]`)?.focus();
   }
 
-  // ---------- Con emergencia ----------
-  const pintarActiva = a => {
-    const e = a.emergencia;
-    const r = emergencia.resumen(a);
-    const reporta = tiene(ROLES_REPORTAR);
-    const cierra = tiene(ROLES_CERRAR);
-    const marcas = new Map(a.marcas.map(m => [m.codigo, m]));
-    const miMarca = marcas.get(yo.codigo);
-    const fila = r.filas.find(f => f.piso === pisoSel) || r.filas[0];
-    const pendientesEnvio = emergencia.pendientes();
-    const apoyo = a.marcas.filter(m => m.estado === 'apoyo' || m.asistencia || m.estado === 'no_ubicado');
-    // Quienes registraron antes que necesitan apoyo y aún no han salido, más los marcados en la emergencia.
-    const aSalvo = c => { const m = marcas.get(c); return !!(m && (m.estado === 'evacuado' || m.llegada)); };
-    const prioridad = [
-      ...apoyo.map(m => ({ codigo: m.codigo, m })),
-      ...carac.todosLosApoyos().filter(x => x.apoyo !== 'ninguno' && !aSalvo(x.codigo) && !apoyo.some(m => m.codigo === x.codigo))
-        .map(x => ({ codigo: x.codigo, m: marcas.get(x.codigo) || null }))
-    ];
-    // Personas a las que este usuario debe acompañar.
-    const aMiCargo = carac.todosLosApoyos().filter(x => x.acompanante === yo.codigo && x.apoyo !== 'ninguno');
+  // ---------- Con emergencia: secciones ----------
 
-    const tablero = `
+  // Sección plegable: abierta o cerrada según lo que la persona eligió, o según el perfil la primera vez.
+  const plegable = (clave, abiertaPorDefecto, resumen, cuerpo, clase = 'tarjeta') => {
+    const abierta = abiertas.has(clave) ? abiertas.get(clave) : abiertaPorDefecto;
+    return `<details class="${clase}" data-seccion="${clave}" ${abierta ? 'open' : ''}><summary class="resumen-plegable">${resumen}</summary>${cuerpo}</details>`;
+  };
+
+  const secAlerta = ({ e }) => `
+    <section class="${e.simulacro ? 'alerta-simulacro' : 'alerta-emergencia'}">
+      <div class="alerta-titulo">${icono('alerta')}<div>
+        <strong>${e.simulacro ? 'Simulacro en curso' : 'Emergencia en curso'} · ${esc(TIPOS[e.tipo])}</strong>
+        <span>Desde las ${hora(e.inicio)} · <span data-transcurrido class="mono">${emergencia.transcurrido(e.inicio)}</span> · activó ${esc(sesion.nombreDe(e.activadaPor))}</span>
+        ${e.descripcion ? `<span>${esc(e.descripcion)}</span>` : ''}
+      </div></div>
+    </section>`;
+
+  const secAvisos = () => {
+    const n = emergencia.pendientes();
+    return `${emergencia.esLocal() ? `<div class="nota nota-adv">${icono('sinWifi')}<span>Modo sin conexión: esta emergencia se activó en este celular y solo usted la ve. Todo queda guardado aquí y se unirá solo a la del servidor cuando vuelva la señal.</span></div>` : ''}
+      ${n ? `<div class="nota nota-adv">${icono('sinWifi')}<span>${n} reporte(s) guardado(s) en este celular. Se enviarán solos cuando haya conexión.</span></div>` : ''}`;
+  };
+
+  // «Qué hacer ahora»: «Durante» y «Después» del protocolo del tipo de evento (y, para brigadistas y
+  // coordinación, el protocolo del brigadista), sin salir de la pantalla. Se lee del celular: sirve sin internet.
+  const secQueHacer = ({ e, perfil }) => {
+    const id = PROTOCOLO[e.tipo];
+    const lista = protocolos || [];
+    const delTipo = lista.find(p => p.id === id);
+    const brig = (perfil === 'brigadista' || perfil === 'coordinacion') ? lista.find(p => p.id === 'brigadista') : null;
+    const bloque = p => `<div class="que-hacer"><h4 class="que-hacer-titulo">${esc(p.titulo)}</h4>${seccionesHtml(p, { sinAntes: true })}</div>`;
+    const cuerpo = `${brig ? bloque(brig) : ''}${delTipo ? bloque(delTipo) : `<p class="sutil">${protocolos === null ? 'Cargando el protocolo…' : 'Este celular aún no tiene el protocolo de este tipo de evento.'}</p>`}
+      <a class="btn btn-fantasma btn-chico" href="#/recomendaciones" data-protocolo="${esc(id)}">Ver protocolo completo</a>`;
+    return plegable('que-hacer', perfil === 'persona', `${icono('libro', 'ic-s')} Qué hacer ahora: ${esc(TIPOS[e.tipo])}`, cuerpo);
+  };
+
+  const secMiEstado = ({ perfil, miMarca, e }) => {
+    const cuerpo = `
+      <div class="botonera">
+        <button class="btn btn-primario btn-grande" data-yo="evacuado">${icono('ok')}Ya salí del edificio</button>
+        <button class="btn btn-primario btn-grande" data-yo="llegada">${icono('ubicacion')}Llegué al punto de encuentro</button>
+        <button class="btn btn-secundario btn-grande" data-yo="apoyo">${icono('alerta')}Necesito ayuda</button>
+      </div>
+      <div class="fila" style="margin-top:.75rem">
+        <a class="btn btn-fantasma btn-chico" href="#/rutas">Ruta de evacuación</a>
+        <a class="btn btn-fantasma btn-chico" href="#/recomendaciones" data-protocolo="${esc(PROTOCOLO[e.tipo])}">Qué hacer</a>
+        <a class="btn btn-fantasma btn-chico" href="#/contactos">Contactos</a>
+      </div>`;
+    const estadoTxt = miMarca && miMarca.estado ? 'Reportado: ' + insigniaMarca(miMarca) : 'Avise cuando esté a salvo';
+    if (perfil === 'persona') {
+      return `<section class="tarjeta">
+        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-verde">${icono('persona')}</div>
+          <div><h3>Mi estado</h3><p class="sutil">${estadoTxt}</p></div></div>${cuerpo}</section>`;
+    }
+    // Quien reporta se marca a sí mismo en su propia lista: «Mi estado» queda plegado.
+    return plegable('mi-estado', false, `${icono('persona', 'ic-s')} Mi estado <span class="sutil">· ${estadoTxt}</span>`, cuerpo);
+  };
+
+  const secAcompana = ({ aMiCargo }) => aMiCargo.length ? `<section class="tarjeta tarjeta-alerta">
+      <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-ambar">${icono('persona')}</div><div><h3>Usted acompaña a alguien</h3><p class="sutil">Esta persona designó que usted la ayude a evacuar</p></div></div>
+      ${aMiCargo.map(x => `<div class="contacto"><div class="contacto-txt"><strong>${esc(sesion.nombreDe(x.codigo))}</strong>
+        <span class="sutil">${esc(carac.etiqueta(carac.APOYOS, x.apoyo))}${x.detalle ? ': ' + esc(x.detalle) : ''}</span></div></div>`).join('')}
+    </section>` : '';
+
+  const secPrioridad = ({ reporta, prioridad, r }) => reporta && prioridad.length ? `<section class="tarjeta tarjeta-alerta">
+      <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-ambar">${icono('alerta')}</div><div><h3>Atención prioritaria</h3><p class="sutil">Personas no ubicadas, que piden apoyo, que necesitan asistencia o que registraron que requieren apoyo</p></div></div>
+      ${prioridad.map(({ codigo, m }) => {
+        const f = r.filas.find(x => x.miembros.some(y => y.codigo === codigo));
+        const pre = textoApoyo(codigo);
+        return `<div class="contacto"><div class="contacto-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong>
+          <span class="sutil">${f ? 'Piso ' + f.piso + ' · ' : ''}${insigniaMarca(m)}${m && m.asistencia ? ' ' + insignia('Asistencia por discapacidad', 'azul') : ''}</span>
+          ${pre ? `<span class="chip-apoyo">${icono('alerta', 'ic-s')}<span>${esc(pre)}</span></span>` : ''}${detalleContacto(codigo, m)}</div></div>`;
+      }).join('')}
+    </section>` : '';
+
+  // Tablero por piso. En el celular muestra seis columnas; «Ver todas las columnas» agrega Apoyo, No estaban y Reporte.
+  const secTablero = ({ r, perfil }) => {
+    const resumenGrande = `
       <div class="resumen-grande">
         <div><strong>${r.total.evacuados}</strong><span>evacuados de ${enSedeDe(r.total)} en la sede</span></div>
         <div class="${r.total.pendientes ? 't-ambar' : ''}"><strong>${r.total.pendientes}</strong><span>pendientes</span></div>
         <div class="${r.total.noUbicados ? 't-rojo' : ''}"><strong>${r.total.noUbicados}</strong><span>no ubicados</span></div>
         <div class="${r.total.apoyo ? 't-ambar' : ''}"><strong>${r.total.apoyo}</strong><span>requieren apoyo</span></div>
-      </div>
-      <div class="tabla-caja"><table class="tablero">
-        <thead><tr><th>Piso</th><th>Previstas</th><th>Evacuados</th><th>En el punto</th><th>Pendientes</th><th>No ubicados</th><th>Apoyo</th><th>No estaban</th><th>Reporte</th></tr></thead>
+      </div>`;
+    const x = 'class="col-extra"';
+    const tabla = `
+      <div class="tabla-caja"><table class="tablero ${tableroCompleto ? 'completo' : ''}" id="tabla-tablero">
+        <thead><tr><th>Piso</th><th>Previstas</th><th>Evacuados</th><th>En el punto</th><th>Pendientes</th><th>No ubicados</th><th ${x}>Apoyo</th><th ${x}>No estaban</th><th ${x}>Reporte</th></tr></thead>
         <tbody>${r.filas.map(f => `<tr>
           <td><strong>Piso ${f.piso}</strong></td><td>${f.esperados}${f.porVerificar ? ` <span class="sutil">+${f.porVerificar} por verificar</span>` : ''}</td>
-          <td>${f.evacuados}</td><td>${f.llegaron}</td><td>${f.pendientes}</td><td>${f.noUbicados}</td><td>${f.apoyo}</td><td>${f.noEstaban}</td>
-          <td>${f.conteo || f.porConteo ? insignia('Por conteo', 'azul') : r.sinReporte.includes(f.piso) ? insignia('Sin reporte', 'rojo') : f.esperados || f.porVerificar ? insignia('Con reporte', 'verde') : insignia('Vacío', 'gris')}</td>
+          <td>${f.evacuados}</td><td>${f.llegaron}</td><td>${f.pendientes}</td><td>${f.noUbicados}</td><td ${x}>${f.apoyo}</td><td ${x}>${f.noEstaban}</td>
+          <td ${x}>${f.conteo || f.porConteo ? insignia('Por conteo', 'azul') : r.sinReporte.includes(f.piso) ? insignia('Sin reporte', 'rojo') : f.esperados || f.porVerificar ? insignia('Con reporte', 'verde') : insignia('Vacío', 'gris')}</td>
         </tr>`).join('')}</tbody>
-        <tfoot><tr><td><strong>Total</strong></td><td>${r.total.esperados}</td><td>${r.total.evacuados}</td><td>${r.total.llegaron}</td><td>${r.total.pendientes}</td><td>${r.total.noUbicados}</td><td>${r.total.apoyo}</td><td>${r.total.noEstaban}</td><td></td></tr></tfoot>
+        <tfoot><tr><td><strong>Total</strong></td><td>${r.total.esperados}</td><td>${r.total.evacuados}</td><td>${r.total.llegaron}</td><td>${r.total.pendientes}</td><td>${r.total.noUbicados}</td><td ${x}>${r.total.apoyo}</td><td ${x}>${r.total.noEstaban}</td><td ${x}></td></tr></tfoot>
       </table></div>
-      ${r.sinReporte.length ? `<div class="nota nota-error" style="margin-top:.75rem">${icono('alerta')}<span>Pisos sin reporte de brigadista: ${r.sinReporte.join(', ')}.</span></div>` : ''}`;
+      <div class="fila entre" style="margin-top:.5rem">
+        <button class="btn btn-fantasma btn-chico solo-celular" id="columnas" aria-pressed="${tableroCompleto}">${tableroCompleto ? 'Ver menos columnas' : 'Ver todas las columnas'}</button>
+        <button class="btn btn-fantasma btn-chico" id="actualizar">${icono('recargar', 'ic-s')}Actualizar</button>
+      </div>`;
+    const sinReporte = r.sinReporte.length ? `<div class="nota nota-error" style="margin-top:.75rem">${icono('alerta')}<span>Pisos sin reporte de brigadista: ${r.sinReporte.join(', ')}.</span></div>` : '';
+    if (perfil === 'brigadista' || perfil === 'asesor') {
+      // Las cifras grandes y el aviso de pisos sin reporte quedan a la vista; la tabla por piso, plegada.
+      return `<section class="tarjeta">
+          ${resumenGrande}${sinReporte}
+          ${plegable('tablero', false, `${icono('edificio', 'ic-s')} Tablero de todos los pisos`, tabla, 'tablero-plegado')}
+        </section>`;
+    }
+    return `<section class="tarjeta">
+        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-azul">${icono('edificio')}</div>
+          <div><h3>Tablero por piso</h3><p class="sutil">Se actualiza solo cada 15 segundos</p></div></div>
+        ${resumenGrande}${tabla}${sinReporte}
+      </section>`;
+  };
 
+  const secReporte = ctx => {
+    const { reporta, r, fila, marcas } = ctx;
+    if (!reporta) return '';
     const q = normalizar(busqueda);
     const delPiso = fila.miembros.filter(x => !q || normalizar(sesion.nombreDe(x.codigo)).includes(q));
     const otros = q ? (sesion.base().personas || []).filter(p => p.estado === 'activo' && !fila.miembros.some(x => x.codigo === p.codigo) && normalizar(sesion.nombreDe(p.codigo)).includes(q)) : [];
     const grupo = (titulo, lista, extra) => lista.length ? `<h4>${titulo}</h4>${lista.map(x => filaPersona(x.codigo, x.marca, extra, fila.piso)).join('')}` : '';
-
     // Un brigadista tiene los contactos de su piso; los de otro piso los pide a propósito (queda en la bitácora).
-    const pedirOtroPiso = reporta && yo.roles.includes('brigadista') && !contacto.esCoordinacion() &&
+    const pedirOtroPiso = yo.roles.includes('brigadista') && !contacto.esCoordinacion() &&
       fila.piso !== yo.pisoBrigada && !contacto.pisosConsultados.has(fila.piso);
     const hayMapa = vistaReporte === 'mapa';
+    // «Todos los pendientes de este piso salieron»: solo a quienes estaban previstos y aún no tienen marca.
+    const sinMarca = fila.miembros.filter(x => x.grupo === 'en' && !(x.marca && x.marca.estado));
+    const lote = sinMarca.length && !q ? `<button class="btn btn-secundario btn-ancho" id="todos-salieron" style="margin-top:.75rem">${icono('ok', 'ic-s')}Todos los pendientes de este piso salieron (${sinMarca.length})</button>` : '';
     const cuerpoLista = `<input id="buscar" type="search" aria-label="Buscar por nombre en este piso o en todo el Despacho" placeholder="Buscar por nombre en este piso o en todo el Despacho…" value="${esc(busqueda)}" autocomplete="off" style="margin-bottom:.5rem">
         ${grupo('Previstas hoy en este piso', delPiso.filter(x => x.grupo === 'en'), '')}
         ${grupo('Sin reporte del día (verifique si están en la sede)', delPiso.filter(x => x.grupo === 'sin'), '')}
@@ -285,23 +417,22 @@ export function vistaEmergencia(vista) {
         ${otros.length ? `<h4>En otros pisos</h4>${otros.map(p => filaPersona(p.codigo, marcas.get(p.codigo), `P${p.piso}-${p.puesto} · `, fila.piso)).join('')}` : ''}
         ${!fila.miembros.length && !otros.length ? '<p class="sutil">No había nadie previsto en este piso al activar.</p>' : ''}`;
     // Mapa: cada puesto muestra el estado de quien está previsto ahí hoy (el puesto de hoy, si está en otro lugar).
-    const datosMapa = hayMapa ? datosDelMapa(fila, marcas) : null;
+    ctx.datosMapa = hayMapa ? datosDelMapa(fila, marcas) : null;
     const cuerpoMapa = hayMapa ? `<div id="mapa-emergencia"></div>
-        ${datosMapa.sinPuesto.length ? `<div style="margin-top:.75rem"><h4>Sin puesto en el mapa</h4><div class="fila">${datosMapa.sinPuesto.map(g =>
+        ${ctx.datosMapa.sinPuesto.length ? `<div style="margin-top:.75rem"><h4>Sin puesto en el mapa</h4><div class="fila">${ctx.datosMapa.sinPuesto.map(g =>
           `<button class="btn btn-secundario btn-chico" data-sin-puesto="${esc(g.codigo)}" aria-label="${esc('Marcar a ' + g.nombre)}">${esc(g.nombre)}</button>`).join('')}</div></div>` : ''}` : '';
-    const cuerpoReporte = `<div class="fila no-imprimir" style="margin-bottom:.75rem"><button class="btn btn-secundario btn-chico" id="vista-reporte">${hayMapa ? 'Ver como lista' : 'Ver como mapa'}</button></div>
-        ${hayMapa ? cuerpoMapa : cuerpoLista}`;
-
-    const reporte = reporta ? `
-      <section class="tarjeta">
+    return `
+      <section class="tarjeta" id="reporte-piso">
         <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-rojo">${icono('escudo')}</div>
-          <div><h3>Reporte del piso</h3><p class="sutil">Marque a cada persona o, si no hay tiempo, reporte por conteo</p></div></div>
+          <div><h3>Reporte del piso</h3><p class="sutil">Toque «Evacuado» por cada persona que sale; «Más» para los demás estados</p></div></div>
         <div class="fila" id="pisos" style="margin-bottom:.75rem">${r.filas.map(f =>
           `<button class="pestana ${f.piso === fila.piso ? 'activa' : ''}" data-p="${f.piso}">Piso ${f.piso}${f.piso === yo.pisoBrigada ? ' · su brigada' : ''} (${f.esperados})</button>`).join('')}</div>
-        ${reporta && !contacto.esCoordinacion() && yo.roles.includes('brigadista') ? `<p class="ayuda" style="margin:0 0 .5rem">El contacto de emergencia de una persona aparece cuando la marca «No ubicado» o «Apoyo», o con asistencia por discapacidad.</p>` : ''}
+        ${!contacto.esCoordinacion() && yo.roles.includes('brigadista') ? `<p class="ayuda" style="margin:0 0 .5rem">El contacto de emergencia de una persona aparece cuando la marca «No ubicado» o «Apoyo», o con asistencia por discapacidad.</p>` : ''}
         ${pedirOtroPiso ? `<div class="nota nota-info" style="margin-bottom:.75rem">${icono('telefono')}<span>Los contactos de emergencia del piso ${fila.piso} no están en su celular. Si los necesita, pídalos: queda registrado que usted los consultó.
           <button class="btn btn-secundario btn-chico" id="ver-otro-piso" style="margin-top:.4rem">Ver contactos del piso ${fila.piso}</button></span></div>` : ''}
-        ${cuerpoReporte}
+        <div class="fila no-imprimir" style="margin-bottom:.75rem"><button class="btn btn-secundario btn-chico" id="vista-reporte">${hayMapa ? 'Ver como lista' : 'Ver como mapa'}</button></div>
+        ${hayMapa ? cuerpoMapa : cuerpoLista}
+        ${lote}
         <details class="conteo" id="conteo" ${fila.conteo ? 'open' : ''}>
           <summary>Reportar el piso ${fila.piso} por conteo (sin nombres)</summary>
           <div class="fila" style="margin-top:.75rem">
@@ -312,67 +443,56 @@ export function vistaEmergencia(vista) {
           <p class="ayuda">El conteo reemplaza en el tablero las cifras del piso; sirve también para incluir visitantes.</p>
           <button class="btn btn-oscuro" id="guardar-conteo">Guardar conteo del piso ${fila.piso}</button>
         </details>
-      </section>` : '';
+      </section>`;
+  };
 
-    vista.innerHTML = `
-      <section class="${e.simulacro ? 'alerta-simulacro' : 'alerta-emergencia'}">
-        <div class="alerta-titulo">${icono('alerta')}<div>
-          <strong>${e.simulacro ? 'Simulacro en curso' : 'Emergencia en curso'} · ${esc(TIPOS[e.tipo])}</strong>
-          <span>Desde las ${hora(e.inicio)} · <span data-transcurrido class="mono">${emergencia.transcurrido(e.inicio)}</span> · activó ${esc(sesion.nombreDe(e.activadaPor))}</span>
-          ${e.descripcion ? `<span>${esc(e.descripcion)}</span>` : ''}
-        </div></div>
-      </section>
-      ${emergencia.esLocal() ? `<div class="nota nota-adv">${icono('sinWifi')}<span>Modo sin conexión: esta emergencia se activó en este celular y solo usted la ve. Todo queda guardado aquí y se unirá solo a la del servidor cuando vuelva la señal.</span></div>` : ''}
-      ${pendientesEnvio ? `<div class="nota nota-adv">${icono('sinWifi')}<span>${pendientesEnvio} reporte(s) guardado(s) en este celular. Se enviarán solos cuando haya conexión.</span></div>` : ''}
-      ${reporta ? `<a class="btn btn-oscuro btn-ancho btn-grande" href="#/punto" style="margin-bottom:1rem">${icono('ubicacion')}Registrar llegadas al punto de encuentro</a>` : ''}
+  const secPunto = ({ reporta }) => reporta ? `<a class="btn btn-oscuro btn-ancho btn-grande" href="#/punto" style="margin-bottom:1rem">${icono('ubicacion')}Registrar llegadas al punto de encuentro</a>` : '';
 
-      <section class="tarjeta">
-        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-verde">${icono('persona')}</div>
-          <div><h3>Mi estado</h3><p class="sutil">${miMarca && miMarca.estado ? 'Reportado: ' + insigniaMarca(miMarca) : 'Avise cuando esté a salvo'}</p></div></div>
-        <div class="botonera">
-          <button class="btn btn-primario btn-grande" data-yo="evacuado">${icono('ok')}Ya salí del edificio</button>
-          <button class="btn btn-primario btn-grande" data-yo="llegada">${icono('ubicacion')}Llegué al punto de encuentro</button>
-          <button class="btn btn-secundario btn-grande" data-yo="apoyo">${icono('alerta')}Necesito ayuda</button>
-        </div>
-        <div class="fila" style="margin-top:.75rem">
-          <a class="btn btn-fantasma btn-chico" href="#/rutas">Ruta de evacuación</a>
-          <a class="btn btn-fantasma btn-chico" href="#/recomendaciones" data-protocolo="${esc(PROTOCOLO[e.tipo])}">Qué hacer</a>
-          <a class="btn btn-fantasma btn-chico" href="#/contactos">Contactos</a>
-        </div>
-      </section>
+  const secCierre = ({ cierra, e }) => cierra ? `<section class="tarjeta">
+      <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-morado">${icono('ok')}</div>
+        <div><h3>${e.simulacro ? 'Terminar el simulacro' : 'Cerrar la emergencia'}</h3><p class="sutil">Cuando la brigada y las autoridades lo indiquen</p></div></div>
+      <button class="btn btn-oscuro" id="cerrar">${e.simulacro ? 'Terminar simulacro' : 'Cerrar emergencia'}</button>
+    </section>` : '';
 
-      ${aMiCargo.length ? `<section class="tarjeta tarjeta-alerta">
-        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-ambar">${icono('persona')}</div><div><h3>Usted acompaña a alguien</h3><p class="sutil">Esta persona designó que usted la ayude a evacuar</p></div></div>
-        ${aMiCargo.map(x => `<div class="contacto"><div class="contacto-txt"><strong>${esc(sesion.nombreDe(x.codigo))}</strong>
-          <span class="sutil">${esc(carac.etiqueta(carac.APOYOS, x.apoyo))}${x.detalle ? ': ' + esc(x.detalle) : ''}</span></div></div>`).join('')}
-      </section>` : ''}
+  // Barra fija abajo (celular): punto de encuentro y conteo del piso, siempre a mano para quien reporta.
+  const barraFija = ({ perfil, reporta }) => reporta && perfil !== 'persona' ? `<div class="barra-fija no-imprimir">
+      <a class="btn btn-oscuro" href="#/punto">${icono('ubicacion', 'ic-s')}Punto de encuentro</a>
+      <button class="btn btn-secundario" id="ir-conteo">Conteo del piso</button>
+    </div>` : '';
 
-      ${reporta && prioridad.length ? `<section class="tarjeta tarjeta-alerta">
-        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-ambar">${icono('alerta')}</div><div><h3>Atención prioritaria</h3><p class="sutil">Personas no ubicadas, que piden apoyo, que necesitan asistencia o que registraron que requieren apoyo</p></div></div>
-        ${prioridad.map(({ codigo, m }) => {
-          const f = r.filas.find(x => x.miembros.some(y => y.codigo === codigo));
-          const pre = textoApoyo(codigo);
-          return `<div class="contacto"><div class="contacto-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong>
-            <span class="sutil">${f ? 'Piso ' + f.piso + ' · ' : ''}${insigniaMarca(m)}${m && m.asistencia ? ' ' + insignia('Asistencia por discapacidad', 'azul') : ''}</span>
-            ${pre ? `<span class="chip-apoyo">${icono('alerta', 'ic-s')}<span>${esc(pre)}</span></span>` : ''}${detalleContacto(codigo, m)}</div></div>`;
-        }).join('')}
-      </section>` : ''}
+  const ORDEN = {
+    brigadista: [secAlerta, secAvisos, secReporte, secPunto, secPrioridad, secQueHacer, secTablero, secAcompana, secMiEstado, secCierre],
+    coordinacion: [secAlerta, secAvisos, secTablero, secPrioridad, secReporte, secPunto, secQueHacer, secAcompana, secMiEstado, secCierre],
+    asesor: [secAlerta, secAvisos, secReporte, secPunto, secTablero, secQueHacer, secAcompana, secMiEstado, secCierre],
+    persona: [secAlerta, secAvisos, secMiEstado, secQueHacer, secAcompana, secTablero]
+  };
 
-      <section class="tarjeta">
-        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-azul">${icono('edificio')}</div>
-          <div><h3>Tablero por piso</h3><p class="sutil">Se actualiza solo cada 15 segundos</p></div>
-          <button class="btn btn-fantasma btn-chico" id="actualizar" style="margin-left:auto">${icono('recargar', 'ic-s')}Actualizar</button></div>
-        ${tablero}
-      </section>
+  const pintarActiva = a => {
+    const e = a.emergencia;
+    const r = emergencia.resumen(a);
+    const marcas = new Map(a.marcas.map(m => [m.codigo, m]));
+    const apoyo = a.marcas.filter(m => m.estado === 'apoyo' || m.asistencia || m.estado === 'no_ubicado');
+    // Quienes registraron antes que necesitan apoyo y aún no han salido, más los marcados en la emergencia.
+    const aSalvo = c => { const m = marcas.get(c); return !!(m && (m.estado === 'evacuado' || m.llegada)); };
+    const ctx = {
+      a, e, r, marcas, perfil: perfilVista(),
+      reporta: tiene(ROLES_REPORTAR), cierra: tiene(ROLES_CERRAR),
+      miMarca: marcas.get(yo.codigo),
+      fila: r.filas.find(f => f.piso === pisoSel) || r.filas[0],
+      prioridad: [
+        ...apoyo.map(m => ({ codigo: m.codigo, m })),
+        ...carac.todosLosApoyos().filter(x => x.apoyo !== 'ninguno' && !aSalvo(x.codigo) && !apoyo.some(m => m.codigo === x.codigo))
+          .map(x => ({ codigo: x.codigo, m: marcas.get(x.codigo) || null }))
+      ],
+      // Personas a las que este usuario debe acompañar.
+      aMiCargo: carac.todosLosApoyos().filter(x => x.acompanante === yo.codigo && x.apoyo !== 'ninguno'),
+      datosMapa: null
+    };
+    vista.innerHTML = ORDEN[ctx.perfil].map(sec => sec(ctx)).join('\n') + barraFija(ctx);
+    enlazarActiva(ctx);
+  };
 
-      ${reporte}
-
-      ${cierra ? `<section class="tarjeta">
-        <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-morado">${icono('ok')}</div>
-          <div><h3>${e.simulacro ? 'Terminar el simulacro' : 'Cerrar la emergencia'}</h3><p class="sutil">Cuando la brigada y las autoridades lo indiquen</p></div></div>
-        <button class="btn btn-oscuro" id="cerrar">${e.simulacro ? 'Terminar simulacro' : 'Cerrar emergencia'}</button>
-      </section>` : ''}`;
-
+  function enlazarActiva({ e, r, fila, marcas, datosMapa }) {
     // Mi estado
     vista.querySelectorAll('[data-yo]').forEach(b => b.addEventListener('click', async () => {
       const que = b.dataset.yo;
@@ -384,9 +504,18 @@ export function vistaEmergencia(vista) {
       await emergencia.marcarPersona(yo.codigo, { estado: que });
       aviso(que === 'evacuado' ? 'Reportado: fuera del edificio.' : 'Su solicitud de ayuda quedó registrada. Si puede, avise también en voz alta o llame.', que === 'evacuado' ? 'exito' : 'advertencia');
     }));
-    vista.querySelector('[data-protocolo]')?.addEventListener('click', ev => { sessionStorage.setItem('protocolo-abrir', ev.currentTarget.dataset.protocolo); });
+    vista.querySelectorAll('[data-protocolo]').forEach(a => a.addEventListener('click', ev => {
+      try { sessionStorage.setItem('protocolo-abrir', ev.currentTarget.dataset.protocolo); } catch { /* sin almacenamiento */ }
+    }));
+    enlazarRemisiones(vista);
     vista.querySelector('#actualizar')?.addEventListener('click', async () => {
       aviso(await emergencia.traer() ? 'Tablero actualizado.' : 'Sin conexión: se muestra lo último conocido.', 'info');
+    });
+    vista.querySelector('#columnas')?.addEventListener('click', () => {
+      tableroCompleto = !tableroCompleto;
+      guardarTableroCompleto(tableroCompleto);
+      pintar();
+      vista.querySelector('#columnas')?.focus();
     });
 
     // Reporte del piso
@@ -398,13 +527,23 @@ export function vistaEmergencia(vista) {
       buscar._t = setTimeout(() => { pintar(); const nuevo = vista.querySelector('#buscar'); nuevo.focus(); nuevo.setSelectionRange(nuevo.value.length, nuevo.value.length); }, 250);
     });
     enlazarFilas(vista, () => marcas);
+    vista.querySelector('#todos-salieron')?.addEventListener('click', async () => {
+      const codigos = fila.miembros.filter(x => x.grupo === 'en' && !(x.marca && x.marca.estado)).map(x => x.codigo);
+      if (!codigos.length) return;
+      const nombres = codigos.map(c => esc(sesion.nombreDe(c))).join(', ');
+      const n = codigos.length;
+      if (!await confirmar(`Marcar ${n} ${n === 1 ? 'persona' : 'personas'} como evacuadas`,
+        `Se marcarán como evacuadas: ${nombres}. Quienes ya tienen marca (no ubicado, apoyo, no estaba, evacuado) no cambian.`, `Marcar ${n}`)) return;
+      const hechas = await emergencia.marcarVarios(codigos, { estado: 'evacuado' });
+      aviso(`${hechas} ${hechas === 1 ? 'persona marcada' : 'personas marcadas'} como evacuadas.`, 'exito');
+    });
     vista.querySelector('#ver-otro-piso')?.addEventListener('click', async ev => {
       ev.currentTarget.disabled = true;
       try {
         const n = await contacto.verOtroPiso(fila.piso);
         aviso(n ? `Contactos del piso ${fila.piso} disponibles mientras dure la emergencia.` : `No hay contactos cargados del piso ${fila.piso}.`, n ? 'exito' : 'info');
-      } catch (e) {
-        aviso(e.codigo === 'RED' ? 'Sin conexión: los contactos de otro piso solo se pueden pedir con internet.' : e.message, 'error');
+      } catch (err) {
+        aviso(err.codigo === 'RED' ? 'Sin conexión: los contactos de otro piso solo se pueden pedir con internet.' : err.message, 'error');
         pintar();
       }
     });
@@ -435,39 +574,56 @@ export function vistaEmergencia(vista) {
       });
       aviso(`Conteo del piso ${fila.piso} guardado.`, 'exito');
     });
+    vista.querySelector('#ir-conteo')?.addEventListener('click', () => {
+      const d = vista.querySelector('#conteo');
+      if (!d) return;
+      d.open = true;
+      d.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      d.querySelector('#c-ev')?.focus({ preventScroll: true });
+    });
 
     // Cierre
-    vista.querySelector('#cerrar')?.addEventListener('click', async () => {
-      const hayPendientes = !!(r.total.pendientes || r.total.noUbicados || r.sinReporte.length);
-      const extra = hayPendientes ? `<div class="nota nota-adv">${icono('alerta')}<span>Atención: hay ${r.total.pendientes} pendiente(s), ${r.total.noUbicados} no ubicado(s)${r.sinReporte.length ? ' y ' + (r.sinReporte.length === 1 ? 'un piso sin reporte' : r.sinReporte.length + ' pisos sin reporte') + ' (' + r.sinReporte.join(', ') + ')' : ''}.</span></div>
-        <label class="casilla"><input type="checkbox" id="confirma-fin">La brigada del edificio o la autoridad indicó que terminó</label>` : '';
-      const observaciones = await modal({
-        titulo: e.simulacro ? 'Terminar simulacro' : 'Cerrar emergencia',
-        cuerpo: `<p>¿Confirma que ${e.simulacro ? 'el simulacro terminó' : 'la emergencia terminó'}? Se genera el informe de totales y tiempos por piso.</p>${extra}
-          <div class="campo"><label class="etiqueta" for="obs">Observaciones del cierre (opcional)</label>
-            <textarea id="obs" rows="3" maxlength="600" placeholder="Ej.: la escalera del piso 4 estaba obstruida"></textarea>
-            <p class="ayuda">No escriba nombres ni datos de salud: el informe solo lleva totales y tiempos.</p></div>
-          <div class="nota nota-info">${icono('info')}<span>Al cerrar se borra el detalle por persona de esta emergencia: solo quedan los totales y los tiempos.</span></div>`,
-        acciones: [
-          { texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
-          {
-            texto: e.simulacro ? 'Terminar' : 'Cerrar emergencia', clase: 'btn-peligro',
-            antes: f => {
-              const caja = f.querySelector('#confirma-fin');
-              if (caja && !caja.checked) { aviso('Marque la casilla: confirme que la brigada o la autoridad indicó que terminó.', 'advertencia'); return false; }
-            },
-            valor: f => f.querySelector('#obs').value.trim()
-          }
-        ]
-      });
-      if (observaciones === null) return;
-      try {
-        const id = await emergencia.cerrar(observaciones);
-        aviso(e.simulacro ? 'Simulacro terminado. Informe generado.' : 'Emergencia cerrada. Informe generado.', 'exito');
-        if (id && tiene(ROLES_REPORTAR)) location.hash = '#/historico?id=' + encodeURIComponent(id);
-      } catch (err) { aviso(err.codigo === 'RED' ? 'Sin conexión: no se pudo cerrar. Intente de nuevo con internet.' : err.message, 'error'); }
+    vista.querySelector('#cerrar')?.addEventListener('click', () => abrirCierre(e, r, ''));
+  }
+
+  // Ventana de cierre. «Imprimir acta nominal» no cierra la emergencia: imprime y vuelve a la ventana.
+  async function abrirCierre(e, r, obsPrevias) {
+    const hayPendientes = !!(r.total.pendientes || r.total.noUbicados || r.sinReporte.length);
+    const extra = hayPendientes ? `<div class="nota nota-adv">${icono('alerta')}<span>Atención: hay ${r.total.pendientes} pendiente(s), ${r.total.noUbicados} no ubicado(s)${r.sinReporte.length ? ' y ' + (r.sinReporte.length === 1 ? 'un piso sin reporte' : r.sinReporte.length + ' pisos sin reporte') + ' (' + r.sinReporte.join(', ') + ')' : ''}.</span></div>
+      <label class="casilla"><input type="checkbox" id="confirma-fin">La brigada del edificio o la autoridad indicó que terminó</label>` : '';
+    const resultado = await modal({
+      titulo: e.simulacro ? 'Terminar simulacro' : 'Cerrar emergencia',
+      cuerpo: `<p>¿Confirma que ${e.simulacro ? 'el simulacro terminó' : 'la emergencia terminó'}? Se genera el informe de totales y tiempos por piso.</p>${extra}
+        <div class="campo"><label class="etiqueta" for="obs">Observaciones del cierre (opcional)</label>
+          <textarea id="obs" rows="3" maxlength="600" placeholder="Ej.: la escalera del piso 4 estaba obstruida">${esc(obsPrevias)}</textarea>
+          <p class="ayuda">No escriba nombres ni datos de salud: el informe solo lleva totales y tiempos.</p></div>
+        <div class="nota nota-info">${icono('info')}<span>El informe lleva solo totales y tiempos. ${esc(textoConservacion())}</span></div>`,
+      acciones: [
+        { texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
+        { texto: 'Imprimir acta nominal', clase: 'btn-secundario', valor: f => ({ acta: true, obs: f.querySelector('#obs').value }) },
+        {
+          texto: e.simulacro ? 'Terminar' : 'Cerrar emergencia', clase: 'btn-peligro',
+          antes: f => {
+            const caja = f.querySelector('#confirma-fin');
+            if (caja && !caja.checked) { aviso('Marque la casilla: confirme que la brigada o la autoridad indicó que terminó.', 'advertencia'); return false; }
+          },
+          valor: f => ({ obs: f.querySelector('#obs').value.trim() })
+        }
+      ]
     });
-  };
+    if (resultado === null) return;
+    if (resultado.acta) {
+      const a = emergencia.actual();
+      if (a) imprimirActa(armarActa(a), a.emergencia);
+      setTimeout(() => abrirCierre(e, r, resultado.obs), 300);
+      return;
+    }
+    try {
+      const id = await emergencia.cerrar(resultado.obs);
+      aviso(e.simulacro ? 'Simulacro terminado. Informe generado.' : 'Emergencia cerrada. Informe generado.', 'exito');
+      if (id && tiene(ROLES_REPORTAR)) location.hash = '#/historico?id=' + encodeURIComponent(id);
+    } catch (err) { aviso(err.codigo === 'RED' ? 'Sin conexión: no se pudo cerrar. Intente de nuevo con internet.' : err.message, 'error'); }
+  }
 
   const pintar = () => {
     // No repintar mientras alguien escribe un número o busca: se repinta al salir del campo.
@@ -483,11 +639,13 @@ export function vistaEmergencia(vista) {
   const alCambiar = () => { if (location.hash.startsWith('#/emergencia')) pintar(); };
   const alTerminar = ev => { terminada = ev.detail; };
   const alSalirCampo = () => { if (pendientePintar) setTimeout(pintar, 0); };
-  // Los contactos abiertos siguen abiertos al repintar (el evento «toggle» no sube: se escucha en captura).
+  // Los contactos y las secciones abiertas siguen así al repintar (el evento «toggle» no sube: se escucha en captura).
   const alPlegar = ev => {
     const d = ev.target;
-    if (!d.matches || !d.matches('details[data-contacto-de]')) return;
-    if (d.open) contactosAbiertos.add(d.dataset.contactoDe); else contactosAbiertos.delete(d.dataset.contactoDe);
+    if (!d.matches) return;
+    if (d.matches('details[data-contacto-de]')) {
+      if (d.open) contactosAbiertos.add(d.dataset.contactoDe); else contactosAbiertos.delete(d.dataset.contactoDe);
+    } else if (d.matches('details[data-seccion]')) abiertas.set(d.dataset.seccion, d.open);
   };
   addEventListener('emergencia-cambio', alCambiar);
   addEventListener('apoyos-cambio', alCambiar);

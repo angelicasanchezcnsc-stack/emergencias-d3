@@ -204,7 +204,7 @@ function panelPersonas(panel, abrir) {
 
   panel.innerHTML = `
     <div class="nota nota-info">${icono('info')}<span>Solo ingresan al aplicativo las personas con un rol. Las demás siguen en las listas de emergencia y de Hoy en la sede.</span></div>
-    <div class="nota nota-info" style="margin-top:.5rem">${icono('info')}<span>El coordinador y el suplente ven todos los pisos y las caracterizaciones; asigne uno de esos roles a quien supervise el aplicativo. Cada piso tiene uno o dos brigadistas, hay un coordinador y, si se quiere, un suplente. El asesor reporta en las emergencias. Siempre debe quedar al menos un administrador. El celular solo se pide a los brigadistas, al coordinador y al suplente, y viaja cifrado.</span></div>
+    <div class="nota nota-info" style="margin-top:.5rem">${icono('info')}<span>El coordinador y el suplente ven todos los pisos y las caracterizaciones; asigne uno de esos roles a quien supervise el aplicativo. Cada piso tiene uno o dos brigadistas, hay un coordinador y, si se quiere, un suplente. El administrador, el coordinador, el suplente y los brigadistas inician y terminan simulacros y emergencias reales. El asesor reporta en las emergencias (marca personas y registra llegadas), pero no las inicia ni las cierra y no recibe los apoyos ni los contactos. Siempre debe quedar al menos un administrador. El celular solo se pide a los brigadistas, al coordinador y al suplente, y viaja cifrado.</span></div>
     <div class="fila entre" style="margin-top:1rem">
       <p class="sutil" style="margin:0">Los cambios de puesto, altas, retiros y correcciones se guardan en el momento, sin usar el botón de abajo.</p>
       <button class="btn btn-primario" id="agregar-persona">${icono('personas', 'ic-s')}Agregar persona</button>
@@ -370,6 +370,13 @@ function panelPersonas(panel, abrir) {
         aviso(r.correo ? 'Datos corregidos. Se generó una contraseña temporal nueva para el correo nuevo: entréguela desde Credenciales o con el botón Contraseña.' : 'Datos corregidos.', 'exito');
         await guardarLlave();
         abrir('personas');
+      } else if (op === 'sesiones') {
+        const nombre = (llave.persona(codigo) || {}).nombre || codigo;
+        if (!await confirmar('Cerrar sus sesiones', `Se cerrará la sesión de ${esc(nombre)} en todos sus celulares y computadores (por ejemplo, si perdió el celular). Podrá volver a ingresar con su misma contraseña; no pierde su caracterización.`, 'Cerrar sesiones', true)) return;
+        try {
+          const r = await llamar('cerrarSesionesDe', { codigo });
+          aviso(!r.cerradas ? 'No tenía sesiones abiertas.' : r.cerradas === 1 ? 'Se cerró 1 sesión.' : `Se cerraron ${r.cerradas} sesiones.`, 'exito');
+        } catch (e) { aviso(e.codigo === 'RED' ? 'Sin conexión: solo se puede hacer con internet.' : e.message, 'error'); }
       } else if (op === 'retirar') {
         const nombre = (llave.persona(codigo) || {}).nombre || codigo;
         if (!await confirmar('Retirar a una persona', `${esc(nombre)} saldrá de las listas de emergencia y de «Hoy en la sede», y su caracterización se borra. Podrá reactivarla desde el filtro «Retiradas».`, 'Retirar', true)) return;
@@ -600,6 +607,9 @@ function panelConfig(panel) {
       <label class="casilla"><input type="checkbox" id="exigir" ${cfg.exigirCambioInicial ? 'checked' : ''}>Obligar a cambiar la contraseña temporal en el primer ingreso</label>
       <div class="campo" style="margin-top:.8rem"><label class="etiqueta" for="dias">Días que dura una sesión en el celular (1 a 90)</label><input id="dias" type="number" min="1" max="90" value="${cfg.diasSesion || 30}"></div>
       <div class="campo"><label class="etiqueta" for="dbit">Días que se conserva la bitácora de accesos (30 a 1825)</label><input id="dbit" type="number" min="30" max="1825" value="${cfg.diasBitacora || 365}"></div>
+      <div class="campo"><label class="etiqueta" for="dsim">Días que se conserva el detalle por persona de un simulacro (7 a 730)</label><input id="dsim" type="number" min="7" max="730" value="${cfg.diasDetalleSimulacro || 90}"></div>
+      <div class="campo"><label class="etiqueta" for="dreal">Días que se conserva el detalle por persona de una emergencia real (30 a 1825)</label><input id="dreal" type="number" min="30" max="1825" value="${cfg.diasDetalleEmergencia || 365}"></div>
+      <p class="ayuda">El detalle por persona (solo códigos) permite a la coordinación abrir el acta nominal de cada emergencia cerrada; cada consulta queda en la bitácora. Al vencer el plazo se borra y queda el informe de totales y tiempos.</p>
       <div class="campo"><label class="etiqueta" for="festivos">Días sin actividad presencial (festivos)</label>
         <textarea id="festivos" rows="6" placeholder="2026-12-08&#10;2026-12-25" style="width:100%">${esc((cfg.festivos || []).join('\n'))}</textarea>
         <p class="ayuda">Una fecha por línea, con el formato AAAA-MM-DD (hasta 60). Esos días nadie figura previsto en la sede, salvo quien tenga una novedad «Asiste».</p></div>
@@ -615,6 +625,7 @@ function panelConfig(panel) {
         reglasClave: { minimo: Math.max(0, Number(f.minimo.value) || 0), mayuscula: f.mayuscula.checked, numero: f.numero.checked, simbolo: f.simbolo.checked },
         exigirCambioInicial: f.exigir.checked, diasSesion: Number(f.dias.value) || 30,
         diasBitacora: Number(f.dbit.value) || 365,
+        diasDetalleSimulacro: Number(f.dsim.value) || 90, diasDetalleEmergencia: Number(f.dreal.value) || 365,
         festivos: f.festivos.value.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
       });
       // Se aplica en la copia de este celular lo que devolvió el servidor (festivos ordenados y sin
@@ -622,7 +633,8 @@ function panelConfig(panel) {
       const c = (r && r.config) || {};
       Object.assign(sesion.base().config, {
         reglasClave: c.reglasClave, exigirCambioInicial: !!c.exigirCambioInicial, diasSesion: Number(c.diasSesion),
-        diasBitacora: Number(c.diasBitacora), festivos: c.festivos || []
+        diasBitacora: Number(c.diasBitacora), festivos: c.festivos || [],
+        diasDetalleSimulacro: Number(c.diasDetalleSimulacro) || 90, diasDetalleEmergencia: Number(c.diasDetalleEmergencia) || 365
       });
       sesion.guardarBase();
       f.festivos.value = (c.festivos || []).join('\n');

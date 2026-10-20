@@ -6,16 +6,30 @@
 // ficticios que quedan solo en ese navegador. En GitHub Pages siempre se usa el real.
 const ES_LOCAL = ['localhost', '127.0.0.1'].includes(location.hostname);
 
+// Servidor de Google: el real y, aparte, uno de prueba con datos ficticios (vacío = no hay).
+export const URL_REAL = 'https://script.google.com/macros/s/AKfycbwBfQegdLhwvuJ616854yJoBTjbLDIBpj1vUE13pUcTMOkt1j6pJoU9eyti0QiAyLob/exec';
+const URL_SERVIDOR_PRUEBA = 'https://script.google.com/macros/s/AKfycbzUhf5v8sr9iF9H0Nxy8SMumoZjDWlmItXcxflJI48eKQB5C6eTaKxhPD0P-XVbKH0x/exec';
+
+// 'prueba' si este navegador se abrió con ?servidor=prueba (lo recuerda) y hay servidor de prueba;
+// si no, 'real'. Para volver al real se abre la app con ?servidor=real.
+export function servidorElegido() {
+  let marca = null;
+  try { marca = localStorage.getItem('d3e-servidor'); } catch { /* sin almacenamiento: servidor real */ }
+  return marca === 'prueba' && URL_SERVIDOR_PRUEBA ? 'prueba' : 'real';
+}
+
 export const CONFIG = {
   APP_NOMBRE: 'EMERGENCIAS D3',
-  VERSION: 'v0.12.0',
+  VERSION: 'v0.13.0',
   SUBTITULO: 'Despacho 3, sede Calle 96',
   CREDITOS: 'Aplicativo de emergencias del Despacho 3 (Edwin Arturo Ruiz Moreno), 2026',
 
   // 'simulado': servidor de prueba dentro del navegador (datos solo en este equipo).
   // 'apps-script': servidor real en Google Apps Script.
   MODO_SERVIDOR: ES_LOCAL ? 'simulado' : 'apps-script',
-  URL_SERVIDOR: 'https://script.google.com/macros/s/AKfycbwBfQegdLhwvuJ616854yJoBTjbLDIBpj1vUE13pUcTMOkt1j6pJoU9eyti0QiAyLob/exec', // URL de la aplicación web de Apps Script (termina en /exec)
+  // URL de la aplicación web de Apps Script (termina en /exec). Se cambia arriba, en URL_REAL.
+  URL_SERVIDOR: servidorElegido() === 'prueba' ? URL_SERVIDOR_PRUEBA : URL_REAL,
+  URL_SERVIDOR_PRUEBA,
 
   // Sal pública para la huella (hash) del correo. Si se cambia, todas las cuentas
   // deben crearse de nuevo. No es secreta.

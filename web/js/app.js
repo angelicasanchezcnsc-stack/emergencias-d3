@@ -1,5 +1,5 @@
 // Armazón de la aplicación: encabezado, navegación, pie y enrutador.
-import { CONFIG } from '../config.js';
+import { CONFIG, servidorElegido } from '../config.js';
 import * as sesion from './sesion.js';
 import { llamar, servidorDisponible } from './api.js';
 import { esc, icono, aviso } from './ui.js';
@@ -68,6 +68,7 @@ function armazon() {
         </div>
         <div class="fila">
           ${CONFIG.MODO_SERVIDOR === 'simulado' ? '<span class="insignia insignia-prueba" title="Los datos quedan solo en este navegador">Modo prueba</span>' : ''}
+          ${CONFIG.MODO_SERVIDOR !== 'simulado' && servidorElegido() === 'prueba' ? '<span class="insignia insignia-prueba insignia-servidor-prueba" title="Datos ficticios. Para volver al servidor real, abra la app con ?servidor=real"><span class="txt-largo">Servidor de </span>prueba</span>' : ''}
           <span id="actividad" class="actividad oculto" aria-hidden="true"><span class="girador-mini"></span><span>Actualizando…</span></span>
           <div id="estado-red" class="estado-red"></div>
           <a id="btn-cuenta" class="btn btn-fantasma btn-chico oculto" href="#/cuenta" title="Mi cuenta">${icono('persona', 'ic-s')}<span>Mi cuenta</span></a>
@@ -241,8 +242,30 @@ async function enrutar() {
   if (!performance.getEntriesByName('d3e-primera-vista').length) performance.mark('d3e-primera-vista');
 }
 
+// ?servidor=prueba o ?servidor=real elige el servidor de Google y este navegador lo recuerda. Si el
+// servidor cambia, se cierra la sesión local (es de otro servidor) y se recarga.
+// Devuelve 'recargar', 'sin-prueba' (se pidió el de prueba y no hay) o null.
+async function elegirServidor() {
+  const pedido = new URLSearchParams(location.search).get('servidor');
+  if (pedido !== 'prueba' && pedido !== 'real') return null;
+  const antes = servidorElegido();
+  try { localStorage.setItem('d3e-servidor', pedido); } catch { /* sin almacenamiento: queda el real */ }
+  const u = new URL(location.href);
+  u.searchParams.delete('servidor');
+  history.replaceState(null, '', u);
+  if (servidorElegido() !== antes) {
+    await sesion.salir(true);
+    location.reload();
+    return 'recargar';
+  }
+  return pedido === 'prueba' && !CONFIG.URL_SERVIDOR_PRUEBA ? 'sin-prueba' : null;
+}
+
 async function iniciar() {
+  const eleccion = await elegirServidor();
+  if (eleccion === 'recargar') return;
   armazon();
+  if (eleccion === 'sin-prueba') aviso('No hay servidor de prueba configurado: se usa el servidor real.', 'advertencia');
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(e => console.warn('Sin modo sin conexión:', e));
   }

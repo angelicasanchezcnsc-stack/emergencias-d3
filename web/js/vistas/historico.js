@@ -3,8 +3,10 @@
 import { CONFIG } from '../../config.js';
 import * as almacen from '../almacen.js';
 import * as emergencia from '../emergencia.js';
+import * as sesion from '../sesion.js';
 import { llamar } from '../api.js';
 import { esc, icono, insignia, aviso } from '../ui.js';
+import { armarActa, htmlActa, imprimirActa } from './acta.js';
 import { fechaLegible, horaLegible, horaBogota, fechaBogota } from '../tiempo.js';
 import { enSedeDe } from '../presencia.js';
 
@@ -73,7 +75,44 @@ function cuerpoInforme(e) {
 
     <h2>Observaciones</h2>
     <p>${r.observaciones ? esc(r.observaciones) : '<span class="sutil">Sin observaciones.</span>'}</p>
-    <p class="aviso-datos">Los tiempos salen de la hora de los celulares de quienes reportaron y pueden diferir unos segundos. «No ubicados» y «apoyo» son cifras: el informe no conserva nombres (Ley 1581 de 2012).</p>`;
+    <p class="aviso-datos">Los tiempos salen de la hora de los celulares de quienes reportaron y pueden diferir unos segundos. «No ubicados» y «apoyo» son cifras: el informe no lleva nombres (Ley 1581 de 2012). El acta nominal, con nombres, la abre solo la coordinación.</p>`;
+}
+
+// Plazos de conservación del detalle por persona (Configuración), para los textos de la pantalla.
+function plazos() {
+  const c = (sesion.base() && sesion.base().config) || {};
+  return { sim: c.diasDetalleSimulacro || 90, real: c.diasDetalleEmergencia || 365 };
+}
+export function textoConservacion() {
+  const { sim, real } = plazos();
+  return `El detalle por persona lo conserva el servidor durante ${sim} días (simulacros) o ${real} días (emergencias) y solo lo abre la coordinación; cada consulta queda registrada.`;
+}
+
+// Acta nominal bajo el informe (v0.13): se pide al servidor cada vez y no se guarda en el celular.
+function enlazarActa(vista, e) {
+  const boton = vista.querySelector('#ver-acta');
+  if (!boton) return;
+  const caja = vista.querySelector('#acta-nominal');
+  let acta = null, ev = null;
+  boton.addEventListener('click', async () => {
+    if (!navigator.onLine) { aviso('El acta nominal solo se abre con internet.', 'advertencia'); return; }
+    boton.disabled = true;
+    try {
+      const r = await emergencia.detalle(e.id);
+      ev = r.emergencia;
+      acta = armarActa({ emergencia: r.emergencia, marcas: r.marcas, conteos: r.conteos });
+      caja.innerHTML = `${htmlActa(acta, ev)}
+        <div class="fila no-imprimir"><button class="btn btn-oscuro btn-chico" id="imprimir-acta">${icono('imprimir', 'ic-s')}Imprimir acta</button></div>`;
+      caja.classList.remove('oculto');
+      caja.querySelector('#imprimir-acta').addEventListener('click', () => imprimirActa(acta, ev));
+      boton.classList.add('oculto');
+      caja.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      boton.disabled = false;
+      if (err.codigo === 'VENCIDO') { boton.classList.add('oculto'); aviso(err.message, 'info'); }
+      else aviso(err.codigo === 'RED' ? 'El acta nominal solo se abre con internet.' : err.message, 'error');
+    }
+  });
 }
 
 function imprimirInforme(e) {
@@ -106,17 +145,20 @@ export async function vistaHistorico(vista) {
         <div class="fila no-imprimir">
           <a class="btn btn-secundario btn-chico" href="#/historico">${icono('libro', 'ic-s')}Volver al histórico</a>
           <button class="btn btn-primario btn-chico" id="imprimir">${icono('imprimir', 'ic-s')}Imprimir o guardar PDF</button>
+          ${e.detalleDisponible ? `<button class="btn btn-oscuro btn-chico" id="ver-acta">${icono('personas', 'ic-s')}Acta nominal</button>` : ''}
         </div>
       </div>
       ${copia ? `<div class="nota nota-adv">${icono('sinWifi')}<span>Sin conexión: se muestra la última copia guardada en este celular.</span></div>` : ''}
-      <section class="tarjeta informe">${cuerpoInforme(e)}</section>`;
+      <section class="tarjeta informe">${cuerpoInforme(e)}</section>
+      <section class="tarjeta informe oculto" id="acta-nominal" aria-live="polite"></section>`;
     vista.querySelector('#imprimir').addEventListener('click', () => imprimirInforme(e));
+    enlazarActa(vista, e);
     return;
   }
 
   vista.innerHTML = `
     <div class="titulo-vista"><h2>Histórico de simulacros y emergencias</h2>
-      <p class="sutil">Totales y tiempos por piso. No conserva nombres.</p></div>
+      <p class="sutil">Totales y tiempos por piso, sin nombres.${lista.some(x => x.detalleDisponible) ? ' La coordinación puede abrir el acta nominal de cada informe.' : ''}</p></div>
     ${copia ? `<div class="nota nota-adv">${icono('sinWifi')}<span>Sin conexión: se muestra la última copia guardada en este celular.</span></div>` : ''}
     ${id && !e ? `<div class="nota nota-adv">${icono('info')}<span>No se encontró ese informe.</span></div>` : ''}
     ${lista.length ? `<div class="tabla-caja"><table>
@@ -129,5 +171,5 @@ export async function vistaHistorico(vista) {
           <td><a class="btn btn-secundario btn-chico" href="#/historico?id=${encodeURIComponent(x.id)}">Ver informe</a></td></tr>`;
       }).join('')}</tbody></table></div>`
       : `<div class="nota nota-info">${icono('info')}<span>Todavía no hay simulacros ni emergencias cerradas. Cuando cierre una, su informe aparecerá aquí.</span></div>`}
-    <p class="ayuda" style="margin-top:1rem">Se guardan los últimos 100 eventos. Al cerrar cada emergencia se borra el detalle por persona; solo quedan totales y tiempos.</p>`;
+    <p class="ayuda" style="margin-top:1rem">Se guardan los últimos 100 eventos. ${esc(textoConservacion())}</p>`;
 }

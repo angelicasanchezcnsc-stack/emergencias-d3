@@ -1,12 +1,12 @@
 // Punto de encuentro: registro de llegadas (funciona sin conexión), conciliación
 // con el reporte de cada piso y lista de ausentes para la brigada o los bomberos.
-import { CONFIG } from '../../config.js';
 import * as sesion from '../sesion.js';
 import * as emergencia from '../emergencia.js';
 import * as carac from '../caracterizacion.js';
 import { esc, icono, aviso, insignia, modal, confirmar } from '../ui.js';
 import { horaLegible, horaBogota } from '../tiempo.js';
 import { enSedeDe } from '../presencia.js';
+import { armarActa, imprimirActa, textoActa } from './acta.js';
 
 const normalizar = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const ESTADO_PISO = { evacuado: 'Evacuado según su piso', no_ubicado: 'NO UBICADO en el piso', apoyo: 'REQUIERE APOYO', no_estaba: 'No estaba hoy en la sede' };
@@ -31,28 +31,6 @@ function ultimaUbicacion(x) {
   const apoyo = ap && ap.apoyo !== 'ninguno'
     ? ` · NECESITA APOYO: ${carac.etiqueta(carac.APOYOS, ap.apoyo)}${ap.detalle ? ' (' + ap.detalle + ')' : ''}` : '';
   return estadoUltimo(x) + apoyo;
-}
-
-// Texto plano de los ausentes, para leerlo por teléfono o copiarlo.
-function textoAusentes(lista, e) {
-  const enc = `${CONFIG.APP_NOMBRE}: personas que no han llegado al punto de encuentro (${horaLegible(horaBogota())})\n` +
-    `${e.simulacro ? 'SIMULACRO' : 'EMERGENCIA'}: ${emergencia.TIPOS[e.tipo]}. Despacho 3, sede Calle 96.\n\n`;
-  return enc + lista.map((x, i) => `${i + 1}. ${sesion.nombreDe(x.codigo)}, ${ubicacionTexto(x)}, ${ultimaUbicacion(x)}`).join('\n');
-}
-
-function imprimirAusentes(lista, e) {
-  const filas = lista.map(x => `<tr><td>${esc(sesion.nombreDe(x.codigo))}</td><td>${x.piso}</td><td>${x.puesto || '—'}</td><td>${esc(ultimaUbicacion(x))}</td><td class="casilla-papel">☐</td></tr>`).join('');
-  document.body.insertAdjacentHTML('beforeend', `
-    <div id="censo-impreso">
-      <h1>${esc(CONFIG.APP_NOMBRE)}: ausentes en el punto de encuentro</h1>
-      <p>${e.simulacro ? 'SIMULACRO' : 'EMERGENCIA'}: ${esc(emergencia.TIPOS[e.tipo])} · generado a las ${esc(horaLegible(horaBogota()))} · Despacho 3, sede Calle 96</p>
-      <table><thead><tr><th>Nombre</th><th>Piso</th><th>Puesto</th><th>Última ubicación reportada</th><th>Ubicado</th></tr></thead>
-      <tbody>${filas || '<tr><td colspan="5">No hay ausentes.</td></tr>'}</tbody></table>
-      <p class="aviso-datos">Documento con datos personales, solo para la atención de la emergencia (Ley 1581 de 2012). Destrúyalo al terminar.</p>
-    </div>`);
-  document.body.classList.add('censo-activo');
-  addEventListener('afterprint', () => { document.getElementById('censo-impreso')?.remove(); document.body.classList.remove('censo-activo'); }, { once: true });
-  setTimeout(() => print(), 50);
 }
 
 export function vistaPunto(vista) {
@@ -101,7 +79,7 @@ export function vistaPunto(vista) {
       </div>
 
       <div class="fila no-imprimir" style="margin-bottom:1rem">
-        <button class="btn btn-peligro" id="ver-ausentes">${icono('alerta', 'ic-s')}Lista de ausentes (${faltan.length})</button>
+        <button class="btn btn-peligro" id="ver-ausentes">${icono('alerta', 'ic-s')}Acta del punto de encuentro (faltan ${faltan.length})</button>
       </div>
 
       <input id="buscar" class="buscar-grande" type="search" aria-label="Buscar por nombre" placeholder="Buscar por nombre…" value="${esc(busqueda)}" autocomplete="off">
@@ -167,20 +145,29 @@ export function vistaPunto(vista) {
       if (!await confirmar('Deshacer llegada', `¿Quitar la llegada de ${esc(sesion.nombreDe(codigo))}?`, 'Quitar')) return;
       await emergencia.marcarPersona(codigo, { llegada: '' });
     }));
+    // Acta del punto de encuentro (v0.13): primero quienes no han llegado (en orden de prioridad) y, plegados,
+    // quienes ya llegaron. Copiar e imprimir llevan el acta nominal completa, por piso.
     vista.querySelector('#ver-ausentes').addEventListener('click', async () => {
       const lista = emergencia.ausentes(a);
+      const ya = r.filas.flatMap(f => f.miembros.filter(x => x.marca && x.marca.llegada).map(x => ({ ...x, piso: f.piso, puesto: emergencia.puestoDe(x.codigo).puesto })));
+      const acta = armarActa(a);
       const accion = await modal({
-        titulo: `Ausentes en el punto de encuentro (${lista.length})`, ancho: 'ancho',
-        cuerpo: lista.length ? `<ol class="lista-ausentes">${lista.map(x => `<li><strong>${esc(sesion.nombreDe(x.codigo))}</strong>, ${esc(ubicacionTexto(x))}<br><span class="sutil">${esc(ultimaUbicacion(x))}</span></li>`).join('')}</ol>
-          <p class="ayuda">Entregue esta lista a la brigada del edificio o a los bomberos. Contiene datos personales: úsela solo para la emergencia.</p>` : '<p>Todas las personas de la lista ya llegaron.</p>',
+        titulo: `Acta del punto de encuentro`, ancho: 'ancho',
+        cuerpo: `<h4>No han llegado (${lista.length})</h4>
+          ${lista.length ? `<ol class="lista-ausentes">${lista.map(x => `<li><strong>${esc(sesion.nombreDe(x.codigo))}</strong>, ${esc(ubicacionTexto(x))}<br><span class="sutil">${esc(ultimaUbicacion(x))}</span></li>`).join('')}</ol>` : '<p>Todas las personas de la lista ya llegaron.</p>'}
+          <details><summary class="resumen-plegable">Ya llegaron (${ya.length})</summary>
+            ${ya.length ? `<ol class="lista-ausentes">${ya.map(x => `<li><strong>${esc(sesion.nombreDe(x.codigo))}</strong>, ${esc(ubicacionTexto(x))} · llegó a las ${esc(horaLegible(x.marca.llegada))}</li>`).join('')}</ol>` : '<p class="sutil">Aún no llega nadie.</p>'}
+          </details>
+          <p class="ayuda">Entregue la lista de quienes no han llegado a la brigada del edificio o a los bomberos. «Copiar» e «Imprimir» llevan el acta completa por piso (llegaron, no llegaron y no estaban). Contiene datos personales: úsela solo para la emergencia.</p>`,
         acciones: [
           { texto: 'Cerrar', valor: null, clase: 'btn-fantasma' },
-          ...(lista.length ? [{ texto: 'Copiar texto', valor: 'copiar', clase: 'btn-secundario' }, { texto: 'Imprimir o PDF', valor: 'imprimir', clase: 'btn-oscuro' }] : [])
+          { texto: 'Copiar texto', valor: 'copiar', clase: 'btn-secundario' },
+          { texto: 'Imprimir o PDF', valor: 'imprimir', clase: 'btn-oscuro' }
         ]
       });
-      if (accion === 'imprimir') imprimirAusentes(lista, e);
+      if (accion === 'imprimir') imprimirActa(acta, e);
       if (accion === 'copiar') {
-        try { await navigator.clipboard.writeText(textoAusentes(lista, e)); aviso('Lista copiada. Puede pegarla en un mensaje para la brigada.', 'exito'); }
+        try { await navigator.clipboard.writeText(textoActa(acta, e)); aviso('Acta copiada. Puede pegarla en un mensaje para la brigada.', 'exito'); }
         catch { aviso('No se pudo copiar en este celular.', 'error'); }
       }
     });

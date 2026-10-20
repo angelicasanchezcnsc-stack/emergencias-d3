@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Prueba de carga — EMERGENCIAS D3</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1.5rem; color: #333; background: #fafafa; max-width: 60rem; }
+    h1 { font-size: 1.3rem; margin: 0 0 .3rem; }
+    .sutil { color: #666; margin: 0 0 1rem; font-size: .9rem; }
+    .alerta { background: #ffcdd2; color: #b71c1c; padding: .6rem .9rem; border-radius: 8px; font-weight: 700; margin: 0 0 1rem; }
+    label { display: block; font-weight: 700; font-size: .85rem; margin: .8rem 0 .25rem; }
+    input[type=text], input[type=number], textarea { width: 100%; box-sizing: border-box; padding: .45rem .55rem; border: 1px solid #bbb; border-radius: 6px; font: inherit; }
+    textarea { min-height: 7rem; font-family: ui-monospace, monospace; font-size: .85rem; }
+    .fila { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .fila > div { flex: 1; min-width: 10rem; }
+    .casilla { font-weight: 400; display: flex; gap: .4rem; align-items: center; }
+    button { margin-top: 1rem; padding: .55rem 1rem; border-radius: 8px; border: 0; background: #2c2c2c; color: #fff; font-weight: 700; cursor: pointer; }
+    button.sec { background: #e0e0e0; color: #333; }
+    button:disabled { opacity: .5; cursor: default; }
+    table { border-collapse: collapse; width: 100%; background: #fff; font-size: .88rem; margin-top: 1rem; }
+    th, td { border: 1px solid #ddd; padding: .35rem .5rem; text-align: left; }
+    th { background: #ffee58; }
+    #estado { margin-top: 1rem; font-weight: 700; }
+    pre { background: #fff; border: 1px solid #ddd; padding: .75rem; white-space: pre-wrap; font-size: .82rem; }
+  </style>
+</head>
+<body>
+  <h1>Prueba de carga del servidor</h1>
+  <p class="alerta">Solo contra el servidor de prueba, nunca contra el real. Use solo cuentas ficticias.</p>
+  <p class="sutil">Simula muchos celulares a la vez: «lectores» que consultan cada 15 segundos (como la app durante una emergencia) y «brigadistas» que marcan personas cada 5 segundos. Mide cuántas peticiones respondió el servidor, cuántas fallaron y cuánto tardaron. Las contraseñas no salen de este computador: solo viajan sus huellas, como en la app.</p>
+  <form id="f">
+    <label for="url">Dirección del servidor de prueba (termina en /exec)</label>
+    <input id="url" type="text" required autocomplete="off">
+    <label for="cuentas">Cuentas ficticias, una por línea: correo;contraseña (la primera debe ser brigadista o de la coordinación)</label>
+    <textarea id="cuentas" required placeholder="ana.uno@ficticio.test;contraseña-temporal"></textarea>
+    <div class="fila">
+      <div><label for="lectores">Celulares lectores</label><input id="lectores" type="number" min="0" max="200" value="20"></div>
+      <div><label for="brigadistas">Brigadistas que marcan</label><input id="brigadistas" type="number" min="0" max="20" value="4"></div>
+      <div><label for="minutos">Duración (minutos)</label><input id="minutos" type="number" min="1" max="30" value="5"></div>
+    </div>
+    <label class="casilla"><input type="checkbox" id="iniciar" checked>Si no hay un simulacro activo, iniciar uno al empezar</label>
+    <label class="casilla"><input type="checkbox" id="terminar" checked>Terminar el simulacro al final</label>
+    <div><button id="empezar" type="submit">Empezar la prueba</button> <button id="parar" type="button" class="sec" disabled>Parar</button></div>
+  </form>
+  <div id="estado"></div>
+  <div id="tabla"></div>
+  <div id="final"></div>
+  <script type="module" src="carga.js"></script>
+</body>
+</html>

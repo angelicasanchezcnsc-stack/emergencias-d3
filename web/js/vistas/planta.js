@@ -1,7 +1,7 @@
 import { CONFIG } from '../../config.js';
 import * as sesion from '../sesion.js';
 import { esc, insignia, icono, barraBusqueda, enlazarBusqueda, coincide } from '../ui.js';
-import { mapaPiso, iniciales } from '../mapa-piso.js';
+import { mapaPiso, nombreCorto } from '../mapa-piso.js';
 
 export function vistaPlanta(vista) {
   const base = sesion.base();
@@ -16,12 +16,12 @@ export function vistaPlanta(vista) {
     if (!ocupantes.has(k)) ocupantes.set(k, []);
     ocupantes.get(k).push({ codigo: p.codigo, nombre: sesion.nombreDe(p.codigo), brigadista: p.roles.includes('brigadista') });
   });
-  // El puesto propio se marca «Actual»; el de un brigadista lleva «Brig.» junto a las iniciales.
+  // El puesto propio se marca «Actual»; el de un brigadista lleva «Brig.» junto al nombre.
   const estadoDe = (p, gente) => {
     if (gente.some(g => g.codigo === yo.codigo)) return { clase: 'actual', texto: `su puesto, ${gente.map(g => g.nombre).join(' y ')}` };
     if (gente.some(g => g.brigadista)) {
       return {
-        clase: gente.length > 1 ? 'compartido' : 'ocupado', etiqueta: `${iniciales(gente[0])}${gente.length > 1 ? ` +${gente.length - 1}` : ''} Brig.`,
+        clase: gente.length > 1 ? 'compartido' : 'ocupado', etiqueta: `${nombreCorto(gente[0])}${gente.length > 1 ? ` +${gente.length - 1}` : ''} Brig.`,
         texto: `${gente.length > 1 ? 'compartido por' : 'ocupado por'} ${gente.map(g => g.nombre).join(' y ')}, brigadista`
       };
     }
@@ -59,7 +59,7 @@ export function vistaPlanta(vista) {
       const mapa = mapaPiso({
         piso: n, puestos: base.puestos, referencias: base.referencias || [], ocupantes, modo: 'ver', idBase: 'planta-' + n,
         resaltar: new Set(texto ? encontradas.map(p => `${p.piso}-${p.puesto}`) : []), estadoDe,
-        leyendaExtra: [{ simbolo: '', nombre: 'Brigadista del piso', senal: '«Brig.» junto a las iniciales' }]
+        leyendaExtra: [{ simbolo: '', nombre: 'Brigadista del piso', senal: '«Brig.» junto al nombre' }]
       });
       const caja = vista.querySelector('#mapa-planta-' + n);
       caja.innerHTML = mapa.html;
