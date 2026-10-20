@@ -9,6 +9,7 @@ import * as sesion from '../sesion.js';
 import * as contacto from '../contacto-emergencia.js';
 import { esc, aviso, modal } from '../ui.js';
 import { fechaLegible, fechaBogota } from '../tiempo.js';
+import { AVISO_CONTACTOS_CORTO } from '../contenido-inicial.js';
 
 const casillas = '☐ Sí &nbsp; ☐ No';
 
@@ -31,7 +32,7 @@ function ficha(p, c, hoy) {
       ${fila('ARL', s.arl)}
     </tbody></table>
     <p class="ficha-firma">Firma: ______________________________ &nbsp; Fecha: ____________</p>
-    <p class="aviso-datos">Datos personales, solo para la atención de emergencias (Ley 1581 de 2012). Devuelva esta ficha a la coordinación; no la deje a la vista.</p>
+    <p class="aviso-datos">${esc(AVISO_CONTACTOS_CORTO)} Devuelva esta ficha a la coordinación; no la deje a la vista.</p>
   </section>`;
 }
 

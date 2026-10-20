@@ -404,6 +404,9 @@ details.tarjeta[open] .resumen-plegable { margin-bottom: .5rem; }
 .detalle-contacto summary { cursor: pointer; display: inline-flex; gap: .35rem; align-items: center; font-weight: 700; color: var(--corp-dark); }
 .detalle-contacto .tabla-ficha { margin-top: .35rem; }
 .detalle-contacto .tabla-ficha a { font-weight: 700; }
+.aviso-privacidad { margin-top: .5rem; }
+.aviso-privacidad summary { cursor: pointer; font-weight: 700; color: var(--corp-dark); }
+.aviso-privacidad .texto-legal { margin-top: .5rem; }
 .tabla-ficha { width: 100%; border-collapse: collapse; }
 .tabla-ficha th { width: 34%; text-align: left; background: rgba(240, 240, 240, .5); vertical-align: top; }
 

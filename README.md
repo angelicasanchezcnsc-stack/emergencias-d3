@@ -23,6 +23,7 @@ Sirve para saber quién está en la sede, en qué piso y en qué puesto; para qu
 - La **llave maestra** (código → nombre, correo, celular) es un archivo cifrado que vive solo en el computador del administrador. Nunca va en esta carpeta ni en el repositorio.
 - Los insumos (Excel, planos con nombres, contactos) **no se suben** a ningún repositorio. Ver `.gitignore`.
 - **Caracterización individual:** cada persona tiene un par de llaves (ECDH P-256); la privada vive cifrada con su contraseña y la pública está en el servidor. Los datos se cifran con una llave aleatoria que se entrega, envuelta con la llave pública de cada destinatario, solo a quien corresponde: la persona y la coordinación (detalle completo), y además brigadistas y acompañante (solo el apoyo para evacuar). El servidor y Google no pueden leer nada; el servidor además controla quién recibe qué.
+- **Contacto de emergencia (v0.12):** lo carga la coordinación desde el registro del área de personal (teléfono propio, familiar, EPS y ARL), aparte de la caracterización. Va cifrado en dos bloques para la coordinación, los brigadistas y la persona. Cada brigadista recibe su piso y lo ve solo durante una emergencia o un simulacro, si la persona está marcada no ubicada, con apoyo o con asistencia; la EPS y la ARL solo llegan durante la emergencia. Lo explica un aviso de privacidad (borrador pendiente de revisión jurídica).
 
 ## Estado
 
@@ -55,6 +56,7 @@ Etapa actual: **10, piloto**. La app está publicada en GitHub Pages y conectada
 - [x] Mapa esquemático de cada piso, tipo sala de cine, en Planta física, Hoy en la sede, Emergencia y Ausencia o cambio de lugar, siempre con su vista de lista equivalente
 - [x] El personal se gestiona desde la app (mover, intercambiar, compartir puesto, agregar, corregir, retirar y reactivar) con historial de cambios; el Excel queda para la carga inicial y se puede exportar el personal en CSV
 - [x] Distribución de pisos diseñable desde Administración
+- [x] Contactos de emergencia de todo el Despacho cargados desde el archivo del área de personal (Excel o CSV), con comparación previa, altas de personas nuevas, corrección por la coordinación o por la persona, copia sin conexión y fichas anuales de verificación por persona (v0.12, sin publicar)
 - [ ] Pruebas con el equipo, piloto en un piso y ajustes finales (etapas 10 y 11)
 
 ## Probar y publicar

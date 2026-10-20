@@ -4,6 +4,15 @@
 import { esc, aviso, modal } from '../ui.js';
 import { fechaLegible, fechaBogota } from '../tiempo.js';
 import { limpiarTelefono, telefonoDudoso } from '../archivo-contactos.js';
+import { AVISO_CONTACTOS } from '../contenido-inicial.js';
+
+// Aviso de privacidad del contacto de emergencia, plegado. Los enlaces del texto se pueden abrir.
+export function avisoPrivacidad() {
+  const parrafos = AVISO_CONTACTOS.texto.split(/\n\n+/)
+    .map(p => `<p>${esc(p).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')}</p>`).join('');
+  return `<details class="aviso-privacidad"><summary>Aviso de privacidad del contacto de emergencia</summary>
+    <div class="texto-legal">${parrafos}<p class="sutil">Versión ${esc(AVISO_CONTACTOS.version)}. Borrador pendiente de revisión jurídica de la CNSC.</p></div></details>`;
+}
 
 const soloMarcable = t => String(t || '').replace(/[^\d+]/g, '');
 // Un enlace para llamar por cada teléfono de la celda (puede haber dos separados por «/» o «-» con espacios).

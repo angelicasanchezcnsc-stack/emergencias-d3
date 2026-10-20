@@ -75,6 +75,8 @@ Errores: los que le hablan al usuario (por ejemplo, «Debe quedar al menos un ad
 
 **Quién puede recibir la llave de un contacto:** las personas activas con rol `admin`, `coordinador`, `suplente` o `brigadista` (de cualquier piso: el servidor no puede abrir un registro para dárselo después a otro brigadista) y la persona dueña. El servidor rechaza envoltorios para cualquier otra persona (por ejemplo, un asesor). El navegador cifra dos bloques con llaves aleatorias distintas: `datos` (teléfono de la persona y familiar: nombre, parentesco y teléfono) y `salud` (EPS y ARL, opcional). La EPS y la ARL de los brigadistas dependen de que el servidor solo las entrega con una emergencia o simulacro activo; el celular no guarda una copia previa.
 
+**Contactos de emergencia en el navegador (v0.12):** la app guarda en el celular una copia cifrada de los contactos que el servidor le entregó, para usarla sin internet. Al terminar una emergencia quita de esa copia la EPS y la ARL (salvo las propias) y olvida los contactos de otros pisos. En la pantalla de Emergencia, un brigadista solo ve el contacto de una persona marcada «No ubicado», «Apoyo» o con asistencia; es una regla de la app, no del servidor. La coordinación mantiene los envoltorios al día con `reenvolver` (`registro: 'contactos'`) y solo lo envía si el servidor ya respondió a `contactos`: un servidor anterior a la v0.12 aplicaría esos cambios a las caracterizaciones. El aviso de privacidad del contacto de emergencia está en `web/js/contenido-inicial.js` (`AVISO_CONTACTOS`).
+
 **Si la CNSC exige otro esquema de cifrado:** los puntos de ajuste de la caracterización están en `web/js/cripto.js` (envolturas ECDH) y `web/js/caracterizacion.js` (quién recibe qué).
 
 ## 3. Llave maestra

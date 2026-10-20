@@ -254,8 +254,11 @@ export const recomendacionesIniciales = () => ({
 // Decreto 1074 de 2015). Es un borrador: debe revisarlo el área jurídica o el oficial de
 // protección de datos de la CNSC. El administrador puede editarlo; cada cambio sube la versión
 // y cada persona debe volver a aceptar.
+// v2 (v0.12): agrega el párrafo sobre el contacto de emergencia del registro del área de personal, que va
+// aparte de la caracterización. En una instalación que ya guardó su texto, el administrador lo aplica desde
+// Caracterizaciones → «Editar texto de la autorización» (sube la versión y cada persona vuelve a aceptar).
 export const consentimientoInicial = () => ({
-  version: 'v1',
+  version: 'v2',
   texto: [
     'AUTORIZACIÓN PARA EL TRATAMIENTO DE DATOS PERSONALES Y SENSIBLES: CARACTERIZACIÓN PARA EMERGENCIAS',
     'Responsable del tratamiento: Comisión Nacional del Servicio Civil (CNSC), a través del Despacho del Comisionado Edwin Arturo Ruiz Moreno (Despacho 3). Dirección: Carrera 16 No. 96-64, Bogotá D. C. Política de tratamiento de datos personales de la CNSC: https://www.cnsc.gov.co/politica-de-privacidad-y-proteccion-de-datos-personales',
@@ -266,9 +269,33 @@ export const consentimientoInicial = () => ({
     'Medidas de seguridad: la información se cifra en su dispositivo antes de guardarse y solo puede abrirse con las llaves de las personas autorizadas. No se almacena en claro en servidores de terceros.',
     'Sus derechos como titular: conocer, actualizar y rectificar sus datos; solicitar prueba de esta autorización; ser informado sobre el uso que se les ha dado; presentar quejas ante la Superintendencia de Industria y Comercio; revocar la autorización y solicitar la supresión de sus datos. Puede ver, modificar o borrar toda su información en cualquier momento desde este mismo aplicativo (opción «Revocar mi autorización y borrar mis datos»). Canal adicional para ejercer sus derechos: el indicado en la política de tratamiento de datos de la CNSC.',
     'Conservación: sus datos se conservan mientras usted haga parte del Despacho 3 o hasta que revoque su autorización; al retirarse del Despacho se borran.',
-    'Datos de terceros: declaro que la persona cuyo nombre y teléfono registro como contacto de emergencia fue informada de que sus datos serán usados únicamente para avisarle en caso de emergencia.'
+    'Datos de terceros: declaro que la persona cuyo nombre y teléfono registro como contacto de emergencia fue informada de que sus datos serán usados únicamente para avisarle en caso de emergencia.',
+    'Contacto de emergencia del registro de personal: aparte de esta caracterización, la coordinación carga desde el registro del área de personal su teléfono, el nombre, el parentesco y el teléfono de un familiar, su EPS y su ARL. El registro de personal es independiente de esta autorización y su tratamiento se explica en el aviso de privacidad del contacto de emergencia, que puede consultar en esta misma pantalla.'
   ].join('\n\n')
 });
+
+// ---------- Aviso de privacidad del contacto de emergencia (v0.12) ----------
+// Informa a cada persona sobre el contacto de emergencia que carga la coordinación desde el registro del área
+// de personal. BORRADOR: debe revisarlo el área jurídica o el oficial de protección de datos de la CNSC, que
+// también debe confirmar con el área de personal la autorización para usar estos datos en emergencias.
+// Se muestra en Mi caracterización y en la carga de contactos; su resumen va en las fichas de verificación.
+export const AVISO_CONTACTOS = {
+  version: 'borrador 1 (20/10/2026)',
+  texto: [
+    'AVISO DE PRIVACIDAD: CONTACTO DE EMERGENCIA',
+    'Responsable del tratamiento: Comisión Nacional del Servicio Civil (CNSC), a través del Despacho del Comisionado Edwin Arturo Ruiz Moreno (Despacho 3). Dirección: Carrera 16 No. 96-64, Bogotá D. C. Política de tratamiento de datos personales de la CNSC: https://www.cnsc.gov.co/politica-de-privacidad-y-proteccion-de-datos-personales',
+    'Datos y origen: su teléfono; el nombre, el parentesco y el teléfono de un familiar; su EPS y su ARL. La coordinación del Despacho los toma del registro del área de personal de la CNSC. Usted puede pedir que se corrijan en cualquier momento.',
+    'Finalidad: comunicarse con usted o con su familiar durante una emergencia o un simulacro, en especial si no se le ubica o necesita apoyo para evacuar; y, si resulta herido, remitirlo a su EPS y reportar el accidente a su ARL. Los datos se usan únicamente para estas finalidades.',
+    'Quién los ve: el administrador del aplicativo, el coordinador y el suplente de emergencias del Despacho. Los brigadistas de su piso solo los ven durante una emergencia o un simulacro, y solo si usted queda marcado como no ubicado, con necesidad de apoyo o de asistencia. Un brigadista de otro piso puede consultarlos durante la emergencia, y esa consulta queda registrada. La EPS y la ARL solo llegan al celular de un brigadista mientras dura la emergencia y se borran al terminar.',
+    'Medidas de seguridad: los datos se cifran en el computador o en el celular de quien los carga, antes de guardarse. Google, donde funciona el servidor del aplicativo, solo guarda texto ilegible. Los celulares de la coordinación y de los brigadistas conservan una copia cifrada para poder usarla sin internet.',
+    'Conservación: los datos se conservan mientras usted haga parte del Despacho 3 y se borran cuando se retira. Una vez al año la coordinación le entrega una ficha para que confirme o corrija su contacto.',
+    'Datos de su familiar: su familiar es un tercero. Sus datos se usan solo para avisarle en caso de emergencia. Le pedimos informarle que su nombre y su teléfono están registrados para esa finalidad.',
+    'Sus derechos como titular: conocer, actualizar y rectificar sus datos; ser informado sobre el uso que se les ha dado; solicitar su supresión cuando no exista un deber legal de conservarlos; y presentar quejas ante la Superintendencia de Industria y Comercio. Puede ver y corregir su contacto en «Mi caracterización» si tiene acceso al aplicativo, o pedirlo a la coordinación del Despacho. Canal adicional: el indicado en la política de tratamiento de datos de la CNSC.'
+  ].join('\n\n')
+};
+
+// Resumen del aviso para las fichas impresas de verificación (quien no tiene acceso al aplicativo se entera por ahí).
+export const AVISO_CONTACTOS_CORTO = 'Para qué se usa: para avisar a su familiar y, si resulta herido, remitirlo a su EPS o reportar el accidente a su ARL durante una emergencia. Quién lo ve: la coordinación del Despacho y, durante una emergencia o un simulacro, los brigadistas cuando usted no esté ubicado o necesite apoyo. Va cifrado y se borra cuando usted se retira del Despacho. Puede pedir a la coordinación que lo corrija, y también conocer el aviso de privacidad completo y ejercer sus derechos (Ley 1581 de 2012).';
 
 // ---------- Protocolos individuales (derivados de la caracterización) ----------
 // Texto general y prudente. Debe revisarlo el Área de Seguridad y Salud en el Trabajo.
