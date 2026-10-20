@@ -399,6 +399,11 @@ details.tarjeta[open] .resumen-plegable { margin-bottom: .5rem; }
 .lista-simple { margin: .25rem 0 0; padding-left: 1.2rem; line-height: 1.55; }
 .chip-apoyo { display: flex; gap: .4rem; align-items: flex-start; margin-top: .3rem; padding: .35rem .6rem; border-radius: var(--radio); background: var(--adv-bg); color: var(--adv-tx); border: 1px solid #fde68a; font-size: .8rem; font-weight: 700; }
 .modo-sol .chip-apoyo { background: #fff3c4; color: #000; border-color: #000; }
+/* Contacto de emergencia plegado en las filas de la emergencia (v0.12) */
+.detalle-contacto { margin-top: .35rem; font-size: .85rem; }
+.detalle-contacto summary { cursor: pointer; display: inline-flex; gap: .35rem; align-items: center; font-weight: 700; color: var(--corp-dark); }
+.detalle-contacto .tabla-ficha { margin-top: .35rem; }
+.detalle-contacto .tabla-ficha a { font-weight: 700; }
 .tabla-ficha { width: 100%; border-collapse: collapse; }
 .tabla-ficha th { width: 34%; text-align: left; background: rgba(240, 240, 240, .5); vertical-align: top; }
 

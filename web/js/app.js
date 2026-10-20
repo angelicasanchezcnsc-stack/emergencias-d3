@@ -16,6 +16,7 @@ import { vistaHistorico } from './vistas/historico.js';
 import { vistaCaracterizacion } from './vistas/caracterizacion.js';
 import { vistaCaracterizaciones } from './vistas/caracterizaciones.js';
 import * as carac from './caracterizacion.js';
+import * as contactoEmergencia from './contacto-emergencia.js';
 import * as contenido from './contenido.js';
 import * as emergencia from './emergencia.js';
 import { horaLegible, horaBogota } from './tiempo.js';
@@ -253,6 +254,7 @@ async function iniciar() {
   }
   await emergencia.iniciar();
   await carac.iniciar();
+  await contactoEmergencia.iniciar();
   addEventListener('emergencia-cambio', pintarBanner);
   addEventListener('emergencia-activada', () => {
     const a = emergencia.actual();

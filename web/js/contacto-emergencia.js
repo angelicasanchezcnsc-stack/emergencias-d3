@@ -7,6 +7,7 @@
 // a cada brigadista su piso (otro piso, con bitácora) y la EPS y la ARL solo durante una emergencia o simulacro.
 import * as cripto from './cripto.js';
 import * as sesion from './sesion.js';
+import * as almacen from './almacen.js';
 import { leerXlsx } from './xlsx.js';
 import { llamar, ErrorApi } from './api.js';
 import { decodificarTexto, leerCsv, interpretarContactos } from './archivo-contactos.js';
@@ -49,7 +50,7 @@ export async function cifrarContacto(codigo, datos, salud) {
 
 // Carga varios contactos: lista = [{ codigo, datos, salud }]. Cifra todo primero y después envía en tandas.
 // Cada tanda es todo o nada en el servidor; si una falla, el error dice cuántos quedaron cargados.
-export async function cargar(lista, alAvanzar = () => {}) {
+export async function cargarLote(lista, alAvanzar = () => {}) {
   if (!esCoordinacion()) throw new ErrorApi('Solo la coordinación y la administración pueden cargar contactos.', 'PERMISO');
   if (!listoParaUsar()) throw new ErrorApi('Cierre sesión y vuelva a ingresar para activar la protección de los datos.', 'LLAVE');
   const ops = [];
@@ -73,6 +74,179 @@ export async function cargar(lista, alAvanzar = () => {}) {
 export async function estado() {
   const r = await llamar('contactos');
   return { cargados: new Set((r.contactos || []).map(c => c.codigo)), faltan: r.faltan || [] };
+}
+
+// ---------- Ver, corregir y tener sin conexión ----------
+// Cada quien recibe lo que el servidor le permite: la coordinación, todos; un brigadista, su piso; cualquiera
+// con acceso, el suyo. Se guarda una copia CIFRADA en el celular para usarla sin internet y se abre en memoria
+// con la llave personal. La EPS y la ARL de un brigadista solo llegan durante una emergencia o simulacro y se
+// quitan del celular al terminar; lo mismo los contactos de otro piso que haya pedido.
+
+const CLAVE_COPIA = 'contactos';
+const enMemoria = new Map();      // código → { codigo, abierto, datos?, salud?, tieneSalud, fuente, cargado, actualizado, version, otroPiso? }
+let conContacto = new Set();      // códigos con contacto en el servidor (la coordinación los ve todos)
+let faltan = [];                  // solo para la coordinación: personas activas sin contacto
+let cargando = null;
+let ultimaCarga = 0;
+
+export const contactoDe = codigo => enMemoria.get(codigo) || null;
+export const hayContacto = codigo => conContacto.has(codigo);
+export const faltantes = () => faltan.slice();
+export const pisosConsultados = new Set();   // otros pisos que este brigadista pidió durante la emergencia
+
+async function abrirRegistro(r, priv) {
+  const base = { codigo: r.codigo, version: r.version, tieneSalud: !!r.tieneSalud, fuente: r.fuente || '', cargado: r.cargado || '', actualizado: r.actualizado || '', por: r.por || '', abierto: false };
+  if (!priv || !r.clave) return base;
+  try {
+    const d = await cripto.desenvolver(priv, r.clave, ctxDatos(r.codigo));
+    const salida = { ...base, abierto: true, datos: await cripto.descifrarJSON(await cripto.importarLlaveDatos(d), r.datos), salud: null };
+    if (r.salud && r.claveSalud) {
+      const s = await cripto.desenvolver(priv, r.claveSalud, ctxSalud(r.codigo));
+      salida.salud = await cripto.descifrarJSON(await cripto.importarLlaveDatos(s), r.salud);
+    }
+    return salida;
+  } catch { return base; }
+}
+
+async function llenar(respuesta) {
+  const priv = sesion.llavePriv();
+  const otros = [...enMemoria.values()].filter(c => c.otroPiso);
+  enMemoria.clear();
+  for (const r of respuesta.contactos || []) enMemoria.set(r.codigo, await abrirRegistro(r, priv));
+  otros.forEach(c => { if (!enMemoria.has(c.codigo)) enMemoria.set(c.codigo, c); });
+  conContacto = new Set((respuesta.contactos || []).map(c => c.codigo));
+  faltan = respuesta.faltan || [];
+  dispatchEvent(new CustomEvent('contactos-cambio'));
+}
+
+// Trae los contactos (o, sin conexión, usa la copia del celular). Sin «forzar», como mucho cada 5 minutos.
+export function cargar({ forzar = false } = {}) {
+  if (!sesion.activa()) return Promise.resolve();
+  if (cargando) return cargando;
+  if (!forzar && ultimaCarga && Date.now() - ultimaCarga < 300000) return Promise.resolve();
+  cargando = (async () => {
+    let r = null;
+    if (navigator.onLine) {
+      try { r = await llamar('contactos'); await almacen.guardar(CLAVE_COPIA, r); ultimaCarga = Date.now(); }
+      catch { /* sin servidor: se usa la copia */ }
+    }
+    if (!r) r = await almacen.leer(CLAVE_COPIA);
+    if (r) await llenar(r);
+  })().finally(() => { cargando = null; });
+  return cargando;
+}
+
+// «Ver otro piso» (brigadistas): queda en la bitácora del servidor. Solo con internet y solo en memoria.
+export async function verOtroPiso(piso) {
+  const r = await llamar('contactosOtroPiso', { piso });
+  const priv = sesion.llavePriv();
+  for (const x of r.contactos || []) if (!enMemoria.has(x.codigo) || !enMemoria.get(x.codigo).abierto) enMemoria.set(x.codigo, { ...(await abrirRegistro(x, priv)), otroPiso: true });
+  pisosConsultados.add(Number(piso));
+  dispatchEvent(new CustomEvent('contactos-cambio'));
+  return (r.contactos || []).length;
+}
+
+// Al terminar la emergencia: fuera del celular la EPS y la ARL de quien no es de la coordinación y los
+// contactos de otros pisos. Después se vuelve a pedir lo que corresponde.
+async function olvidarEmergencia() {
+  pisosConsultados.clear();
+  for (const [codigo, c] of enMemoria) if (c.otroPiso) enMemoria.delete(codigo);
+  if (!esCoordinacion()) {
+    const copia = await almacen.leer(CLAVE_COPIA);
+    if (copia) {
+      const yo = sesion.perfil() && sesion.perfil().codigo;
+      copia.contactos = (copia.contactos || []).map(c => (c.codigo === yo ? c : { ...c, salud: undefined, claveSalud: undefined }));
+      await almacen.guardar(CLAVE_COPIA, copia);
+      await llenar(copia);
+    } else { enMemoria.clear(); }
+  }
+  dispatchEvent(new CustomEvent('contactos-cambio'));
+  cargar({ forzar: true });
+}
+
+// Corrige (o registra) el contacto de una persona. La coordinación, de cualquiera; los demás, el suyo.
+export async function guardar(codigo, datos, salud, versionBase) {
+  if (!listoParaUsar()) throw new ErrorApi('Cierre sesión y vuelva a ingresar para activar la protección de los datos.', 'LLAVE');
+  const op = await cifrarContacto(codigo, datos, salud);
+  const r = await llamar('guardarContactoDe', { ...op, versionBase });
+  await cargar({ forzar: true });
+  return r;
+}
+
+// ---------- Mantener los accesos al día ----------
+// Cuando cambian los roles (nuevo coordinador o brigadista), el piso de un brigadista o alguien estrena su
+// llave personal, alguien de la coordinación agrega o quita envoltorios. Nunca toca los datos.
+
+let reconciliando = false;
+let ultimaReconciliacion = 0;
+const CLAVE_REVISION = 'accesosContactosRevisados';
+const SEIS_HORAS = 6 * 3600000;
+let revision = { firma: null, cuando: 0 };
+const firmaAccesos = () => activos()
+  .map(p => [p.codigo, (p.roles || []).slice().sort().join('+'), p.pisoBrigada || '', p.pub || ''].join(':'))
+  .sort().join('|');
+
+export async function reconciliar({ forzar = false } = {}) {
+  const priv = sesion.llavePriv();
+  if (!esCoordinacion() || !priv || reconciliando || !navigator.onLine) return 0;
+  if (!forzar && Date.now() - ultimaReconciliacion < 60000) return 0;
+  const firma = firmaAccesos();
+  if (!forzar && firma === revision.firma && Date.now() - revision.cuando < SEIS_HORAS) return 0;
+  reconciliando = true;
+  ultimaReconciliacion = Date.now();
+  try {
+    // Si el servidor aún no tiene contactos (versión anterior), esta llamada falla y no se envía nada.
+    const r = await llamar('contactos');
+    const porCodigo = new Map(activos().map(p => [p.codigo, p]));
+    const diferencia = async (necesarios, huellas, llave, contexto) => {
+      const agregar = {}, quitar = [];
+      for (const c of necesarios) {
+        const p = porCodigo.get(c);
+        if (p && p.pub && huellas[c] !== await cripto.huella(p.pub)) agregar[c] = await cripto.envolverPara(p.pub, llave, contexto);
+      }
+      for (const c of Object.keys(huellas)) if (!necesarios.includes(c)) quitar.push(c);
+      return { agregar, quitar };
+    };
+    const cambios = [];
+    for (const reg of r.contactos || []) {
+      if (!reg.clave) continue;   // esta sesión no puede abrirlo: otra persona de la coordinación lo hará
+      let d, s = null;
+      try {
+        d = await cripto.desenvolver(priv, reg.clave, ctxDatos(reg.codigo));
+        if (reg.tieneSalud && reg.claveSalud) s = await cripto.desenvolver(priv, reg.claveSalud, ctxSalud(reg.codigo));
+      } catch { continue; }
+      const necesarios = destinatarios(reg.codigo).map(p => p.codigo);
+      const a = await diferencia(necesarios, reg.huellas || {}, d, ctxDatos(reg.codigo));
+      const b = s ? await diferencia(necesarios, reg.huellasSalud || {}, s, ctxSalud(reg.codigo)) : { agregar: {}, quitar: [] };
+      if (Object.keys(a.agregar).length || a.quitar.length || Object.keys(b.agregar).length || b.quitar.length) {
+        cambios.push({ codigo: reg.codigo, agregar: a.agregar, quitar: a.quitar, agregarSalud: b.agregar, quitarSalud: b.quitar });
+      }
+    }
+    if (cambios.length) await llamar('reenvolver', { registro: 'contactos', cambios });
+    revision = { firma, cuando: Date.now() };
+    await almacen.guardar(CLAVE_REVISION, revision);
+    return cambios.length;
+  } catch (e) {
+    console.warn('No se pudieron actualizar los accesos a los contactos:', e && e.message);
+    return 0;
+  } finally {
+    reconciliando = false;
+  }
+}
+
+export async function iniciar() {
+  revision = (await almacen.leer(CLAVE_REVISION)) || { firma: null, cuando: 0 };
+  addEventListener('sesion-cerrada', () => {
+    revision = { firma: null, cuando: 0 };
+    enMemoria.clear(); conContacto = new Set(); faltan = []; ultimaCarga = 0; pisosConsultados.clear();
+  });
+  addEventListener('sesion-iniciada', () => { cargar({ forzar: true }); setTimeout(() => reconciliar(), 4000); });
+  addEventListener('online', () => { cargar(); reconciliar(); });
+  // Con una emergencia activa, el brigadista recibe la EPS y la ARL de su piso; al terminar se quitan.
+  addEventListener('emergencia-activada', () => cargar({ forzar: true }));
+  addEventListener('emergencia-terminada', () => olvidarEmergencia());
+  sesion.alRefrescar(() => setTimeout(() => reconciliar(), 2500));
+  if (sesion.activa()) cargar();
 }
 
 // Lee el archivo del área de personal (.xlsx o .csv). Del Excel usa la primera hoja que tenga la columna «Correo».

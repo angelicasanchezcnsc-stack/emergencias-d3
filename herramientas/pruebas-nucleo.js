@@ -28,6 +28,7 @@ const prueba = (grupo, nombre, fn) => pruebas.push({ grupo, nombre, fn });
 let N;   // { crearNucleo, presenciaDe, sha256, diaISO } evaluados desde Nucleo.gs
 let nav; // módulo web/js/presencia.js
 let arch; // módulo web/js/archivo-contactos.js
+let vcon; // módulo web/js/vistas/ventana-contacto.js
 
 function crearEntorno({ conFiltrado = false } = {}) {
   const tablas = {};
@@ -2109,6 +2110,18 @@ prueba(CA, 'Lo que se cifra: contacto y, aparte, EPS y ARL; una fila sin datos n
   igual([arch.tieneDatos(r[0]), arch.tieneDatos(r[1]), arch.saludDe(r[1])], [true, false, null]);
 });
 
+prueba(CA, 'Mostrar: un enlace para llamar por cada teléfono, con el texto escapado', () => {
+  igual(vcon.enlaceTel('300 000 0001 / 6010000002'), '<a href="tel:3000000001">300 000 0001</a> · <a href="tel:6010000002">6010000002</a>');
+  igual(vcon.enlaceTel('<b>1" x'), '<a href="tel:1">&lt;b&gt;1&quot; x</a>');
+  afirmar(/—/.test(vcon.enlaceTel('')), 'Sin teléfono muestra una raya');
+});
+prueba(CA, 'Mostrar: fecha de carga y quién lo corrigió', () => {
+  igual(vcon.textoOrigen({ fuente: 'carga', cargado: '2026-10-20T14:00:00.000Z', actualizado: '2026-10-20T14:00:00.000Z' }), 'Cargado el 20 de octubre de 2026');
+  igual(vcon.textoOrigen({ fuente: 'coordinacion', cargado: '2026-10-20T14:00:00.000Z', actualizado: '2026-10-22T14:00:00.000Z' }),
+    'Cargado el 20 de octubre de 2026 · corregido por la coordinación el 22 de octubre de 2026');
+  igual(vcon.textoOrigen({ fuente: 'propio', cargado: '', actualizado: '2026-10-22T14:00:00.000Z' }), 'Corregido por la persona el 22 de octubre de 2026');
+});
+
 // ---------- Ejecución y resultado ----------
 
 const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -2120,6 +2133,7 @@ async function principal() {
     N = new Function(codigo + '\nreturn { crearNucleo: crearNucleo, presenciaDe: presenciaDe, diaISO: diaISO, sha256: sha256 };')();
     nav = await import('../web/js/presencia.js');
     arch = await import('../web/js/archivo-contactos.js');
+    vcon = await import('../web/js/vistas/ventana-contacto.js');
   } catch (e) {
     salida.innerHTML = `<div id="resumen" class="mal">No se pudo cargar el núcleo: ${esc(e.message)}</div>`;
     return;
@@ -2136,7 +2150,7 @@ async function principal() {
   const fallan = pruebas.length - ok;
   const texto = fallan === 0
     ? `TOTAL: ${pruebas.length} pruebas · ${ok} OK · 0 FALLAN · 100 % OK`
-    : `TOTAL: ${pruebas.length} pruebas · ${ok} OK · ${fallan} FALLAN · ${Math.round(ok * 100 / pruebas.length)} % OK`;
+    : `TOTAL: ${pruebas.length} pruebas · ${ok} OK · ${fallan} FALLAN · ${Math.floor(ok * 100 / pruebas.length)} % OK`;
   salida.innerHTML = `<div id="resumen" class="${fallan === 0 ? 'ok' : 'mal'}">${texto}</div>
     <table><thead><tr><th>Prueba</th><th>Resultado</th><th>Detalle</th></tr></thead><tbody>${filas.join('')}</tbody></table>
     <p id="resumen-final">${texto}</p>`;

@@ -4,9 +4,11 @@
 import { CONFIG } from '../../config.js';
 import * as sesion from '../sesion.js';
 import * as carac from '../caracterizacion.js';
+import * as contacto from '../contacto-emergencia.js';
 import { esc, icono, aviso, insignia, modal, confirmar, barraBusqueda, enlazarBusqueda, coincide } from '../ui.js';
 import { fechaLegible, fechaBogota } from '../tiempo.js';
 import { formularioCaracterizacion } from './form-caracterizacion.js';
+import { fichaContacto, ventanaContacto, textoOrigen, enlaceTel } from './ventana-contacto.js';
 
 const { CATEGORIAS, APOYOS, etiqueta } = carac;
 const tel = t => String(t || '').replace(/[^\d+]/g, '');
@@ -149,10 +151,59 @@ async function abrirAsistida(vista, pre = {}) {
 }
 const candidatasEdicion = codigo => (sesion.base().personas || []).filter(p => p.codigo === codigo);
 
+// ---------- Contacto de emergencia (registro del área de personal, v0.12) ----------
+
+// Celda de la tabla: el familiar y su teléfono, o el estado si no se puede mostrar.
+function celdaContacto(codigo, r) {
+  const c = contacto.contactoDe(codigo);
+  if (c && c.abierto) {
+    const f = c.datos.familiar || {};
+    return `${esc([f.nombre, f.parentesco && '(' + f.parentesco + ')'].filter(Boolean).join(' ') || 'Familiar')} · ${enlaceTel(f.telefono)}
+      <div class="sutil">${esc(textoOrigen(c))}</div>`;
+  }
+  if (contacto.hayContacto(codigo)) return insignia('Cargado; se abre al actualizar los accesos', 'ambar');
+  // Sin contacto del área de personal, el que la persona escribió en su caracterización (si lo hay).
+  const d = r && r.estado === 'ok' ? r.datos.contacto : null;
+  return (d && d.telefono ? `${esc(d.nombre)} · ${enlaceTel(d.telefono)}<div class="sutil">De su caracterización</div>` : '') + insignia('Falta contacto', 'gris');
+}
+
+// Ver el contacto y, si se quiere, corregirlo; o registrarlo si falta. Devuelve true si se guardó algo.
+async function abrirContacto(p) {
+  const c = contacto.contactoDe(p.codigo);
+  const nombre = sesion.nombreDe(p.codigo);
+  if (c && c.abierto) {
+    const corregir = await modal({
+      titulo: 'Contacto de emergencia de ' + nombre, ancho: 'ancho',
+      cuerpo: `<p class="sutil">Piso ${p.piso} · Puesto ${p.puesto}${textoOrigen(c) ? ' · ' + esc(textoOrigen(c)) : ''}</p>
+        <div class="nota nota-adv">${icono('candado')}<span>Úselo solo para la atención de emergencias; no lo copie ni lo comparta.</span></div>
+        ${fichaContacto(c)}`,
+      acciones: [{ texto: 'Cerrar', valor: false, clase: 'btn-fantasma' }, { texto: 'Corregir', valor: true, clase: 'btn-oscuro' }]
+    });
+    if (!corregir) return false;
+  } else if (contacto.hayContacto(p.codigo)) {
+    aviso('Este contacto aún no se puede abrir con su llave. Se habilita cuando alguien de la coordinación que ya lo tenga ingrese a la app.', 'info');
+    return false;
+  }
+  const r = await ventanaContacto({
+    titulo: (c ? 'Corregir el contacto de ' : 'Registrar el contacto de ') + nombre, contacto: c,
+    ayuda: 'Corrija lo que avisó la persona. Si se vuelve a cargar el archivo del área de personal, este contacto se reemplaza.'
+  });
+  if (!r) return false;
+  try {
+    await contacto.guardar(p.codigo, r.datos, r.salud, c ? c.version : 0);
+    aviso('Contacto guardado y cifrado.', 'exito');
+    return true;
+  } catch (e) {
+    aviso(e.codigo === 'RED' ? 'Sin conexión: el contacto solo se puede guardar con internet.' : e.message, 'error');
+    return false;
+  }
+}
+
 export async function vistaCaracterizaciones(vista) {
   vista.innerHTML = '<div class="titulo-vista"><h2>Caracterizaciones</h2></div><p class="sutil">Abriendo registros…</p>';
   let registros;
-  try { registros = await carac.leerTodas(); }
+  // Los contactos de emergencia se traen a la vez; si fallan, la pantalla funciona igual con la copia del celular.
+  try { [registros] = await Promise.all([carac.leerTodas(), contacto.cargar({ forzar: true }).catch(() => {})]); }
   catch (e) {
     vista.innerHTML = `<div class="titulo-vista"><h2>Caracterizaciones</h2></div><div class="nota nota-error">${icono('alerta')}<span>${esc(e.codigo === 'RED' ? 'Sin conexión: esta información solo se abre con internet.' : e.message)}</span></div>`;
     return;
@@ -165,13 +216,18 @@ export async function vistaCaracterizaciones(vista) {
   const hechas = lista.filter(x => x.r).length;
   const sinAcceso = lista.filter(x => x.r && x.r.estado !== 'ok').length;
   const requieren = lista.filter(x => x.r && x.r.estado === 'ok' && x.r.apoyo.apoyo !== 'ninguno').length;
+  const conContacto = lista.filter(x => contacto.hayContacto(x.p.codigo)).length;
+  const pasaFiltro = ({ p, r }) => filtro === 'todas' ? true
+    : filtro === 'apoyo' ? (r && r.estado === 'ok' && r.apoyo.apoyo !== 'ninguno')
+    : filtro === 'con-contacto' ? contacto.hayContacto(p.codigo)
+    : filtro === 'sin-contacto' ? !contacto.hayContacto(p.codigo)
+    : !r;
   let filtro = 'todas';
   let texto = '';
   let busqueda = null;
 
   const pintar = () => {
-    const visibles = lista.filter(({ p, r }) => (filtro === 'todas' ? true : filtro === 'apoyo' ? (r && r.estado === 'ok' && r.apoyo.apoyo !== 'ninguno') : !r)
-      && coincide(textoPersona(p), texto));
+    const visibles = lista.filter(x => pasaFiltro(x) && coincide(textoPersona(x.p), texto));
     if (busqueda) busqueda.conteo(texto ? `Se muestran ${visibles.length} de ${lista.length} personas.` : '');
     vista.querySelector('#tabla').innerHTML = visibles.length ? `<div class="tabla-caja"><table>
       <thead><tr><th>Persona</th><th>Ubicación</th><th>Estado</th><th>Condición</th><th>Apoyo</th><th>Contacto de emergencia</th><th></th></tr></thead>
@@ -184,14 +240,19 @@ export async function vistaCaracterizaciones(vista) {
           <td>${!r ? insignia('Sin diligenciar', 'gris') : (ok ? insignia('Diligenciada', 'verde') : insignia('Sin acceso aún', 'ambar')) + ' ' + (r.modo === 'fisico' ? insignia('Asistida', 'azul') : insignia('Propia', 'gris'))}</td>
           <td>${ok ? esc(etiqueta(CATEGORIAS, r.datos.categoria)) : '—'}</td>
           <td>${ok ? (r.apoyo.apoyo === 'ninguno' ? 'No necesita' : insignia(etiqueta(APOYOS, r.apoyo.apoyo), 'rojo')) : '—'}</td>
-          <td>${ok && r.datos.contacto.telefono ? `${esc(r.datos.contacto.nombre)} · <a href="tel:${esc(tel(r.datos.contacto.telefono))}">${esc(r.datos.contacto.telefono)}</a>` : '—'}</td>
+          <td>${celdaContacto(p.codigo, r)}</td>
           <td>${ok ? '<button class="btn btn-secundario btn-chico" data-ver>Ver detalle</button>' : ''}
+            ${listo ? `<button class="btn btn-fantasma btn-chico" data-contacto>${contacto.hayContacto(p.codigo) ? 'Contacto' : 'Registrar contacto'}</button>` : ''}
             ${asistida && ok ? '<button class="btn btn-fantasma btn-chico" data-editar>Editar</button>' : ''}
             ${asistida ? '<button class="btn btn-fantasma btn-chico" data-revocar>Revocar (a solicitud de la persona)</button>' : ''}</td></tr>`;
       }).join('')}</tbody></table></div>` : '<p class="sutil">Nadie con este filtro.</p>';
     vista.querySelectorAll('[data-ver]').forEach(b => b.addEventListener('click', () => {
       const codigo = b.closest('[data-codigo]').dataset.codigo;
       detalle(personas.find(p => p.codigo === codigo), porCodigo.get(codigo));
+    }));
+    vista.querySelectorAll('[data-contacto]').forEach(b => b.addEventListener('click', async () => {
+      const codigo = b.closest('[data-codigo]').dataset.codigo;
+      if (await abrirContacto(personas.find(p => p.codigo === codigo))) vistaCaracterizaciones(vista);
     }));
     vista.querySelectorAll('[data-editar]').forEach(b => b.addEventListener('click', () => {
       const codigo = b.closest('[data-codigo]').dataset.codigo;
@@ -222,15 +283,19 @@ export async function vistaCaracterizaciones(vista) {
       <div class="${requieren ? 't-ambar' : ''}"><strong>${requieren}</strong><span>necesitan apoyo para evacuar</span></div>
       <div><strong>${personas.length - hechas}</strong><span>sin diligenciar</span></div>
       <div><strong>${lectoresTexto()}</strong><span>con acceso al detalle</span></div>
+      <div class="${conContacto < personas.length ? 't-ambar' : ''}"><strong>${conContacto}</strong><span>de ${personas.length} con contacto de emergencia</span></div>
     </div>
     ${barraBusqueda({ id: 'buscar-carac', ejemplo: 'Nombre, código o puesto (P2-14)' })}
     <div class="fila" id="filtro" style="margin-bottom:1rem">
       <button class="pestana activa" data-f="todas">Todas</button>
       <button class="pestana" data-f="apoyo">Necesitan apoyo</button>
       <button class="pestana" data-f="pendientes">Sin diligenciar</button>
+      <button class="pestana" data-f="con-contacto">Contacto: cargado</button>
+      <button class="pestana" data-f="sin-contacto">Contacto: falta</button>
     </div>
     <div id="tabla"></div>
-    <p class="ayuda" style="margin-top:1rem">Quien tiene acceso al aplicativo diligencia la suya, con su propia autorización. A quien no tiene acceso se le registra con el formato impreso y firmado, que custodia la coordinación (caracterización asistida). Si una persona se retira del Despacho, su registro se borra.</p>`;
+    <p class="ayuda" style="margin-top:1rem">Quien tiene acceso al aplicativo diligencia la suya, con su propia autorización. A quien no tiene acceso se le registra con el formato impreso y firmado, que custodia la coordinación (caracterización asistida). Si una persona se retira del Despacho, su registro se borra.</p>
+    <p class="ayuda">El contacto de emergencia viene del archivo del área de personal (Administración → Contactos de emergencia) y no depende de la caracterización. Lo ven la coordinación y los brigadistas de su piso; la EPS y la ARL, los brigadistas solo durante una emergencia o un simulacro. Aquí se corrige lo que avise cada persona.</p>`;
 
   vista.querySelectorAll('#filtro button').forEach(b => b.addEventListener('click', () => {
     vista.querySelectorAll('#filtro button').forEach(x => x.classList.toggle('activa', x === b));

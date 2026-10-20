@@ -4,6 +4,8 @@ import { CONFIG } from '../../config.js';
 import * as sesion from '../sesion.js';
 import * as emergencia from '../emergencia.js';
 import * as carac from '../caracterizacion.js';
+import * as contacto from '../contacto-emergencia.js';
+import { fichaContacto } from './ventana-contacto.js';
 import { esc, icono, aviso, insignia, confirmar, modal } from '../ui.js';
 import { horaLegible, horaBogota } from '../tiempo.js';
 import { enSedeDe, ubicacionHoy } from '../presencia.js';
@@ -46,6 +48,16 @@ function chipApoyo(codigo) {
   return t ? `<span class="chip-apoyo">${icono('alerta', 'ic-s')}<span>Necesita apoyo: ${esc(t)}</span></span>` : '';
 }
 
+// Contacto de emergencia de la persona, plegado (lo reciben la coordinación y los brigadistas de su piso; la
+// EPS y la ARL, solo durante la emergencia). Se recuerda cuáles están abiertos para que no se cierren al repintar.
+const contactosAbiertos = new Set();
+function detalleContacto(codigo) {
+  const c = contacto.contactoDe(codigo);
+  if (!c || !c.abierto) return '';
+  return `<details class="detalle-contacto" data-contacto-de="${esc(codigo)}" ${contactosAbiertos.has(codigo) ? 'open' : ''}>
+    <summary>${icono('telefono', 'ic-s')}Contacto de emergencia</summary>${fichaContacto(c)}</details>`;
+}
+
 // Si la marca la puso alguien de la brigada de otro piso, se avisa para que la brigada de este piso lo sepa.
 function textoOtraBrigada(m, pisoVista) {
   if (!m || !m.estado || !m.reportadoPor || !pisoVista) return '';
@@ -56,7 +68,7 @@ function textoOtraBrigada(m, pisoVista) {
 function filaPersona(codigo, m, extra = '', pisoVista = null) {
   const activo = s => (m && m.estado === s ? 'activo' : '');
   return `<div class="fila-marca" data-codigo="${esc(codigo)}">
-    <div class="fila-dia-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong><span class="sutil">${extra}${insigniaMarca(m)}${esc(textoOtraBrigada(m, pisoVista))}</span>${chipApoyo(codigo)}</div>
+    <div class="fila-dia-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong><span class="sutil">${extra}${insigniaMarca(m)}${esc(textoOtraBrigada(m, pisoVista))}</span>${chipApoyo(codigo)}${detalleContacto(codigo)}</div>
     <div class="marca-btns">
       <button class="btn-estado ${activo('evacuado')} e-evacuado" data-estado="evacuado" title="Evacuado">${icono('ok', 'ic-s')}<span>Evacuado</span></button>
       <button class="btn-estado ${activo('no_ubicado')} e-no" data-estado="no_ubicado" title="No ubicado">${icono('alerta', 'ic-s')}<span>No ubicado</span></button>
@@ -257,6 +269,9 @@ export function vistaEmergencia(vista) {
     const otros = q ? (sesion.base().personas || []).filter(p => p.estado === 'activo' && !fila.miembros.some(x => x.codigo === p.codigo) && normalizar(sesion.nombreDe(p.codigo)).includes(q)) : [];
     const grupo = (titulo, lista, extra) => lista.length ? `<h4>${titulo}</h4>${lista.map(x => filaPersona(x.codigo, x.marca, extra, fila.piso)).join('')}` : '';
 
+    // Un brigadista tiene los contactos de su piso; los de otro piso los pide a propósito (queda en la bitácora).
+    const pedirOtroPiso = reporta && yo.roles.includes('brigadista') && !contacto.esCoordinacion() &&
+      fila.piso !== yo.pisoBrigada && !contacto.pisosConsultados.has(fila.piso);
     const hayMapa = vistaReporte === 'mapa';
     const cuerpoLista = `<input id="buscar" type="search" aria-label="Buscar por nombre en este piso o en todo el Despacho" placeholder="Buscar por nombre en este piso o en todo el Despacho…" value="${esc(busqueda)}" autocomplete="off" style="margin-bottom:.5rem">
         ${grupo('Previstas hoy en este piso', delPiso.filter(x => x.grupo === 'en'), '')}
@@ -278,6 +293,8 @@ export function vistaEmergencia(vista) {
           <div><h3>Reporte del piso</h3><p class="sutil">Marque a cada persona o, si no hay tiempo, reporte por conteo</p></div></div>
         <div class="fila" id="pisos" style="margin-bottom:.75rem">${r.filas.map(f =>
           `<button class="pestana ${f.piso === fila.piso ? 'activa' : ''}" data-p="${f.piso}">Piso ${f.piso}${f.piso === yo.pisoBrigada ? ' · su brigada' : ''} (${f.esperados})</button>`).join('')}</div>
+        ${pedirOtroPiso ? `<div class="nota nota-info" style="margin-bottom:.75rem">${icono('telefono')}<span>Los contactos de emergencia del piso ${fila.piso} no están en su celular. Si los necesita, pídalos: queda registrado que usted los consultó.
+          <button class="btn btn-secundario btn-chico" id="ver-otro-piso" style="margin-top:.4rem">Ver contactos del piso ${fila.piso}</button></span></div>` : ''}
         ${cuerpoReporte}
         <details class="conteo" id="conteo" ${fila.conteo ? 'open' : ''}>
           <summary>Reportar el piso ${fila.piso} por conteo (sin nombres)</summary>
@@ -331,7 +348,7 @@ export function vistaEmergencia(vista) {
           const pre = textoApoyo(codigo);
           return `<div class="contacto"><div class="contacto-txt"><strong>${esc(sesion.nombreDe(codigo))}</strong>
             <span class="sutil">${f ? 'Piso ' + f.piso + ' · ' : ''}${insigniaMarca(m)}${m && m.asistencia ? ' ' + insignia('Asistencia por discapacidad', 'azul') : ''}</span>
-            ${pre ? `<span class="chip-apoyo">${icono('alerta', 'ic-s')}<span>${esc(pre)}</span></span>` : ''}</div></div>`;
+            ${pre ? `<span class="chip-apoyo">${icono('alerta', 'ic-s')}<span>${esc(pre)}</span></span>` : ''}${detalleContacto(codigo)}</div></div>`;
         }).join('')}
       </section>` : ''}
 
@@ -375,6 +392,16 @@ export function vistaEmergencia(vista) {
       buscar._t = setTimeout(() => { pintar(); const nuevo = vista.querySelector('#buscar'); nuevo.focus(); nuevo.setSelectionRange(nuevo.value.length, nuevo.value.length); }, 250);
     });
     enlazarFilas(vista, () => marcas);
+    vista.querySelector('#ver-otro-piso')?.addEventListener('click', async ev => {
+      ev.currentTarget.disabled = true;
+      try {
+        const n = await contacto.verOtroPiso(fila.piso);
+        aviso(n ? `Contactos del piso ${fila.piso} disponibles mientras dure la emergencia.` : `No hay contactos cargados del piso ${fila.piso}.`, n ? 'exito' : 'info');
+      } catch (e) {
+        aviso(e.codigo === 'RED' ? 'Sin conexión: los contactos de otro piso solo se pueden pedir con internet.' : e.message, 'error');
+        pintar();
+      }
+    });
     vista.querySelector('#vista-reporte')?.addEventListener('click', () => {
       vistaReporte = vistaReporte === 'mapa' ? 'lista' : 'mapa';
       guardarVistaReporte(vistaReporte);
@@ -450,10 +477,18 @@ export function vistaEmergencia(vista) {
   const alCambiar = () => { if (location.hash.startsWith('#/emergencia')) pintar(); };
   const alTerminar = ev => { terminada = ev.detail; };
   const alSalirCampo = () => { if (pendientePintar) setTimeout(pintar, 0); };
+  // Los contactos abiertos siguen abiertos al repintar (el evento «toggle» no sube: se escucha en captura).
+  const alPlegar = ev => {
+    const d = ev.target;
+    if (!d.matches || !d.matches('details[data-contacto-de]')) return;
+    if (d.open) contactosAbiertos.add(d.dataset.contactoDe); else contactosAbiertos.delete(d.dataset.contactoDe);
+  };
   addEventListener('emergencia-cambio', alCambiar);
   addEventListener('apoyos-cambio', alCambiar);
+  addEventListener('contactos-cambio', alCambiar);
   addEventListener('emergencia-terminada', alTerminar);
   vista.addEventListener('focusout', alSalirCampo);
+  vista.addEventListener('toggle', alPlegar, true);
   const reloj = setInterval(() => {
     const a = emergencia.actual();
     vista.querySelectorAll('[data-transcurrido]').forEach(el => { if (a) el.textContent = emergencia.transcurrido(a.emergencia.inicio); });
@@ -461,8 +496,11 @@ export function vistaEmergencia(vista) {
   vista.addEventListener('vista-salida', () => {
     removeEventListener('emergencia-cambio', alCambiar);
     removeEventListener('apoyos-cambio', alCambiar);
+    removeEventListener('contactos-cambio', alCambiar);
     removeEventListener('emergencia-terminada', alTerminar);
     vista.removeEventListener('focusout', alSalirCampo);
+    vista.removeEventListener('toggle', alPlegar, true);
+    contactosAbiertos.clear();
     clearInterval(reloj);
   }, { once: true });
   pintar();

@@ -2,9 +2,25 @@
 // con su autorización informada. Nadie más (ni el administrador) la completa por ella.
 import * as sesion from '../sesion.js';
 import * as carac from '../caracterizacion.js';
+import * as contacto from '../contacto-emergencia.js';
 import { esc, icono, aviso, confirmar } from '../ui.js';
 import { fechaLegible, fechaBogota } from '../tiempo.js';
 import { formularioCaracterizacion } from './form-caracterizacion.js';
+import { fichaContacto, ventanaContacto, textoOrigen } from './ventana-contacto.js';
+
+// Mi contacto de emergencia (registro del área de personal, v0.12): aparte de la caracterización y sin
+// depender de la autorización. La persona lo ve y lo puede corregir.
+function seccionContacto(c, listo, hay) {
+  return `<section class="tarjeta" id="mi-contacto">
+    <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-rojo">${icono('telefono')}</div><div><h3>Mi contacto de emergencia</h3>
+      <p class="sutil">${c && c.abierto ? esc(textoOrigen(c) || 'Registrado') : 'Lo carga la coordinación desde el registro del área de personal'}</p></div></div>
+    ${c && c.abierto ? fichaContacto(c)
+      : hay ? `<p class="sutil">Su contacto está cargado, pero aún no se puede abrir con su llave. Se habilita cuando alguien de la coordinación ingrese a la app.</p>`
+      : '<p class="sutil">Aún no hay un contacto de emergencia cargado para usted.</p>'}
+    <p class="ayuda">Lo ven la coordinación y los brigadistas de su piso (los de otro piso solo si lo piden durante una emergencia, y queda registrado). La EPS y la ARL, los brigadistas solo durante una emergencia o un simulacro. Va cifrado.</p>
+    ${listo && (!hay || (c && c.abierto)) ? `<button class="btn btn-secundario" type="button" id="corregir-contacto">${c ? 'Corregir mi contacto' : 'Registrar mi contacto'}</button>` : ''}
+  </section>`;
+}
 
 const parrafos = texto => String(texto || '').split(/\n\n+/)
   .map(p => `<p>${esc(p).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')}</p>`).join('');
@@ -26,8 +42,10 @@ export async function vistaCaracterizacion(vista) {
   const listo = carac.listoParaUsar();
   const [consent, mio] = await Promise.all([
     carac.consentimientoActual(),
-    listo ? carac.leerMio().catch(() => ({ ilegible: true, error: true })) : Promise.resolve(null)
+    listo ? carac.leerMio().catch(() => ({ ilegible: true, error: true })) : Promise.resolve(null),
+    contacto.cargar({ forzar: true }).catch(() => {})
   ]);
+  const miContacto = contacto.contactoDe(yo.codigo);
   const existe = !!mio;
   const ilegible = !!(mio && mio.ilegible);
   const d = (mio && mio.datos) || null;
@@ -49,6 +67,8 @@ export async function vistaCaracterizacion(vista) {
     ${ilegible ? `<div class="nota nota-adv">${icono('alerta')}<span>${mio.error ? 'No se pudo abrir su registro.' : 'Su registro guardado no se puede abrir con su llave actual (por ejemplo, si le restablecieron la contraseña).'} Se vuelve a habilitar cuando alguien de la coordinación ingrese, o puede diligenciarlo de nuevo y reemplazar el anterior.</span></div>` : ''}
     ${existe && !ilegible ? `<div class="nota nota-exito">${icono('ok')}<span>Su caracterización está guardada. Autorizó el ${esc(fechaLegible(fechaBogota(new Date(fechaAut))))} (texto ${esc(aceptada || '—')}). Puede cambiarla o borrarla cuando quiera.</span></div>` : ''}
     ${versionCambio ? `<div class="nota nota-info">${icono('info')}<span>El texto de la autorización cambió (${esc(aceptada)} → ${esc(consent.version)}). Léalo y acéptelo de nuevo al guardar.</span></div>` : ''}
+
+    ${seccionContacto(miContacto, listo, contacto.hayContacto(yo.codigo))}
 
     <section class="tarjeta">
       <div class="tarjeta-cabeza"><div class="tarjeta-icono tono-azul">${icono('escudo')}</div><div><h3>Para qué sirve</h3><p class="sutil">En una evacuación, saber qué apoyo necesita cada persona ahorra tiempo</p></div></div>
@@ -78,6 +98,19 @@ ${formu.html}
     </form>
 
     ${seccionProtocolo(protocolo)}`;
+
+  vista.querySelector('#corregir-contacto')?.addEventListener('click', async () => {
+    const r = await ventanaContacto({
+      titulo: miContacto ? 'Corregir mi contacto de emergencia' : 'Registrar mi contacto de emergencia', contacto: miContacto,
+      ayuda: 'Si la coordinación vuelve a cargar el archivo del área de personal, este contacto se reemplaza: avísele también a ella del cambio.'
+    });
+    if (!r) return;
+    try {
+      await contacto.guardar(yo.codigo, r.datos, r.salud, miContacto ? miContacto.version : 0);
+      aviso('Su contacto de emergencia quedó guardado y cifrado.', 'exito');
+      vistaCaracterizacion(vista);
+    } catch (e) { aviso(e.codigo === 'RED' ? 'Sin conexión: el contacto solo se puede guardar con internet.' : e.message, 'error'); }
+  });
 
   const f = vista.querySelector('#f-carac');
   formu.enlazar(f);

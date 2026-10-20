@@ -166,7 +166,7 @@ export function panelContactos(panel, abrir) {
     if (!lista.length) { aviso(`Se agregaron ${agregadas} persona(s). No había contactos para cargar.`, 'exito'); return abrir('contactos'); }
     const capa = espera('Cifrando y enviando los contactos…');
     try {
-      const n = await contacto.cargar(lista, capa.progreso);
+      const n = await contacto.cargarLote(lista, capa.progreso);
       capa.cerrar();
       aviso(`Se cargaron ${n} contacto(s)${agregadas ? ` y se agregaron ${agregadas} persona(s)` : ''}.`, 'exito');
       const sinLlave = contacto.destinatarios('').filter(p => !p.pub).length;
