@@ -1230,14 +1230,15 @@ const cuantas = lista => lista.reduce((o, t) => { o[t] = (o[t] || 0) + 1; return
 
 prueba(V, 'Las acciones que solo leen no esperan el candado; las que escriben sí', () => {
   const e = escenario();
-  ['ping', 'base', 'hoy', 'pulso', 'emergencia', 'bajarArchivo', 'historial', 'novedades', 'caracterizaciones', 'apoyos', 'miCaracterizacion']
+  ['ping', 'base', 'hoy', 'pulso', 'emergencia', 'bajarArchivo', 'historial', 'novedades', 'caracterizaciones', 'apoyos', 'miCaracterizacion', 'contactos']
     .forEach(a => igual(e.usaBloqueo(a), false, a));
-  ['ingresar', 'guardarRoles', 'guardarNovedad', 'marcarEmergencia', 'activarEmergencia', 'cerrarEmergencia', 'reenvolver', 'subirArchivo', 'cambiarClave']
+  ['ingresar', 'guardarRoles', 'guardarNovedad', 'marcarEmergencia', 'activarEmergencia', 'cerrarEmergencia', 'reenvolver', 'subirArchivo', 'cambiarClave',
+    'cargarContactos', 'guardarContactoDe', 'contactosOtroPiso']
     .forEach(a => igual(e.usaBloqueo(a), true, a));
 });
 prueba(V, 'Ninguna acción sin candado escribe en las hojas', () => {
   const e = escenario();
-  ['ping', 'base', 'hoy', 'pulso', 'emergencia', 'historial', 'novedades', 'caracterizaciones', 'apoyos', 'miCaracterizacion'].forEach(a => {
+  ['ping', 'base', 'hoy', 'pulso', 'emergencia', 'historial', 'novedades', 'caracterizaciones', 'apoyos', 'miCaracterizacion', 'contactos'].forEach(a => {
     e.reiniciarEscrituras();
     e.llamar(a, {}, e.token);
     igual(e.escrituras(), [], a);
@@ -1666,6 +1667,347 @@ prueba(P, 'inicializar calcula el estado de los puestos y deja sin posición los
   }));
   exito(e.llamar('inicializar', { codigoInstalacion: 'CODIGO01', personas: items, puestos: [{ piso: 2, puesto: 1, estado: 'vacante' }, { piso: 2, puesto: 2, estado: 'ocupado' }] }));
   igual(e.tabla('Puestos').map(x => [x.puesto, x.estado, x.col, x.fila]), [[1, 'compartido', '', ''], [2, 'vacante', '', '']]);
+});
+
+// ---------- Contactos de emergencia (v0.12, fase 1: servidor) ----------
+
+const CE = 'Contactos de emergencia';
+// Pueden leer contactos: 1 admin, 2 coordinador, 3 suplente, 4 brigadista del piso 2 y 5 brigadista del piso 6.
+const LECTORES_C = ['D3-001', 'D3-002', 'D3-003', 'D3-004', 'D3-005'];
+
+// 6 asesora (piso 4); 7 y 10 sin acceso (pisos 2 y 7); 8 sin acceso (piso 6); 9 inactiva. Todo ficticio.
+function escenarioContactos() {
+  const e = crearEntorno();
+  e.fijarFecha('2026-10-19');
+  e.sembrar('Puestos', PUESTOS);
+  const conLlave = (n, piso, puesto, extra) => persona(n, piso, puesto, { pub: pubDe('D3-' + String(n).padStart(3, '0')), ...extra });
+  e.sembrar('Personas', [
+    conLlave(1, 2, 1, { roles: 'admin' }),
+    conLlave(2, 2, 2, { roles: 'coordinador' }),
+    conLlave(3, 4, 1, { roles: 'suplente' }),
+    conLlave(4, 2, 3, { roles: 'brigadista', pisoBrigada: 2 }),
+    conLlave(5, 6, 1, { roles: 'brigadista', pisoBrigada: 6 }),
+    conLlave(6, 4, 2, { roles: 'asesor' }),
+    persona(7, 2, 4),
+    persona(8, 6, 2),
+    persona(9, 7, 1, { estado: 'inactivo' }),
+    persona(10, 7, 2)
+  ]);
+  e.t = {};
+  ['D3-001', 'D3-002', 'D3-003', 'D3-004', 'D3-005', 'D3-006'].forEach(c => { e.t[c] = e.entrar(c); });
+  e.token = e.t['D3-001'];
+  e.reiniciarEscrituras();
+  return e;
+}
+const contacto = (codigo, extra = {}) => ({
+  codigo, datos: 'cif-datos-' + codigo, claves: sobres(LECTORES_C), salud: 'cif-salud-' + codigo, clavesSalud: sobres(LECTORES_C), ...extra
+});
+const cargarC = (e, quien, ops) => e.llamar('cargarContactos', { ops }, e.t[quien]);
+const corregirC = (e, quien, datos) => e.llamar('guardarContactoDe', datos, e.t[quien]);
+const verC = (e, quien, datos = {}) => exito(e.llamar('contactos', datos, e.t[quien]));
+const codigosC = lista => lista.map(x => x.codigo).sort();
+const filaC = (e, codigo) => e.tabla('Contactos').find(x => x.codigo === codigo);
+const bitacoraC = (e, accion) => e.tabla('Bitacora').filter(b => b.accion === accion).map(b => [b.codigo, b.detalle]);
+
+prueba(CE, 'Administrador, coordinador y suplente cargan contactos por lote', () => {
+  ['D3-001', 'D3-002', 'D3-003'].forEach(quien => {
+    const e = escenarioContactos();
+    const d = exito(cargarC(e, quien, ['D3-007', 'D3-008', 'D3-010'].map(c => contacto(c))), quien);
+    igual(d.n, 3);
+    igual(d.versiones, { 'D3-007': 1, 'D3-008': 1, 'D3-010': 1 });
+    const f = filaC(e, 'D3-008');
+    igual([f.datos, f.salud, f.fuente, f.por], ['cif-datos-D3-008', 'cif-salud-D3-008', 'carga', quien]);
+    igual(f.cargado, f.actualizado);
+    igual(Object.keys(JSON.parse(f.claves)).sort(), LECTORES_C);
+    igual(bitacoraC(e, 'contactos-carga'), [[quien, '3 registro(s)']]);
+  });
+});
+prueba(CE, 'La bitácora no guarda datos personales ni cifrados de los contactos', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-002', [contacto('D3-007')]));
+  exito(corregirC(e, 'D3-002', contacto('D3-007', { datos: 'cif-otro' })));
+  afirmar(!/cif-/.test(JSON.stringify(e.tabla('Bitacora'))), 'La bitácora tiene contenido de los contactos');
+});
+prueba(CE, 'Brigadistas y asesora no pueden cargar ni corregir el contacto de otra persona (PERMISO)', () => {
+  const e = escenarioContactos();
+  rechazo(cargarC(e, 'D3-004', [contacto('D3-007')]), 'PERMISO');
+  rechazo(cargarC(e, 'D3-006', [contacto('D3-007', { claves: sobres([...LECTORES_C, 'D3-006']) })]), 'PERMISO');
+  rechazo(corregirC(e, 'D3-004', contacto('D3-007')), 'PERMISO');
+  rechazo(corregirC(e, 'D3-006', contacto('D3-007')), 'PERMISO');
+  igual(e.tabla('Contactos'), []);
+});
+prueba(CE, 'Lote vacío, sin lista o de más de 500 contactos: se rechaza', () => {
+  const e = escenarioContactos();
+  rechazo(cargarC(e, 'D3-001', []), 'DATOS');
+  rechazo(e.llamar('cargarContactos', {}, e.token), 'DATOS');
+  rechazo(cargarC(e, 'D3-001', Array.from({ length: 501 }, () => contacto('D3-007'))), 'DATOS');
+  igual(e.tabla('Contactos'), []);
+});
+prueba(CE, 'Lote todo o nada: un contacto inválido no deja escribir ninguno y el mensaje nombra el código', () => {
+  const e = escenarioContactos();
+  const r = cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-009')]);   // la 9 está inactiva
+  rechazo(r, 'DATOS'); afirmar(/D3-009/.test(r.error), r.error);
+  rechazo(cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-999')]), 'DATOS', 'persona inexistente');
+  rechazo(cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-008', { datos: '' })]), 'DATOS', 'datos vacíos');
+  rechazo(cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-008', { datos: 'x'.repeat(45001) })]), 'DATOS', 'demasiado largo');
+  rechazo(cargarC(e, 'D3-001', [contacto('D3-007'), null]), 'DATOS', 'operación vacía');
+  igual(e.tabla('Contactos'), []);
+  afirmar(!e.escrituras().includes('Contactos'), 'No debía escribir Contactos');
+});
+prueba(CE, 'Lote con una persona repetida: se rechaza', () => {
+  const e = escenarioContactos();
+  const r = cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-007')]);
+  rechazo(r, 'DATOS'); afirmar(/dos veces/.test(r.error), r.error);
+  igual(e.tabla('Contactos'), []);
+});
+prueba(CE, 'Volver a cargar reemplaza: sube la versión, deja un registro por persona y conserva a quien no vino', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-008')]));
+  e.fijarFecha('2026-10-20');
+  const d = exito(cargarC(e, 'D3-002', [contacto('D3-007', { datos: 'cif-nuevo' })]));
+  igual(d.versiones, { 'D3-007': 2 });
+  igual(e.tabla('Contactos').length, 2);
+  const f = filaC(e, 'D3-007');
+  igual([f.datos, Number(f.version), f.por, f.cargado.slice(0, 10)], ['cif-nuevo', 2, 'D3-002', '2026-10-20']);
+  igual(filaC(e, 'D3-008').datos, 'cif-datos-D3-008');
+});
+prueba(CE, 'Rechaza envoltorios de una llave desactualizada, para quien no puede leer contactos o sin el de quien carga', () => {
+  const e = escenarioContactos();
+  const viejo = { ...envoltorio('D3-002'), h: '0000000000000000' };
+  rechazo(cargarC(e, 'D3-001', [contacto('D3-007', { claves: { ...sobres(LECTORES_C), 'D3-002': viejo } })]), 'DATOS', 'llave vieja');
+  rechazo(cargarC(e, 'D3-001', [contacto('D3-007', { claves: sobres([...LECTORES_C, 'D3-006']) })]), 'DATOS', 'asesora');
+  rechazo(cargarC(e, 'D3-001', [contacto('D3-007', { clavesSalud: sobres([...LECTORES_C, 'D3-006']) })]), 'DATOS', 'asesora en EPS y ARL');
+  rechazo(cargarC(e, 'D3-001', [contacto('D3-007', { claves: sobres(['D3-002', 'D3-003']) })]), 'DATOS', 'sin quien carga');
+  rechazo(cargarC(e, 'D3-001', [contacto('D3-007', { clavesSalud: undefined })]), 'DATOS', 'EPS y ARL sin llaves');
+  rechazo(cargarC(e, 'D3-001', [contacto('D3-007', { claves: { ...sobres(LECTORES_C), 'D3-007': envoltorio('D3-007') } })]), 'DATOS', 'persona sin llave pública');
+  igual(e.tabla('Contactos'), []);
+});
+prueba(CE, 'Un contacto sin EPS ni ARL es válido y no guarda llaves de salud', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007', { salud: undefined, clavesSalud: undefined }), contacto('D3-008', { salud: '', clavesSalud: undefined })]));
+  igual([filaC(e, 'D3-007').salud, filaC(e, 'D3-007').clavesSalud, filaC(e, 'D3-008').salud], ['', '', '']);
+  const c = verC(e, 'D3-002').contactos.find(x => x.codigo === 'D3-007');
+  igual([c.tieneSalud, 'salud' in c], [false, false]);
+});
+prueba(CE, 'Corregir (guardarContactoDe): conserva la fecha de carga, cambia la fuente y controla la versión', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007')]));
+  const cargado = filaC(e, 'D3-007').cargado;
+  e.fijarFecha('2026-10-21');
+  const d = exito(corregirC(e, 'D3-003', contacto('D3-007', { datos: 'cif-corregido', versionBase: 1 })));
+  igual([d.version, d.fuente, d.cargado], [2, 'coordinacion', cargado]);
+  const f = filaC(e, 'D3-007');
+  igual([f.datos, f.por, f.actualizado.slice(0, 10)], ['cif-corregido', 'D3-003', '2026-10-21']);
+  rechazo(corregirC(e, 'D3-002', contacto('D3-007', { versionBase: 1 })), 'CONFLICTO');
+  igual(bitacoraC(e, 'contacto'), [['D3-003', 'D3-007']]);
+  // Sin carga previa: se crea con la fecha de carga vacía.
+  igual(exito(corregirC(e, 'D3-002', contacto('D3-010', { versionBase: 0 }))).cargado, '');
+});
+prueba(CE, 'Cada persona con acceso corrige su propio contacto, pero no el de otra', () => {
+  const e = escenarioContactos();
+  const d = exito(corregirC(e, 'D3-006', contacto('D3-006', { claves: sobres([...LECTORES_C, 'D3-006']), clavesSalud: sobres(['D3-006', 'D3-001']) })));
+  igual(d.fuente, 'propio');
+  exito(corregirC(e, 'D3-004', contacto('D3-004')), 'el brigadista sobre sí mismo');
+  rechazo(corregirC(e, 'D3-006', contacto('D3-007', { claves: sobres([...LECTORES_C, 'D3-006']) })), 'PERMISO');
+  rechazo(corregirC(e, 'D3-006', contacto('D3-006')), 'DATOS', 'sin su propio envoltorio');
+});
+prueba(CE, 'Al retirar a una persona (guardarPadron) se borra su contacto', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-008')]));
+  exito(e.llamar('guardarPadron', { personas: [{ codigo: 'D3-007', estado: 'inactivo' }] }, e.token));
+  igual(codigosC(e.tabla('Contactos')), ['D3-008']);
+});
+prueba(CE, 'Agregar o retirar personas sigue siendo solo del administrador', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007')]));
+  rechazo(e.llamar('guardarPadron', { personas: [{ codigo: 'D3-007', estado: 'inactivo' }] }, e.t['D3-002']), 'PERMISO');
+  rechazo(e.llamar('guardarPadron', { personas: [{ codigo: 'D3-007', estado: 'inactivo' }] }, e.t['D3-003']), 'PERMISO');
+  igual(codigosC(e.tabla('Contactos')), ['D3-007']);
+});
+prueba(CE, 'El brigadista recibe solo los contactos de su piso (y el suyo), sin EPS ni ARL fuera de una emergencia', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', ['D3-002', 'D3-004', 'D3-007', 'D3-008', 'D3-010'].map(c => contacto(c))));
+  const d = verC(e, 'D3-004');
+  igual(codigosC(d.contactos), ['D3-002', 'D3-004', 'D3-007']);
+  igual(d.contactos.filter(x => 'salud' in x).map(x => x.codigo), ['D3-004'], 'Solo su propia EPS y ARL');
+  d.contactos.forEach(x => { igual(x.clave, envoltorio('D3-004')); afirmar(!('huellas' in x), 'No debe recibir huellas'); });
+  afirmar(!('faltan' in d), 'El brigadista no recibe «faltan»');
+  igual(codigosC(verC(e, 'D3-005').contactos), ['D3-008']);
+  // Pedir otro piso en «contactos» no sirve: para eso está «Ver otro piso».
+  igual(codigosC(verC(e, 'D3-004', { piso: 6 }).contactos), ['D3-002', 'D3-004', 'D3-007']);
+});
+prueba(CE, 'El brigadista no recibe un contacto que no trae su envoltorio', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007', { claves: sobres(['D3-001', 'D3-002']) })]));
+  igual(verC(e, 'D3-004').contactos, []);
+});
+prueba(CE, 'Con una emergencia o un simulacro activo el brigadista recibe la EPS y la ARL de su piso; al cerrar, ya no', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007')]));
+  const saludDe = () => verC(e, 'D3-004').contactos.find(x => x.codigo === 'D3-007');
+  afirmar(!('salud' in saludDe()), 'Sin emergencia no debía recibirla');
+  const id = exito(e.llamar('activarEmergencia', { tipo: 'sismo', descripcion: '' }, e.token)).emergencia.id;
+  igual([saludDe().salud, saludDe().claveSalud], ['cif-salud-D3-007', envoltorio('D3-004')]);
+  exito(e.llamar('cerrarEmergencia', { id, observaciones: '' }, e.token));
+  afirmar(!('salud' in saludDe()), 'Después del cierre no debía recibirla');
+  exito(e.llamar('activarEmergencia', { tipo: 'incendio', descripcion: '', simulacro: true }, e.token));
+  igual(saludDe().salud, 'cif-salud-D3-007', 'En simulacro');
+});
+prueba(CE, 'La coordinación recibe todos los contactos, siempre con EPS y ARL, las huellas y «faltan»', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-002'), contacto('D3-007'), contacto('D3-008')]));
+  ['D3-001', 'D3-002', 'D3-003'].forEach(quien => {
+    const d = verC(e, quien);
+    igual(codigosC(d.contactos), ['D3-002', 'D3-007', 'D3-008'], quien);
+    d.contactos.forEach(x => {
+      igual([x.salud, x.claveSalud, x.clave], ['cif-salud-' + x.codigo, envoltorio(quien), envoltorio(quien)], quien);
+      igual(Object.keys(x.huellas).sort(), LECTORES_C);
+      igual([x.fuente, x.por], ['carga', 'D3-001']);
+    });
+    igual(d.faltan, ['D3-001', 'D3-003', 'D3-004', 'D3-005', 'D3-006', 'D3-010'], quien);
+  });
+});
+prueba(CE, 'La coordinación ve los contactos aunque aún no tenga su envoltorio (para actualizar llaves)', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007', { claves: sobres(['D3-001']), clavesSalud: sobres(['D3-001']) })]));
+  const c = verC(e, 'D3-003').contactos[0];
+  igual([c.codigo, c.clave, c.claveSalud, Object.keys(c.huellas)], ['D3-007', null, null, ['D3-001']]);
+});
+prueba(CE, 'Un contacto de una persona inactiva no se entrega a nadie ni cuenta en «faltan»', () => {
+  const e = escenarioContactos();
+  e.sembrar('Contactos', [{ codigo: 'D3-009', version: 1, datos: 'cif', claves: JSON.stringify(sobres(LECTORES_C)), salud: '', clavesSalud: '', fuente: 'carga', cargado: '', actualizado: '', por: 'D3-001' }]);
+  const d = verC(e, 'D3-002');
+  igual(d.contactos, []);
+  afirmar(!d.faltan.includes('D3-009'), 'La persona inactiva no debía estar en «faltan»');
+});
+prueba(CE, 'La asesora solo recibe su propio contacto, con su EPS y ARL', () => {
+  const e = escenarioContactos();
+  const propio = sobres([...LECTORES_C, 'D3-006']);
+  exito(cargarC(e, 'D3-001', [contacto('D3-006', { claves: propio, clavesSalud: propio }), contacto('D3-003'), contacto('D3-007')]));
+  const d = verC(e, 'D3-006');
+  igual(codigosC(d.contactos), ['D3-006']);
+  igual(d.contactos[0].salud, 'cif-salud-D3-006');
+  afirmar(!('faltan' in d), 'La asesora no recibe «faltan»');
+});
+prueba(CE, '«Ver otro piso»: el brigadista recibe ese piso y queda en la bitácora su código y el piso, sin datos', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-008'), contacto('D3-010')]));
+  const d = exito(e.llamar('contactosOtroPiso', { piso: 6 }, e.t['D3-004']));
+  igual([d.piso, codigosC(d.contactos)], [6, ['D3-008']]);
+  afirmar(!('salud' in d.contactos[0]), 'Sin emergencia no lleva EPS ni ARL');
+  igual(bitacoraC(e, 'contactos-otro-piso'), [['D3-004', 'piso 6']]);
+  exito(e.llamar('contactosOtroPiso', { piso: '7' }, e.t['D3-005']));
+  igual(bitacoraC(e, 'contactos-otro-piso'), [['D3-004', 'piso 6'], ['D3-005', 'piso 7']]);
+});
+prueba(CE, '«Ver otro piso» durante una emergencia entrega la EPS y la ARL', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-008')]));
+  exito(e.llamar('activarEmergencia', { tipo: 'sismo', descripcion: '' }, e.token));
+  igual(exito(e.llamar('contactosOtroPiso', { piso: 6 }, e.t['D3-004'])).contactos[0].salud, 'cif-salud-D3-008');
+});
+prueba(CE, '«Ver otro piso»: su propio piso o la coordinación no dejan bitácora; piso inexistente y asesora se rechazan', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-008')]));
+  igual(codigosC(exito(e.llamar('contactosOtroPiso', { piso: 2 }, e.t['D3-004'])).contactos), ['D3-007']);
+  igual(codigosC(exito(e.llamar('contactosOtroPiso', { piso: 6 }, e.t['D3-002'])).contactos), ['D3-008']);
+  igual(bitacoraC(e, 'contactos-otro-piso'), []);
+  rechazo(e.llamar('contactosOtroPiso', { piso: 5 }, e.t['D3-004']), 'DATOS');
+  rechazo(e.llamar('contactosOtroPiso', { piso: 'x' }, e.t['D3-004']), 'DATOS');
+  rechazo(e.llamar('contactosOtroPiso', { piso: 6 }, e.t['D3-006']), 'PERMISO');
+  igual(bitacoraC(e, 'contactos-otro-piso'), []);
+});
+prueba(CE, '«contactos» no toma el candado y no escribe nada, con cualquier rol y con emergencia activa', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-008')]));
+  exito(e.llamar('activarEmergencia', { tipo: 'sismo', descripcion: '' }, e.token));
+  igual(e.usaBloqueo('contactos'), false);
+  ['D3-001', 'D3-002', 'D3-003', 'D3-004', 'D3-005', 'D3-006'].forEach(quien => {
+    const antes = e.snapshot();
+    e.reiniciarEscrituras();
+    verC(e, quien, { piso: 6, idPeticion: 'repetida' });
+    igual(e.escrituras(), [], quien);
+    igual(e.snapshot(), antes, quien);
+  });
+});
+prueba(CE, 'Sin sesión «contactos» responde SESION', () => {
+  const e = escenarioContactos();
+  rechazo(e.llamar('contactos', {}), 'SESION');
+  rechazo(e.llamar('cargarContactos', { ops: [contacto('D3-007')] }), 'SESION');
+});
+prueba(CE, 'reenvolver con registro «contactos» agrega y quita envoltorios; la persona dueña nunca pierde el suyo', () => {
+  const e = escenarioContactos();
+  const propio = sobres(['D3-001', 'D3-006']);
+  exito(cargarC(e, 'D3-001', [contacto('D3-007', { claves: sobres(['D3-001', 'D3-002']), clavesSalud: sobres(['D3-001']) }), contacto('D3-006', { claves: propio, clavesSalud: propio })]));
+  igual(verC(e, 'D3-004').contactos, []);
+  const d = exito(e.llamar('reenvolver', { registro: 'contactos', cambios: [
+    { codigo: 'D3-007', agregar: sobres(['D3-004']), agregarSalud: sobres(['D3-004']), quitar: ['D3-002'] },
+    { codigo: 'D3-006', quitar: ['D3-006'], quitarSalud: ['D3-006'] }
+  ] }, e.t['D3-002']));
+  igual(d.n, 2);
+  igual(Object.keys(JSON.parse(filaC(e, 'D3-007').claves)).sort(), ['D3-001', 'D3-004']);
+  igual(Object.keys(JSON.parse(filaC(e, 'D3-007').clavesSalud)).sort(), ['D3-001', 'D3-004']);
+  igual(Object.keys(JSON.parse(filaC(e, 'D3-006').claves)).sort(), ['D3-001', 'D3-006'], 'La dueña conserva su acceso');
+  igual(filaC(e, 'D3-007').datos, 'cif-datos-D3-007', 'Nunca toca los datos');
+  igual(codigosC(verC(e, 'D3-004').contactos), ['D3-007']);
+  igual(bitacoraC(e, 'accesos-contactos'), [['D3-002', '2 registro(s)']]);
+});
+prueba(CE, 'reenvolver de contactos rechaza destinatarios que no pueden leer contactos y no agrega llaves de salud si no hay EPS ni ARL', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007'), contacto('D3-008', { salud: undefined, clavesSalud: undefined })]));
+  const antes = JSON.stringify(e.tabla('Contactos'));
+  rechazo(e.llamar('reenvolver', { registro: 'contactos', cambios: [{ codigo: 'D3-007', agregar: sobres(['D3-006']) }] }, e.token), 'ERROR');
+  igual(JSON.stringify(e.tabla('Contactos')), antes);
+  exito(e.llamar('reenvolver', { registro: 'contactos', cambios: [{ codigo: 'D3-008', agregarSalud: sobres(['D3-004']) }] }, e.token));
+  igual(filaC(e, 'D3-008').clavesSalud, '');
+  rechazo(e.llamar('reenvolver', { registro: 'contactos', cambios: [] }, e.t['D3-004']), 'PERMISO');
+});
+prueba(CE, 'Compatibilidad v0.11.4: reenvolver sin «registro» sigue trabajando solo sobre las caracterizaciones', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007')]));
+  e.sembrar('Caracterizaciones', [{ codigo: 'D3-007', version: 1, datos: 'c', claves: JSON.stringify(sobres(['D3-001'])), apoyo: 'a',
+    clavesApoyo: JSON.stringify(sobres(['D3-001'])), consentimiento: '{}', actualizado: '' }]);
+  const antes = JSON.stringify(e.tabla('Contactos'));
+  exito(e.llamar('reenvolver', { cambios: [{ codigo: 'D3-007', agregar: sobres(['D3-002']), agregarApoyo: sobres(['D3-004']) }] }, e.token));
+  igual(Object.keys(JSON.parse(e.tabla('Caracterizaciones')[0].claves)).sort(), ['D3-001', 'D3-002']);
+  igual(Object.keys(JSON.parse(e.tabla('Caracterizaciones')[0].clavesApoyo)).sort(), ['D3-001', 'D3-004']);
+  igual(JSON.stringify(e.tabla('Contactos')), antes);
+  igual(bitacoraC(e, 'accesos'), [['D3-001', '1 registro(s)']]);
+});
+prueba(CE, 'Compatibilidad v0.11.4: base trae las mismas claves de siempre y no lee la hoja Contactos', () => {
+  const e = escenarioContactos();
+  exito(cargarC(e, 'D3-001', [contacto('D3-007')]));
+  e.reiniciarLecturas();
+  const b = exito(e.llamar('base', {}, e.t['D3-004']));
+  igual(Object.keys(b).sort(), ['config', 'contenido', 'directorio', 'emergencia', 'hoy', 'novedades', 'perfil', 'personas', 'puestos', 'referencias']);
+  afirmar(!e.lecturas().includes('Contactos'), 'base no debía leer Contactos');
+  afirmar(!/cif-/.test(JSON.stringify(b)), 'base no debía traer contactos');
+});
+prueba(CE, 'Antes de ejecutar «instalar» (sin hoja Contactos): base, contactos, guardarPadron y reenvolver no fallan', () => {
+  const e = escenarioContactos();
+  const guardado = {};
+  // Un adaptador como el de Sheets falla al leer o escribir una hoja que no existe.
+  const falta = t => { if (t === 'Contactos') throw new Error('Falta la hoja "Contactos". Ejecute la función instalar().'); };
+  const dep = {
+    leer: t => { falta(t); return copia(guardado[t] || e.tabla(t)); },
+    escribir: (t, f) => { falta(t); guardado[t] = copia(f); },
+    agregar: (t, f) => { falta(t); guardado[t] = (guardado[t] || e.tabla(t)).concat([copia(f)]); },
+    agregarVarias: (t, f) => { falta(t); guardado[t] = (guardado[t] || e.tabla(t)).concat(copia(f)); },
+    prop: n => (n === 'PIMIENTA' ? 'pimienta-de-prueba' : ''), uuid: () => crypto.randomUUID(), ahora: () => e.ahora(), hoy: () => '2026-10-19', bloqueo: fn => fn()
+  };
+  const n = N.crearNucleo(dep);
+  const ing = n.procesar({ accion: 'ingresar', hashCorreo: 'hc-D3-001', verificador: 'v-D3-001' });
+  afirmar(ing.ok, 'No se pudo ingresar: ' + ing.error);
+  const token = ing.datos.token;
+  const b = n.procesar({ accion: 'base', token });
+  afirmar(b.ok, 'base debía responder: ' + b.error);
+  const c = n.procesar({ accion: 'contactos', token });
+  afirmar(c.ok, 'contactos debía responder: ' + c.error);
+  igual([c.datos.contactos, c.datos.faltan.length], [[], 9]);
+  const r = n.procesar({ accion: 'reenvolver', token, cambios: [] });
+  afirmar(r.ok, 'reenvolver debía responder: ' + r.error);
+  const g = n.procesar({ accion: 'guardarPadron', token, personas: [{ codigo: 'D3-010', estado: 'inactivo' }] });
+  afirmar(g.ok, 'guardarPadron debía responder: ' + g.error);
+  igual(guardado.Personas.find(x => x.codigo === 'D3-010').estado, 'inactivo');
 });
 
 // ---------- Ejecución y resultado ----------

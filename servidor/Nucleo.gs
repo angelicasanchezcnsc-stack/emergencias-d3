@@ -49,7 +49,17 @@ var ESQUEMA = {
   // destinatario, la llave de los datos envuelta con su llave pública. El servidor no puede leer nada.
   // "consentimiento" es un JSON { v, f, modo, por }: versión del texto aceptado, fecha, "propio" (la persona
   // lo aceptó en la app) o "fisico" (formato impreso y firmado, registrado por "por", de la coordinación).
-  Caracterizaciones: ['codigo', 'version', 'datos', 'claves', 'apoyo', 'clavesApoyo', 'consentimiento', 'actualizado']
+  Caracterizaciones: ['codigo', 'version', 'datos', 'claves', 'apoyo', 'clavesApoyo', 'consentimiento', 'actualizado'],
+  // Contacto de emergencia de cada persona (v0.12), cargado por la coordinación desde el archivo del área
+  // de personal. Separado de la caracterización: no lleva datos de salud ni depende del consentimiento.
+  // Dos bloques cifrados en el navegador, cada uno con su propia llave aleatoria:
+  //   "datos": teléfono de la persona y su familiar (nombre, parentesco, teléfono). Lo leen la coordinación,
+  //            los brigadistas de su piso (y de otro piso si lo piden, con bitácora) y la persona.
+  //   "salud": EPS y ARL. La coordinación y la persona siempre; los brigadistas, solo con una emergencia
+  //            o simulacro activo (el servidor no lo entrega fuera de una emergencia).
+  // "fuente": carga | coordinacion | propio. "cargado": fecha de la última carga desde el archivo.
+  // "por": código de quien escribió por última vez.
+  Contactos: ['codigo', 'version', 'datos', 'claves', 'salud', 'clavesSalud', 'fuente', 'cargado', 'actualizado', 'por']
 };
 
 // Acceso = tener al menos un rol. Quien no tiene rol sigue en el padrón (cuenta en las listas de la
@@ -262,6 +272,101 @@ function crearNucleo(dep) {
     var filas = leer('Caracterizaciones');
     var quedan = filas.filter(function (f) { return activos.indexOf(f.codigo) >= 0; });
     if (quedan.length !== filas.length) escribir('Caracterizaciones', quedan);
+  }
+
+  // ---------- Contactos de emergencia ----------
+
+  // Antes de ejecutar "instalar" la hoja Contactos no existe: la app v0.11.4 no la usa y nada debe romperse.
+  function leerContactos() {
+    try { return leer('Contactos'); } catch (e) { return []; }
+  }
+
+  function borrarContactosInactivos(personas) {
+    var activos = personas.filter(activa).map(function (x) { return x.codigo; });
+    var filas = leerContactos();
+    var quedan = filas.filter(function (f) { return activos.indexOf(f.codigo) >= 0; });
+    if (quedan.length !== filas.length) escribir('Contactos', quedan);
+  }
+
+  // Quiénes pueden recibir la llave del contacto de una persona: la coordinación, los brigadistas de
+  // TODOS los pisos (el servidor no puede abrir el registro para dárselo después a otro brigadista) y la
+  // propia persona. Nadie más (por ejemplo, un asesor).
+  function puedeLeerContacto(x) { return tieneAcceso(x) && (puedeEditar(x, ROLES_LECTORES) || tieneRol(x, 'brigadista')); }
+  function lectoresContacto(personas, dueno) {
+    var o = {};
+    personas.forEach(function (x) { if (puedeLeerContacto(x)) o[x.codigo] = true; });
+    o[dueno] = true;
+    return o;
+  }
+
+  // Envoltorios válidos (llave vigente) solo para lectores permitidos, y siempre con el de quien escribe.
+  function envoltoriosContacto(m, pubs, permitidos, quien) {
+    var v = mapaEnvoltorios(m, pubs);
+    if (!v || !v[quien]) return null;
+    return Object.keys(v).every(function (c) { return permitidos[c]; }) ? v : null;
+  }
+
+  // Valida un contacto que llega del navegador. Devuelve { claves, clavesSalud } o un mensaje de error.
+  function validarContacto(op, personas, pubs, quien) {
+    if (!op || typeof op !== 'object') return 'Hay un contacto con un formato no válido.';
+    var dueno = personas.filter(function (x) { return x.codigo === op.codigo && activa(x); })[0];
+    if (!dueno) return 'La persona ' + corto(op.codigo) + ' no existe o ya no está activa.';
+    var permitidos = lectoresContacto(personas, dueno.codigo);
+    if (typeof op.datos !== 'string' || !op.datos || op.datos.length > LIMITE_CELDA) return 'El contacto de ' + dueno.codigo + ' está vacío o es demasiado largo.';
+    var claves = envoltoriosContacto(op.claves, pubs, permitidos, quien);
+    if (!claves) return 'Las llaves del contacto de ' + dueno.codigo + ' no son válidas o están desactualizadas. Recargue e intente de nuevo.';
+    var clavesSalud = null;
+    if (!vacio(op.salud)) {
+      if (typeof op.salud !== 'string' || op.salud.length > LIMITE_CELDA) return 'La EPS y la ARL de ' + dueno.codigo + ' son demasiado largas.';
+      clavesSalud = envoltoriosContacto(op.clavesSalud, pubs, permitidos, quien);
+      if (!clavesSalud) return 'Las llaves de la EPS y la ARL de ' + dueno.codigo + ' no son válidas o están desactualizadas. Recargue e intente de nuevo.';
+    }
+    return { claves: claves, clavesSalud: clavesSalud };
+  }
+
+  // Fila nueva de un contacto (reemplaza la anterior de la persona, si existía).
+  function filaContacto(op, v, actual, fuente, quien, ahora) {
+    return {
+      codigo: op.codigo, version: (actual ? num(actual.version) : 0) + 1,
+      datos: op.datos, claves: JSON.stringify(v.claves),
+      salud: v.clavesSalud ? op.salud : '', clavesSalud: v.clavesSalud ? JSON.stringify(v.clavesSalud) : '',
+      fuente: fuente, cargado: fuente === 'carga' ? ahora : (actual ? texto(actual.cargado) : ''),
+      actualizado: ahora, por: quien
+    };
+  }
+
+  // Lo que recibe "p" de un contacto: solo su propio envoltorio. "conSalud": si se le entrega la EPS y la ARL.
+  function contactoPublico(f, p, conSalud, coordinacion) {
+    var c = json(f.claves, {}), s = json(f.clavesSalud, {});
+    var o = {
+      codigo: f.codigo, version: num(f.version), datos: f.datos, clave: c[p.codigo] || null,
+      tieneSalud: !!texto(f.salud), fuente: texto(f.fuente), cargado: texto(f.cargado), actualizado: texto(f.actualizado)
+    };
+    if (conSalud && texto(f.salud)) { o.salud = f.salud; o.claveSalud = s[p.codigo] || null; }
+    if (coordinacion) { o.huellas = soloHuellas(c); o.huellasSalud = soloHuellas(s); o.por = texto(f.por); }
+    return o;
+  }
+
+  // Contactos que puede recibir "p". Sin "piso": la coordinación, todos; un brigadista, los de su piso de
+  // brigada (piso habitual de cada persona); cualquiera con acceso, además el suyo. Con "piso": solo los de
+  // ese piso (lo usa «Ver otro piso»). Quien no es de la coordinación solo recibe los que traen su envoltorio.
+  // La EPS y la ARL van a la coordinación y a la persona dueña; a los brigadistas, solo con una emergencia
+  // o un simulacro activo. Devuelve también los contactos de las personas activas (para saber a quién le falta).
+  function listarContactos(p, piso) {
+    var coordinacion = puedeEditar(p, ROLES_LECTORES);
+    var pisoBrigada = tieneRol(p, 'brigadista') ? num(p.pisoBrigada) : 0;
+    var emergencia = !coordinacion && !!emergenciaActiva();
+    var pisoDe = {};
+    leer('Personas').filter(activa).forEach(function (x) { pisoDe[x.codigo] = num(x.piso); });
+    var filas = leerContactos().filter(function (f) { return pisoDe[f.codigo] !== undefined; });
+    var salida = [];
+    filas.forEach(function (f) {
+      var propio = f.codigo === p.codigo;
+      var ve = piso ? pisoDe[f.codigo] === piso : coordinacion || propio || (pisoBrigada && pisoDe[f.codigo] === pisoBrigada);
+      if (!ve || (!coordinacion && !json(f.claves, {})[p.codigo])) return;
+      salida.push(contactoPublico(f, p, coordinacion || propio || emergencia, coordinacion));
+    });
+    return { contactos: salida, filas: filas, pisoDe: pisoDe };
   }
 
   function sesionActual(token) {
@@ -1020,20 +1125,28 @@ function crearNucleo(dep) {
 
     // La coordinación actualiza quién puede abrir cada registro (nuevo coordinador, nuevo
     // brigadista, persona que renovó su llave). Solo toca los envoltorios, nunca los datos.
+    // Sin "registro" trabaja sobre las caracterizaciones (como en la v0.11.4); con registro: 'contactos',
+    // sobre los contactos de emergencia, y solo acepta destinatarios que pueden leer contactos.
     reenvolver: function (d, p) {
       if (!puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden hacer esto.');
+      var contactos = d.registro === 'contactos';
+      var pares = contactos ? [['claves', 'agregar', 'quitar'], ['clavesSalud', 'agregarSalud', 'quitarSalud']]
+        : [['claves', 'agregar', 'quitar'], ['clavesApoyo', 'agregarApoyo', 'quitarApoyo']];
       var pubs = llavesPublicas();
-      var filas = leer('Caracterizaciones');
+      var personas = contactos ? leer('Personas') : null;
+      var filas = contactos ? leerContactos() : leer('Caracterizaciones');
       var n = 0;
       (d.cambios || []).forEach(function (c) {
         var f = filas.filter(function (x) { return x.codigo === c.codigo; })[0];
         if (!f) return;
-        [['claves', 'agregar', 'quitar'], ['clavesApoyo', 'agregarApoyo', 'quitarApoyo']].forEach(function (par) {
+        var permitidos = contactos ? lectoresContacto(personas, f.codigo) : null;
+        pares.forEach(function (par) {
+          if (contactos && par[0] === 'clavesSalud' && !texto(f.salud)) return;   // sin EPS ni ARL no hay llave que envolver
           var mapa = json(f[par[0]], {});
           var nuevos = c[par[1]];
           if (nuevos && Object.keys(nuevos).length) {
             var validos = mapaEnvoltorios(nuevos, pubs);
-            if (!validos) throw ErrorUsuario('Envoltorios no válidos.');
+            if (!validos || (permitidos && !Object.keys(validos).every(function (k) { return permitidos[k]; }))) throw ErrorUsuario('Envoltorios no válidos.');
             Object.keys(validos).forEach(function (k) { mapa[k] = validos[k]; });
           }
           (c[par[2]] || []).forEach(function (k) { if (k !== f.codigo) delete mapa[k]; });   // la persona nunca pierde su acceso
@@ -1041,9 +1154,82 @@ function crearNucleo(dep) {
         });
         n++;
       });
-      escribir('Caracterizaciones', filas);
-      if (n) bitacora(p.codigo, 'accesos', n + ' registro(s)');
+      if (n) {
+        escribir(contactos ? 'Contactos' : 'Caracterizaciones', filas);
+        bitacora(p.codigo, contactos ? 'accesos-contactos' : 'accesos', n + ' registro(s)');
+      }
       return ok({ n: n });
+    },
+
+    // ---------- Contactos de emergencia ----------
+
+    // Carga por lote desde el archivo del área de personal (la coordinación). Cada contacto reemplaza el
+    // anterior de esa persona; las que no vienen conservan el suyo. Todo o nada: si uno falla no se escribe.
+    cargarContactos: function (d, p) {
+      if (!puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden cargar contactos.');
+      if (!Array.isArray(d.ops) || !d.ops.length || d.ops.length > MAX_OPS) return falla('DATOS', 'Cada envío debe traer de 1 a ' + MAX_OPS + ' contactos.');
+      var personas = leer('Personas');
+      var pubs = llavesPublicas();
+      var filas = leerContactos();
+      var ahora = new Date(dep.ahora()).toISOString();
+      var nuevas = {}, orden = [];
+      for (var i = 0; i < d.ops.length; i++) {
+        var op = d.ops[i];
+        var v = validarContacto(op, personas, pubs, p.codigo);
+        if (typeof v === 'string') return falla('DATOS', v);
+        if (nuevas[op.codigo]) return falla('DATOS', 'La persona ' + op.codigo + ' viene dos veces en la carga.');
+        var actual = filas.filter(function (x) { return x.codigo === op.codigo; })[0];
+        nuevas[op.codigo] = filaContacto(op, v, actual, 'carga', p.codigo, ahora);
+        orden.push(op.codigo);
+      }
+      escribir('Contactos', filas.filter(function (x) { return !nuevas[x.codigo]; }).concat(orden.map(function (c) { return nuevas[c]; })));
+      bitacora(p.codigo, 'contactos-carga', orden.length + ' registro(s)');
+      var versiones = {};
+      orden.forEach(function (c) { versiones[c] = nuevas[c].version; });
+      return ok({ n: orden.length, versiones: versiones });
+    },
+
+    // Corrección de un contacto: la coordinación sobre cualquier persona activa; cualquiera con acceso, solo
+    // el suyo. Reemplaza el registro completo (los dos bloques), con control de versión.
+    guardarContactoDe: function (d, p) {
+      var propio = d.codigo === p.codigo;
+      if (!propio && !puedeEditar(p, ROLES_LECTORES)) return falla('PERMISO', 'Solo la coordinación y la administración pueden corregir el contacto de otra persona.');
+      var v = validarContacto(d, leer('Personas'), llavesPublicas(), p.codigo);
+      if (typeof v === 'string') return falla('DATOS', v);
+      var filas = leerContactos();
+      var actual = filas.filter(function (x) { return x.codigo === d.codigo; })[0];
+      if (d.versionBase !== undefined && d.versionBase !== null && num(d.versionBase) !== (actual ? num(actual.version) : 0)) {
+        return falla('CONFLICTO', 'Este contacto cambió mientras lo editaba. Recargue e intente de nuevo.');
+      }
+      var fila = filaContacto(d, v, actual, propio ? 'propio' : 'coordinacion', p.codigo, new Date(dep.ahora()).toISOString());
+      escribir('Contactos', filas.filter(function (x) { return x.codigo !== d.codigo; }).concat([fila]));
+      bitacora(p.codigo, 'contacto', d.codigo);
+      return ok({ version: fila.version, fuente: fila.fuente, cargado: fila.cargado });
+    },
+
+    // Solo lee (sin candado). La coordinación recibe además "faltan": códigos de personas activas sin
+    // contacto cargado (para el filtro «Contacto: cargado / falta»), sin ningún dato personal.
+    contactos: function (d, p) {
+      var r = listarContactos(p, 0);
+      var salida = { contactos: r.contactos };
+      if (puedeEditar(p, ROLES_LECTORES)) {
+        var con = {};
+        r.filas.forEach(function (f) { con[f.codigo] = true; });
+        salida.faltan = Object.keys(r.pisoDe).filter(function (c) { return !con[c]; }).sort();
+      }
+      return ok(salida);
+    },
+
+    // «Ver otro piso»: acción explícita, separada de "contactos" porque deja en la bitácora el código del
+    // brigadista y el piso consultado (sin datos personales). Por eso toma el candado.
+    contactosOtroPiso: function (d, p) {
+      var coordinacion = puedeEditar(p, ROLES_LECTORES);
+      if (!coordinacion && !tieneRol(p, 'brigadista')) return falla('PERMISO', 'Solo los brigadistas y la coordinación pueden ver los contactos de otro piso.');
+      var piso = entero(d.piso);
+      if (!piso || !leer('Puestos').some(function (q) { return num(q.piso) === piso; })) return falla('DATOS', 'El piso ' + corto(d.piso) + ' no existe en la planta.');
+      var lista = listarContactos(p, piso).contactos;
+      if (!coordinacion && piso !== num(p.pisoBrigada)) bitacora(p.codigo, 'contactos-otro-piso', 'piso ' + piso);
+      return ok({ piso: piso, contactos: lista });
     },
 
     // Histórico de emergencias y simulacros cerrados: solo totales y tiempos.
@@ -1226,8 +1412,9 @@ function crearNucleo(dep) {
       var personas = leer('Personas');
       aplicarPadron(d.personas || [], personas);
       escribir('Personas', personas);
-      // Quien se retira deja de estar en el Despacho: se borra su caracterización.
+      // Quien se retira deja de estar en el Despacho: se borran su caracterización y su contacto de emergencia.
       borrarCaracterizacionesInactivas(personas);
+      borrarContactosInactivos(personas);
       // Con puestos del Excel se conserva la posición de los que ya existían. Siempre se recalcula el estado.
       recalcularPuestos(personas, d.puestos ? conservarDistribucion(d.puestos) : null, !!d.puestos);
       var version = d.sobreDirectorio ? guardarSobre('directorio', d.sobreDirectorio) : null;
@@ -1455,10 +1642,10 @@ function crearNucleo(dep) {
   // Solo leen: no toman el candado, para que muchos celulares consulten a la vez y no hagan fila
   // detrás de quien está guardando. Ninguna de estas acciones escribe en las hojas.
   var SIN_BLOQUEO = { ping: true, base: true, hoy: true, pulso: true, emergencia: true, bajarArchivo: true, historial: true,
-    novedades: true, caracterizaciones: true, apoyos: true, miCaracterizacion: true };
+    novedades: true, caracterizaciones: true, apoyos: true, miCaracterizacion: true, contactos: true };
   // Lecturas: repetirlas no cambia nada, no hace falta recordar su respuesta.
   var LECTURAS = { ping: true, base: true, pulso: true, emergencia: true, hoy: true, bajarArchivo: true, historial: true,
-    caracterizaciones: true, apoyos: true, miCaracterizacion: true, novedades: true };
+    caracterizaciones: true, apoyos: true, miCaracterizacion: true, novedades: true, contactos: true };
 
   // Google a veces pierde la respuesta después de ejecutar la acción. El celular reintenta
   // con el mismo idPeticion y el servidor devuelve la respuesta guardada en vez de repetirla
