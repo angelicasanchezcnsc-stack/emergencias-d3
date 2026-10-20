@@ -27,6 +27,7 @@ const prueba = (grupo, nombre, fn) => pruebas.push({ grupo, nombre, fn });
 
 let N;   // { crearNucleo, presenciaDe, sha256, diaISO } evaluados desde Nucleo.gs
 let nav; // módulo web/js/presencia.js
+let arch; // módulo web/js/archivo-contactos.js
 
 function crearEntorno({ conFiltrado = false } = {}) {
   const tablas = {};
@@ -2010,6 +2011,104 @@ prueba(CE, 'Antes de ejecutar «instalar» (sin hoja Contactos): base, contactos
   igual(guardado.Personas.find(x => x.codigo === 'D3-010').estado, 'inactivo');
 });
 
+// ---------- Contactos: lectura del archivo y comparación con la llave (navegador, v0.12 fase 2) ----------
+
+const CA = 'Contactos: lectura del archivo y comparación (navegador)';
+// Archivo ficticio con las columnas del área de personal. «Teléfono» va dos veces: persona y familiar.
+const CAB = ['Nombre', 'Teléfono', 'Correo', 'EPS', 'ARL', 'Nombre de un Familiar', 'Parentesco', 'Teléfono'];
+const filaArchivo = (nombre, correo, extra = {}) => {
+  const f = { tel: '300 000 0001', eps: 'EPS Ficticia', arl: 'ARL Ficticia', fam: 'Familiar Ficticio', par: 'Hermana', telFam: '3000000002', ...extra };
+  return [nombre, f.tel, correo, f.eps, f.arl, f.fam, f.par, f.telFam];
+};
+const llavePrueba = () => [
+  { codigo: 'D3-001', nombre: 'Persona Uno', correo: 'uno@ejemplo.test', estado: 'activo', piso: 2, puesto: 1 },
+  { codigo: 'D3-002', nombre: 'Ángela Dos', correo: 'dos@ejemplo.test', estado: 'activo', piso: 4, puesto: 2 },
+  { codigo: 'D3-003', nombre: 'Persona Tres', correo: 'tres@ejemplo.test', estado: 'inactivo', piso: 6, puesto: 1 },
+  { codigo: 'D3-004', nombre: 'Persona Cuatro', correo: 'cuatro@ejemplo.test', estado: 'activo', piso: 7, puesto: 3 },
+  { codigo: 'D3-005', nombre: 'Persona Cinco', correo: 'cinco@ejemplo.test', estado: 'activo', piso: 7, puesto: 4 }
+];
+
+prueba(CA, 'leerCsv: punto y coma, comillas, comillas dobles, BOM y saltos de línea de Windows', () => {
+  const t = '﻿Nombre;Teléfono;Correo\r\n"Uno; con punto y coma";"300 ""1""";uno@ejemplo.test\r\nDos;;dos@ejemplo.test\r\n';
+  igual(arch.leerCsv(t), [['Nombre', 'Teléfono', 'Correo'], ['Uno; con punto y coma', '300 "1"', 'uno@ejemplo.test'], ['Dos', '', 'dos@ejemplo.test']]);
+});
+prueba(CA, 'leerCsv: separador coma y un salto de línea dentro de un campo', () => {
+  igual(arch.leerCsv('a,b\n"x\ny",z'), [['a', 'b'], ['x\ny', 'z']]);
+});
+prueba(CA, 'decodificarTexto: UTF-8 y Windows-1252 (CSV guardado por Excel) conservan las tildes', () => {
+  igual(arch.decodificarTexto(new TextEncoder().encode('﻿Teléfono')), 'Teléfono');
+  igual(arch.decodificarTexto(new Uint8Array([0x54, 0x65, 0x6c, 0xe9, 0x66, 0x6f, 0x6e, 0x6f])), 'Teléfono');
+});
+prueba(CA, 'interpretarContactos: separa el teléfono de la persona del teléfono del familiar', () => {
+  const r = arch.interpretarContactos([CAB, filaArchivo('Persona Uno', 'uno@ejemplo.test', { tel: '3000000001', telFam: '6010000002' })]);
+  igual(r.avisos, []);
+  igual(r.registros[0], { fila: 2, nombre: 'Persona Uno', correo: 'uno@ejemplo.test', telefono: '3000000001', eps: 'EPS Ficticia', arl: 'ARL Ficticia',
+    familiar: 'Familiar Ficticio', parentesco: 'Hermana', telefonoFamiliar: '6010000002', alertas: [] });
+});
+prueba(CA, 'interpretarContactos: títulos en mayúsculas, sin tildes y con filas de título arriba', () => {
+  const cab = ['NOMBRE', 'TELEFONO', 'CORREO', 'EPS', 'ARL', 'NOMBRE DE UN FAMILIAR', 'PARENTESCO', 'TELEFONO'];
+  const r = arch.interpretarContactos([['Contactos del Despacho'], [], cab, filaArchivo('Persona Uno', ' Uno@Ejemplo.TEST ')]);
+  igual([r.registros.length, r.registros[0].fila, r.registros[0].correo, r.registros[0].telefonoFamiliar], [1, 4, 'uno@ejemplo.test', '3000000002']);
+});
+prueba(CA, 'interpretarContactos: sin columna «Correo» no se puede leer', () => {
+  let error = '';
+  try { arch.interpretarContactos([['Nombre', 'Teléfono'], ['Persona Uno', '3000000001']]); } catch (e) { error = e.message; }
+  afirmar(/Correo/.test(error), 'Debía explicar que falta la columna Correo: ' + error);
+});
+prueba(CA, 'interpretarContactos: correo inválido o repetido queda en los avisos y no se toma', () => {
+  const r = arch.interpretarContactos([CAB, filaArchivo('Persona Uno', 'uno@ejemplo.test'), filaArchivo('Sin Correo', 'no-es-correo'),
+    filaArchivo('Persona Uno Bis', 'UNO@ejemplo.test'), ['', '', '', '', '', '', '', '']]);
+  igual(r.registros.map(x => x.correo), ['uno@ejemplo.test']);
+  igual(r.avisos.length, 2);
+  afirmar(/Fila 3/.test(r.avisos[0]) && /Fila 4/.test(r.avisos[1]) && /fila 2/.test(r.avisos[1]), r.avisos.join(' | '));
+});
+prueba(CA, 'interpretarContactos: avisa las columnas que faltan', () => {
+  const r = arch.interpretarContactos([['Nombre', 'Correo', 'Teléfono'], ['Persona Uno', 'uno@ejemplo.test', '3000000001']]);
+  afirmar(/EPS/.test(r.avisos[0]) && /Parentesco/.test(r.avisos[0]), r.avisos[0]);
+  igual([r.registros[0].telefono, r.registros[0].telefonoFamiliar], ['3000000001', '']);
+});
+prueba(CA, 'Teléfonos dudosos: celular, fijo e indicativo 57 valen; cortos, largos o dos en una celda se revisan', () => {
+  ['3000000001', '300 000 0001', '+57 300 000 0001', '6010000001', '1234567'].forEach(t => igual(arch.telefonoDudoso(t), false, t));
+  ['300000', '30000000011', '2000000001', '3000000001 / 3000000002'].forEach(t => igual(arch.telefonoDudoso(t), true, t));
+  igual(arch.limpiarTelefono('Tel: (300) 000-0001'), '300 000-0001');
+});
+prueba(CA, 'Alertas: teléfonos faltantes o dudosos, familiar y EPS o ARL', () => {
+  const r = arch.interpretarContactos([CAB, filaArchivo('Persona Uno', 'uno@ejemplo.test', { tel: '', fam: '', telFam: '12', eps: '' })]).registros[0];
+  igual(r.alertas, ['Falta el teléfono de la persona', 'Falta el nombre del familiar', 'Revise el teléfono del familiar: 12', 'Falta la EPS o la ARL']);
+});
+prueba(CA, 'conciliar: empareja por correo, separa nuevas, retiradas, correo cambiado y ausentes', () => {
+  const regs = arch.interpretarContactos([CAB,
+    filaArchivo('Persona Uno', 'UNO@ejemplo.test'),          // emparejada (mayúsculas)
+    filaArchivo('Persona Tres', 'tres@ejemplo.test'),        // retirada en la app
+    filaArchivo('angela dos', 'angela.nueva@ejemplo.test'),  // mismo nombre, otro correo
+    filaArchivo('Persona Seis', 'seis@ejemplo.test')         // nueva
+  ]).registros;
+  const c = arch.conciliar(regs, llavePrueba(), new Set(['D3-001']));
+  igual(c.emparejadas.map(e => [e.codigo, e.reemplaza, e.piso, e.puesto]), [['D3-001', true, 2, 1]]);
+  igual(c.retiradas.map(e => e.codigo), ['D3-003']);
+  igual(c.correoCambiado.map(e => [e.codigo, e.correoApp, e.registro.correo]), [['D3-002', 'dos@ejemplo.test', 'angela.nueva@ejemplo.test']]);
+  igual(c.nuevas.map(n => [n.registro.correo, n.agregar, n.piso]), [['seis@ejemplo.test', true, null]]);
+  igual(c.ausentes.map(a => a.codigo), ['D3-004', 'D3-005']);
+});
+prueba(CA, 'conciliar: un nombre repetido en la app no se usa para adivinar un correo cambiado', () => {
+  const llaveRep = llavePrueba().concat([{ codigo: 'D3-009', nombre: 'Persona Cuatro', correo: 'otro.cuatro@ejemplo.test', estado: 'activo', piso: 2, puesto: 9 }]);
+  const regs = arch.interpretarContactos([CAB, filaArchivo('Persona Cuatro', 'cuatro.nuevo@ejemplo.test')]).registros;
+  const c = arch.conciliar(regs, llaveRep);
+  igual([c.correoCambiado.length, c.nuevas.length], [0, 1]);
+});
+prueba(CA, 'conciliar: si el correo de la app también está en el archivo, el nombre igual no es un correo cambiado', () => {
+  const regs = arch.interpretarContactos([CAB, filaArchivo('Persona Uno', 'uno@ejemplo.test'), filaArchivo('Persona Uno', 'uno.homonima@ejemplo.test')]).registros;
+  const c = arch.conciliar(regs, llavePrueba());
+  igual([c.emparejadas.length, c.correoCambiado.length, c.nuevas.length], [1, 0, 1]);
+});
+prueba(CA, 'Lo que se cifra: contacto y, aparte, EPS y ARL; una fila sin datos no se carga', () => {
+  const r = arch.interpretarContactos([CAB, filaArchivo('Persona Uno', 'uno@ejemplo.test'),
+    filaArchivo('Persona Dos', 'dos@ejemplo.test', { tel: '', eps: '', arl: '', fam: '', par: '', telFam: '' })]).registros;
+  igual(arch.datosDe(r[0]), { telefono: '300 000 0001', familiar: { nombre: 'Familiar Ficticio', parentesco: 'Hermana', telefono: '3000000002' } });
+  igual(arch.saludDe(r[0]), { eps: 'EPS Ficticia', arl: 'ARL Ficticia' });
+  igual([arch.tieneDatos(r[0]), arch.tieneDatos(r[1]), arch.saludDe(r[1])], [true, false, null]);
+});
+
 // ---------- Ejecución y resultado ----------
 
 const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -2020,6 +2119,7 @@ async function principal() {
     const codigo = await (await fetch('../servidor/Nucleo.gs', { cache: 'no-store' })).text();
     N = new Function(codigo + '\nreturn { crearNucleo: crearNucleo, presenciaDe: presenciaDe, diaISO: diaISO, sha256: sha256 };')();
     nav = await import('../web/js/presencia.js');
+    arch = await import('../web/js/archivo-contactos.js');
   } catch (e) {
     salida.innerHTML = `<div id="resumen" class="mal">No se pudo cargar el núcleo: ${esc(e.message)}</div>`;
     return;

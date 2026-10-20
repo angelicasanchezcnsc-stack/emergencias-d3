@@ -1,4 +1,4 @@
-// Administración: llave maestra, planta física (Excel), personas y roles,
+// Administración: llave maestra, planta física (Excel), personas y roles, contactos de emergencia,
 // credenciales iniciales y configuración. Reservada al rol administrador.
 import { CONFIG } from '../../config.js';
 import * as sesion from '../sesion.js';
@@ -10,6 +10,7 @@ import { previaExcel, elegirArchivo, guardarLlave, abrirLlave, mostrarCredencial
 import * as contenido from '../contenido.js';
 import * as personal from '../personal.js';
 import { panelDistribucion, confirmarSalidaDistribucion } from './distribucion.js';
+import { panelContactos } from './admin-contactos.js';
 import { ventanaPuesto, ventanaAgregar, ventanaCorregir, ventanaMas, ventanaHistorial } from './ventanas-personal.js';
 import { ARCHIVOS } from '../contenido-inicial.js';
 import { fechaBogota } from '../tiempo.js';
@@ -18,6 +19,7 @@ const PESTANAS = [
   ['llave', 'llave', 'Llave'],
   ['excel', 'hoja', 'Planta y Excel'],
   ['personas', 'personas', 'Personas y roles'],
+  ['contactos', 'telefono', 'Contactos de emergencia'],
   ['distribucion', 'edificio', 'Distribución de pisos'],
   ['credenciales', 'imprimir', 'Credenciales'],
   ['contenido', 'subir', 'Contenido'],
@@ -39,14 +41,14 @@ export function vistaAdmin(vista) {
     // lo hace en un panel que ya no está en la página y no tapa la pestaña abierta.
     const panel = document.createElement('div');
     contenedor.replaceChildren(panel);
-    const necesitaLlave = ['excel', 'personas', 'distribucion', 'credenciales'].includes(id);
+    const necesitaLlave = ['excel', 'personas', 'contactos', 'distribucion', 'credenciales'].includes(id);
     if (necesitaLlave && !llave.abierta()) {
       panel.innerHTML = `<div class="nota nota-adv">${icono('llave')}<span>Para esta sección abra primero la llave maestra.</span></div>
         <button class="btn btn-primario" id="ir-llave">Ir a la llave</button>`;
       panel.querySelector('#ir-llave').addEventListener('click', () => abrir('llave'));
       return;
     }
-    ({ llave: panelLlave, excel: panelExcel, personas: panelPersonas, distribucion: panelDistribucion, credenciales: panelCredenciales, contenido: panelContenido, config: panelConfig })[id](panel, abrir);
+    ({ llave: panelLlave, excel: panelExcel, personas: panelPersonas, contactos: panelContactos, distribucion: panelDistribucion, credenciales: panelCredenciales, contenido: panelContenido, config: panelConfig })[id](panel, abrir);
   };
   // Al cambiar de pestaña se avisa si la distribución de un piso tiene cambios sin guardar.
   vista.querySelectorAll('#sub .pestana').forEach(b => b.addEventListener('click', async () => {

@@ -127,8 +127,9 @@ export function ventanaPuesto({ codigo, reactivar = false }) {
 
 // ---------- Agregar una persona ----------
 
-// Devuelve null o { nombre, correo, piso, puesto, compartirPuesto }.
-export function ventanaAgregar() {
+// Devuelve null o { nombre, correo, piso, puesto, compartirPuesto }. «nombre» y «correo» llegan escritos cuando
+// la persona viene de un archivo (carga de contactos); «titulo» y «textoBoton» cambian los textos de la ventana.
+export function ventanaAgregar({ nombre = '', correo = '', titulo = 'Agregar persona', textoBoton = 'Agregar' } = {}) {
   const base = sesion.base();
   const estado = { piso: CONFIG.PISOS[0], elegido: null, resaltar: new Set(), compartir: false };
   const ocupantes = mapaDeOcupantes();
@@ -141,11 +142,11 @@ export function ventanaAgregar() {
   });
 
   const respuesta = modal({
-    titulo: 'Agregar persona', ancho: 'ancho',
+    titulo, ancho: 'ancho',
     cuerpo: `
       <div class="fila">
-        <div class="campo" style="flex:1;min-width:14rem"><label class="etiqueta" for="a-nombre">Nombre completo</label><input id="a-nombre" type="text" autocomplete="off"></div>
-        <div class="campo" style="flex:1;min-width:14rem"><label class="etiqueta" for="a-correo">Correo institucional</label><input id="a-correo" type="email" autocomplete="off"></div>
+        <div class="campo" style="flex:1;min-width:14rem"><label class="etiqueta" for="a-nombre">Nombre completo</label><input id="a-nombre" type="text" autocomplete="off" value="${esc(nombre)}"></div>
+        <div class="campo" style="flex:1;min-width:14rem"><label class="etiqueta" for="a-correo">Correo institucional</label><input id="a-correo" type="email" autocomplete="off" value="${esc(correo)}"></div>
       </div>
       <label class="casilla"><input type="checkbox" id="a-compartir">Compartir un puesto ocupado</label>
       <p class="ayuda">Elija el puesto en el mapa. Solo se pueden elegir los puestos libres; para uno ocupado marque «Compartir un puesto ocupado».</p>
@@ -155,7 +156,7 @@ export function ventanaAgregar() {
     acciones: [
       { texto: 'Cancelar', valor: null, clase: 'btn-fantasma' },
       {
-        texto: 'Agregar', clase: 'btn-oscuro',
+        texto: textoBoton, clase: 'btn-oscuro',
         antes: f => {
           const nombre = f.querySelector('#a-nombre').value.trim(), correo = cripto.normalizarCorreo(f.querySelector('#a-correo').value);
           const error = !nombre ? 'Escriba el nombre completo.'
